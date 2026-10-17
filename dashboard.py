@@ -2,9 +2,9 @@
 import os
 import re
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
-from urllib.parse import quote, urlencode
+
 
 import openpyxl
 import pandas as pd
@@ -903,10 +903,10 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
 
 
 # ---------------------------------------------------------------------
-# Microsoft OneDrive / Graph helpers
+# Public OneDrive helpers
 # ---------------------------------------------------------------------
 def get_onedrive_share_url():
-    """Read the OneDrive sharing URL from Streamlit secrets."""
+    """Read the public OneDrive sharing URL from Streamlit Secrets."""
     if "onedrive" in st.secrets:
         url = st.secrets["onedrive"].get("share_url")
     else:
@@ -919,158 +919,62 @@ def get_onedrive_share_url():
     return url or None
 
 
-def get_azure_config():
-    """Read Microsoft Entra application credentials from Streamlit secrets.
+def download_onedrive_workbook_from_share(share_url):
+    """Download an anonymously shared OneDrive workbook.
 
-    This version uses the app's *application* permission (Files.Read.All), so
-    dashboard visitors do not have to sign in with Microsoft. The app itself
-    obtains a Graph application token using the client-credentials flow.
+    The OneDrive link is an ``Anyone with the link can view`` link, so no
+    Microsoft login or Microsoft Graph token is required.  OneDrive can
+    return an HTML viewer page for a normal share URL; adding ``download=1``
+    asks OneDrive for the underlying file instead.
     """
-    if "azure" in st.secrets:
-        azure = st.secrets["azure"]
-        client_id = azure.get("client_id")
-        client_secret = azure.get("client_secret")
-        tenant_id = azure.get("tenant_id") or azure.get("tenant")
-    else:
-        client_id = st.secrets.get("AZURE_CLIENT_ID")
-        client_secret = st.secrets.get("AZURE_CLIENT_SECRET")
-        tenant_id = st.secrets.get("AZURE_TENANT_ID") or st.secrets.get("AZURE_TENANT")
+    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-    if not client_id and not client_secret and not tenant_id:
-        return None
-
-    missing = []
-    if not client_id:
-        missing.append("client_id")
-    if not client_secret:
-        missing.append("client_secret")
-    if not tenant_id:
-        missing.append("tenant_id")
-    if missing:
-        raise RuntimeError("Missing Azure secret(s): " + ", ".join(missing))
-
-    return {
-        "client_id": str(client_id).strip(),
-        "client_secret": str(client_secret).strip(),
-        "tenant_id": str(tenant_id).strip(),
-    }
-
-
-def get_graph_app_token(config):
-    """Get an application-only Microsoft Graph access token."""
-    token_url = (
-        f"https://login.microsoftonline.com/{quote(config['tenant_id'], safe='')}/oauth2/v2.0/token"
+    parts = urlsplit(share_url)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    query["download"] = "1"
+    download_url = urlunsplit(
+        (parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment)
     )
 
-    response = requests.post(
-        token_url,
-        data={
-            "client_id": config["client_id"],
-            "client_secret": config["client_secret"],
-            "grant_type": "client_credentials",
-            "scope": "https://graph.microsoft.com/.default",
+    response = requests.get(
+        download_url,
+        timeout=90,
+        allow_redirects=True,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Streamlit OneDrive workbook reader)",
         },
-        timeout=30,
     )
 
     if not response.ok:
-        try:
-            detail = response.json().get("error_description") or response.text
-        except ValueError:
-            detail = response.text
-        raise RuntimeError(f"Microsoft Graph app authentication failed: {detail}")
-
-    token_data = response.json()
-    access_token = token_data.get("access_token")
-    if not access_token:
-        raise RuntimeError("Microsoft Graph did not return an application access token.")
-
-    return access_token
-
-
-def make_graph_share_id(share_url):
-    """Convert a OneDrive sharing URL into Microsoft's Graph share ID format."""
-    import base64
-
-    encoded = base64.urlsafe_b64encode(share_url.encode("utf-8")).decode("ascii")
-    encoded = encoded.rstrip("=")
-    return "u!" + encoded
-
-
-def download_onedrive_workbook_from_share(share_url, access_token):
-    """Download the shared OneDrive workbook through Microsoft Graph.
-
-    The share URL remains only a locator for the file. The Streamlit app uses
-    its application-only Graph token to access the shared item, so visitors to
-    the dashboard never see a Microsoft sign-in screen.
-    """
-    share_id = make_graph_share_id(share_url)
-    headers = {"Authorization": f"Bearer {access_token}"}
-
-    drive_item_url = f"{GRAPH_BASE_URL}/shares/{share_id}/driveItem"
-    metadata_response = requests.get(
-        drive_item_url,
-        headers=headers,
-        timeout=30,
-    )
-
-    if not metadata_response.ok:
-        try:
-            detail = metadata_response.json()
-        except ValueError:
-            detail = metadata_response.text
         raise RuntimeError(
-            "Microsoft Graph could not access the shared OneDrive file "
-            f"(HTTP {metadata_response.status_code}). Response: {detail}"
+            f"OneDrive returned HTTP {response.status_code} while downloading the shared workbook."
         )
 
-    metadata = metadata_response.json()
+    content = response.content
+    content_type = response.headers.get("Content-Type", "unknown")
 
-    content_response = requests.get(
-        f"{drive_item_url}/content",
-        headers=headers,
-        timeout=60,
-        allow_redirects=True,
-    )
-
-    if not content_response.ok:
-        try:
-            detail = content_response.json()
-        except ValueError:
-            detail = content_response.text
-        raise RuntimeError(
-            "Microsoft Graph could not download the shared OneDrive file "
-            f"(HTTP {content_response.status_code}). Response: {detail}"
-        )
-
-    content = content_response.content
+    # .xlsx files are ZIP containers and therefore begin with PK.
     if not content.startswith(b"PK"):
-        content_type = content_response.headers.get("Content-Type", "unknown")
+        # A public link should be anonymously downloadable. If OneDrive
+        # instead returned an HTML page, surface a useful message rather
+        # than feeding the HTML to openpyxl.
+        preview = content[:200].decode("utf-8", errors="ignore").replace("\n", " ").strip()
         raise RuntimeError(
-            "Microsoft Graph returned something other than the Excel workbook. "
-            f"Content-Type: {content_type}"
+            "The OneDrive share link did not return the Excel workbook. "
+            "Make sure the file is shared as 'Anyone with the link can view' "
+            "and that downloads are allowed. "
+            f"Content-Type: {content_type}."
+            + (f" Response began with: {preview[:120]}" if preview else "")
         )
 
     temp_path = Path(".streamlit_onedrive_workbook.xlsx")
     temp_path.write_bytes(content)
 
-    modified = metadata.get("lastModifiedDateTime")
-    updated_time = None
-    if modified:
-        try:
-            updated_time = datetime.fromisoformat(
-                modified.replace("Z", "+00:00")
-            ).astimezone().replace(tzinfo=None)
-        except (TypeError, ValueError, OverflowError):
-            updated_time = None
-
+    # A public download URL does not reliably expose the workbook's
+    # last-modified timestamp, so use the current download time for the
+    # dashboard's update indicator.
+    updated_time = datetime.now().replace(microsecond=0)
     return temp_path, updated_time
-
-
-def download_onedrive_workbook(config, share_url):
-    """Get an app-only Graph token and download the shared workbook."""
-    access_token = get_graph_app_token(config)
-    return download_onedrive_workbook_from_share(share_url, access_token)
 
 
 # ---------------------------------------------------------------------
@@ -1099,31 +1003,23 @@ st.markdown(
 
 st.title("🏀 2027 March Madness Player Pool Dashboard")
 
-# In production, read the workbook directly from the user's OneDrive.
-# Local development still supports the existing workbook/file-uploader flow.
+# Production mode: read the workbook directly from the public OneDrive
+# sharing link. Visitors do NOT need to sign in with Microsoft.
+#
+# If the share URL is not configured, retain the local uploader flow so the
+# app remains convenient to run during development.
 workbook_path = Path(DEFAULT_WORKBOOK)
 cloud_updated_time = None
-
 onedrive_share_url = get_onedrive_share_url()
-azure_config = get_azure_config()
 
-if onedrive_share_url and azure_config is not None:
-    # Production mode: the app authenticates to Microsoft Graph itself.
-    # Visitors do NOT need to sign in with Microsoft.
+if onedrive_share_url:
     try:
-        workbook_path, cloud_updated_time = download_onedrive_workbook(
-            azure_config, onedrive_share_url
+        workbook_path, cloud_updated_time = download_onedrive_workbook_from_share(
+            onedrive_share_url
         )
     except Exception as exc:
         st.error(f"Could not load the OneDrive workbook: {exc}")
         st.stop()
-elif onedrive_share_url and azure_config is None:
-    st.error(
-        "The OneDrive sharing URL is configured, but the Microsoft Graph app "
-        "credentials are missing from Streamlit Secrets. Add client_id, "
-        "client_secret, and tenant_id under [azure]."
-    )
-    st.stop()
 else:
     with st.sidebar:
         st.header("Data Source")
