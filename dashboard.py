@@ -17,6 +17,7 @@ import streamlit as st
 # ---------------------------------------------------------------------
 DEFAULT_WORKBOOK = "2027 March Madness Player Pool Tracking Skeleton 2026 rnd5.xlsx"
 ONEDRIVE_FILE_PATH = "2027MMPlayerPoolStreamlit/2027 March Madness Player Pool Tracking.xlsx"
+# Public read-only OneDrive sharing link. Store this in Streamlit Secrets as ONEDRIVE_SHARE_URL.
 GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
 OAUTH_AUTHORITY = "https://login.microsoftonline.com/common/oauth2/v2.0"
 GRAPH_SCOPES = "Files.Read User.Read offline_access"
@@ -904,15 +905,76 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
 # ---------------------------------------------------------------------
 # Microsoft OneDrive / Graph helpers
 # ---------------------------------------------------------------------
+def get_onedrive_share_url():
+    """Read the public read-only OneDrive sharing URL from Streamlit secrets."""
+    if "onedrive" in st.secrets:
+        url = st.secrets["onedrive"].get("share_url")
+    else:
+        url = st.secrets.get("ONEDRIVE_SHARE_URL")
+
+    if not url:
+        return None
+
+    url = str(url).strip()
+    if not url:
+        return None
+
+    return url
+
+
+def download_onedrive_workbook_from_share(share_url):
+    """Download the current Excel workbook through an anonymous OneDrive view link."""
+    # OneDrive supports adding download=1 to a view-sharing URL. The request
+    # follows OneDrive's redirects to the current file contents.
+    separator = "&" if "?" in share_url else "?"
+    download_url = f"{share_url}{separator}download=1"
+
+    response = requests.get(
+        download_url,
+        headers={"User-Agent": "Mozilla/5.0"},
+        timeout=60,
+        allow_redirects=True,
+    )
+    response.raise_for_status()
+
+    content = response.content
+    # XLSX files are ZIP containers and normally begin with PK. This catches
+    # cases where OneDrive returns an HTML sign-in/share page instead of the file.
+    if not content.startswith(b"PK"):
+        content_type = response.headers.get("Content-Type", "unknown")
+        raise RuntimeError(
+            "OneDrive returned a web page instead of the Excel workbook. "
+            "Make sure the file is shared as 'Anyone with the link can view'. "
+            f"Content-Type: {content_type}"
+        )
+
+    temp_path = Path(".streamlit_onedrive_workbook.xlsx")
+    temp_path.write_bytes(content)
+
+    updated_time = None
+    modified = response.headers.get("Last-Modified")
+    if modified:
+        try:
+            from email.utils import parsedate_to_datetime
+            updated_time = parsedate_to_datetime(modified).astimezone().replace(tzinfo=None)
+        except (TypeError, ValueError, OverflowError):
+            updated_time = None
+
+    return temp_path, updated_time
+
+
 def get_azure_config():
-    """Read Microsoft Entra app settings from Streamlit secrets."""
+    """Read Microsoft Entra app settings from Streamlit secrets.
+
+    Kept as a fallback for local/legacy deployments. Production can use the
+    public OneDrive share link above so dashboard visitors do not need to sign in.
+    """
     if "azure" in st.secrets:
         azure = st.secrets["azure"]
         client_id = azure.get("client_id")
         client_secret = azure.get("client_secret")
         redirect_uri = azure.get("redirect_uri")
     else:
-        # Also accept flat secret names for easier setup in Streamlit Cloud.
         client_id = st.secrets.get("AZURE_CLIENT_ID")
         client_secret = st.secrets.get("AZURE_CLIENT_SECRET")
         redirect_uri = st.secrets.get("AZURE_REDIRECT_URI")
@@ -928,9 +990,7 @@ def get_azure_config():
     if not redirect_uri:
         missing.append("redirect_uri")
     if missing:
-        raise RuntimeError(
-            "Missing Azure secret(s): " + ", ".join(missing)
-        )
+        raise RuntimeError("Missing Azure secret(s): " + ", ".join(missing))
 
     return {
         "client_id": client_id,
@@ -1001,19 +1061,12 @@ def get_graph_access_token(config):
     if access_token and now < expires_at - 60:
         return access_token
 
-    # Handle the redirect back from Microsoft after sign-in.
     query = dict(st.query_params)
     if "error" in query:
         error = query.get("error_description", query.get("error", "Unknown sign-in error"))
         raise RuntimeError(f"Microsoft sign-in failed: {error}")
 
     if "code" in query:
-        # Streamlit can create a new browser session during the Microsoft
-        # redirect, so session_state is not a reliable place to persist the
-        # OAuth state value. We still send a state value to Microsoft, but
-        # accept the callback when the browser session has lost that value.
-        # The authorization code is still exchanged server-side using the
-        # confidential client secret and the exact registered redirect URI.
         expected_state = st.session_state.get("oauth_state")
         returned_state = query.get("state")
         if expected_state and returned_state != expected_state:
@@ -1033,7 +1086,6 @@ def get_graph_access_token(config):
         st.query_params.clear()
         return st.session_state["graph_access_token"]
 
-    # Refresh an existing session without making the user sign in again.
     refresh_token = st.session_state.get("graph_refresh_token")
     if refresh_token:
         try:
@@ -1062,7 +1114,6 @@ def download_onedrive_workbook(config):
 
     metadata_response = requests.get(metadata_url, headers=headers, timeout=30)
     if metadata_response.status_code == 401:
-        # Try one refresh and retry once.
         st.session_state.pop("graph_access_token", None)
         st.session_state["graph_token_expires_at"] = 0
         access_token = get_graph_access_token(config)
@@ -1124,9 +1175,18 @@ st.title("🏀 2027 March Madness Player Pool Dashboard")
 workbook_path = Path(DEFAULT_WORKBOOK)
 cloud_updated_time = None
 
+onedrive_share_url = get_onedrive_share_url()
 azure_config = get_azure_config()
 
-if azure_config is not None:
+if onedrive_share_url:
+    # Production mode: everyone sees the dashboard without Microsoft sign-in.
+    try:
+        workbook_path, cloud_updated_time = download_onedrive_workbook_from_share(onedrive_share_url)
+    except Exception as exc:
+        st.error(f"Could not load the OneDrive workbook: {exc}")
+        st.stop()
+elif azure_config is not None:
+    # Legacy authenticated mode retained as a fallback.
     try:
         workbook_path, cloud_updated_time = download_onedrive_workbook(azure_config)
     except Exception as exc:
