@@ -914,42 +914,101 @@ def get_onedrive_share_url():
 
 
 def download_onedrive_workbook_from_share(share_url):
-    """Download the current Excel workbook from a public OneDrive sharing link."""
+    """Download the current OneDrive workbook using Microsoft Graph."""
 
     import base64
 
     share_url = str(share_url).strip()
 
-    # Microsoft Graph requires a sharing URL to be converted into
-    # an encoded sharing token beginning with "u!".
+    # -------------------------------------------------------------
+    # Get Azure application credentials from Streamlit Secrets
+    # -------------------------------------------------------------
+    try:
+        azure = st.secrets["azure"]
+
+        client_id = azure["client_id"]
+        client_secret = azure["client_secret"]
+        tenant_id = azure["tenant_id"]
+
+    except Exception as exc:
+        raise RuntimeError(
+            "Azure credentials are missing from Streamlit Secrets. "
+            "Expected [azure] client_id, client_secret, and tenant_id."
+        ) from exc
+
+    # -------------------------------------------------------------
+    # Get an application access token
+    # -------------------------------------------------------------
+    token_url = (
+        f"https://login.microsoftonline.com/{tenant_id}"
+        "/oauth2/v2.0/token"
+    )
+
+    token_response = requests.post(
+        token_url,
+        data={
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "scope": "https://graph.microsoft.com/.default",
+            "grant_type": "client_credentials",
+        },
+        timeout=60,
+    )
+
+    if token_response.status_code != 200:
+        raise RuntimeError(
+            "Microsoft authentication failed "
+            f"(HTTP {token_response.status_code}). "
+            f"Response: {token_response.text[:500]}"
+        )
+
+    access_token = token_response.json().get("access_token")
+
+    if not access_token:
+        raise RuntimeError(
+            "Microsoft authentication succeeded but no access token was returned."
+        )
+
+    # -------------------------------------------------------------
+    # Convert the OneDrive sharing URL into a Graph sharing token
+    # -------------------------------------------------------------
     encoded = base64.urlsafe_b64encode(
         share_url.encode("utf-8")
     ).decode("utf-8").rstrip("=")
 
     share_token = f"u!{encoded}"
 
-    # Get the shared DriveItem through Microsoft Graph.
+    # -------------------------------------------------------------
+    # Ask Microsoft Graph for the shared DriveItem
+    # -------------------------------------------------------------
     metadata_url = (
         f"https://graph.microsoft.com/v1.0/shares/"
         f"{share_token}/driveItem"
     )
 
+    graph_headers = {
+        "Authorization": f"Bearer {access_token}",
+        "User-Agent": "MMPlayerPoolDashboard",
+    }
+
     response = requests.get(
         metadata_url,
-        headers={"User-Agent": "MMPlayerPoolDashboard"},
+        headers=graph_headers,
         timeout=60,
     )
 
     if response.status_code != 200:
         raise RuntimeError(
-            f"Microsoft Graph could not access the shared OneDrive file "
+            "Microsoft Graph could not access the shared OneDrive file "
             f"(HTTP {response.status_code}). "
             f"Response: {response.text[:500]}"
         )
 
     item = response.json()
 
-    # Get the actual workbook contents.
+    # -------------------------------------------------------------
+    # Get the temporary download URL supplied by Graph
+    # -------------------------------------------------------------
     download_url = item.get("@microsoft.graph.downloadUrl")
 
     if not download_url:
@@ -958,6 +1017,7 @@ def download_onedrive_workbook_from_share(share_url):
             "a downloadable workbook URL."
         )
 
+    # The download URL returned by Graph is already authenticated.
     file_response = requests.get(
         download_url,
         headers={"User-Agent": "MMPlayerPoolDashboard"},
@@ -966,22 +1026,27 @@ def download_onedrive_workbook_from_share(share_url):
 
     if file_response.status_code != 200:
         raise RuntimeError(
-            f"OneDrive workbook download failed "
+            "OneDrive workbook download failed "
             f"(HTTP {file_response.status_code})."
         )
 
     content = file_response.content
 
+    # XLSX files are ZIP containers and therefore begin with PK.
     if not content.startswith(b"PK"):
         content_type = file_response.headers.get(
             "Content-Type",
             "unknown",
         )
+
         raise RuntimeError(
             "OneDrive did not return the Excel workbook. "
             f"Content-Type: {content_type}"
         )
 
+    # -------------------------------------------------------------
+    # Save the workbook locally for the existing dashboard code
+    # -------------------------------------------------------------
     temp_path = Path(".streamlit_onedrive_workbook.xlsx")
     temp_path.write_bytes(content)
 
