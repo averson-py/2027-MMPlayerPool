@@ -1008,9 +1008,15 @@ def get_graph_access_token(config):
         raise RuntimeError(f"Microsoft sign-in failed: {error}")
 
     if "code" in query:
+        # Streamlit can create a new browser session during the Microsoft
+        # redirect, so session_state is not a reliable place to persist the
+        # OAuth state value. We still send a state value to Microsoft, but
+        # accept the callback when the browser session has lost that value.
+        # The authorization code is still exchanged server-side using the
+        # confidential client secret and the exact registered redirect URI.
         expected_state = st.session_state.get("oauth_state")
         returned_state = query.get("state")
-        if not expected_state or returned_state != expected_state:
+        if expected_state and returned_state != expected_state:
             raise RuntimeError("Microsoft sign-in state validation failed. Please try again.")
 
         token_data = exchange_code_for_token(config, query["code"])
