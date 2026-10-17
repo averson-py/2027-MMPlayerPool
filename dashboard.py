@@ -914,24 +914,71 @@ def get_onedrive_share_url():
 
 
 def download_onedrive_workbook_from_share(share_url):
-    """Download the current Excel workbook through an anonymous OneDrive link."""
-    separator = "&" if "?" in share_url else "?"
-    download_url = f"{share_url}{separator}download=1"
+    """Download the current Excel workbook from a public OneDrive sharing link."""
+
+    import base64
+
+    share_url = str(share_url).strip()
+
+    # Microsoft Graph requires a sharing URL to be converted into
+    # an encoded sharing token beginning with "u!".
+    encoded = base64.urlsafe_b64encode(
+        share_url.encode("utf-8")
+    ).decode("utf-8").rstrip("=")
+
+    share_token = f"u!{encoded}"
+
+    # Get the shared DriveItem through Microsoft Graph.
+    metadata_url = (
+        f"https://graph.microsoft.com/v1.0/shares/"
+        f"{share_token}/driveItem"
+    )
 
     response = requests.get(
-        download_url,
-        headers={"User-Agent": "Mozilla/5.0"},
+        metadata_url,
+        headers={"User-Agent": "MMPlayerPoolDashboard"},
         timeout=60,
-        allow_redirects=True,
     )
-    response.raise_for_status()
 
-    content = response.content
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"Microsoft Graph could not access the shared OneDrive file "
+            f"(HTTP {response.status_code}). "
+            f"Response: {response.text[:500]}"
+        )
+
+    item = response.json()
+
+    # Get the actual workbook contents.
+    download_url = item.get("@microsoft.graph.downloadUrl")
+
+    if not download_url:
+        raise RuntimeError(
+            "Microsoft Graph found the OneDrive item, but did not provide "
+            "a downloadable workbook URL."
+        )
+
+    file_response = requests.get(
+        download_url,
+        headers={"User-Agent": "MMPlayerPoolDashboard"},
+        timeout=60,
+    )
+
+    if file_response.status_code != 200:
+        raise RuntimeError(
+            f"OneDrive workbook download failed "
+            f"(HTTP {file_response.status_code})."
+        )
+
+    content = file_response.content
+
     if not content.startswith(b"PK"):
-        content_type = response.headers.get("Content-Type", "unknown")
+        content_type = file_response.headers.get(
+            "Content-Type",
+            "unknown",
+        )
         raise RuntimeError(
             "OneDrive did not return the Excel workbook. "
-            "Make sure the OneDrive file is shared as 'Anyone with the link can view'. "
             f"Content-Type: {content_type}"
         )
 
@@ -939,11 +986,18 @@ def download_onedrive_workbook_from_share(share_url):
     temp_path.write_bytes(content)
 
     updated_time = None
-    modified = response.headers.get("Last-Modified")
+
+    modified = file_response.headers.get("Last-Modified")
+
     if modified:
         try:
             from email.utils import parsedate_to_datetime
-            updated_time = parsedate_to_datetime(modified).astimezone().replace(tzinfo=None)
+
+            updated_time = (
+                parsedate_to_datetime(modified)
+                .astimezone()
+                .replace(tzinfo=None)
+            )
         except (TypeError, ValueError, OverflowError):
             updated_time = None
 
