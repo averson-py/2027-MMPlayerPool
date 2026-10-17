@@ -1176,7 +1176,6 @@ workbook_path = Path(DEFAULT_WORKBOOK)
 cloud_updated_time = None
 
 onedrive_share_url = get_onedrive_share_url()
-azure_config = get_azure_config()
 
 if onedrive_share_url:
     # Production mode: everyone sees the dashboard without Microsoft sign-in.
