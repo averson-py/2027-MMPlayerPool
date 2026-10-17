@@ -970,10 +970,39 @@ def download_onedrive_workbook_from_share(share_url):
     temp_path = Path(".streamlit_onedrive_workbook.xlsx")
     temp_path.write_bytes(content)
 
-    # A public download URL does not reliably expose the workbook's
-    # last-modified timestamp, so use the current download time for the
-    # dashboard's update indicator.
-    updated_time = datetime.now().replace(microsecond=0)
+    # The public OneDrive download does not reliably expose the OneDrive
+    # item's lastModifiedDateTime. However, the downloaded .xlsx contains
+    # Excel's own "last modified" timestamp in docProps/core.xml. Read that
+    # value so the dashboard shows when the workbook was actually last saved,
+    # rather than when someone happened to open the dashboard.
+    updated_time = None
+    try:
+        import zipfile
+        import xml.etree.ElementTree as ET
+
+        with zipfile.ZipFile(temp_path, "r") as zf:
+            core_xml = zf.read("docProps/core.xml")
+
+        root = ET.fromstring(core_xml)
+        modified_element = None
+        for element in root.iter():
+            if element.tag.endswith("}modified") or element.tag == "modified":
+                modified_element = element
+                break
+
+        if modified_element is not None and modified_element.text:
+            modified_text = modified_element.text.strip()
+            updated_time = datetime.fromisoformat(
+                modified_text.replace("Z", "+00:00")
+            )
+
+            # Display the timestamp in the Streamlit server's local time,
+            # matching the existing dashboard formatting.
+            if updated_time.tzinfo is not None:
+                updated_time = updated_time.astimezone().replace(tzinfo=None)
+    except (KeyError, ValueError, TypeError, zipfile.BadZipFile, ET.ParseError):
+        updated_time = None
+
     return temp_path, updated_time
 
 
@@ -1058,7 +1087,7 @@ else:
     st.caption("Most Recent Game Input: None recorded")
 
 st.caption(
-    "Standings Updated: "
+    "Workbook Last Edited: "
     + data["updated_time"].strftime("%m/%d/%Y %I:%M %p")
 )
 
