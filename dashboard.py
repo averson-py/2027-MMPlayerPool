@@ -1,8 +1,10 @@
 
 import os
 import re
+import secrets
 from datetime import datetime
 from pathlib import Path
+
 
 import openpyxl
 import pandas as pd
@@ -14,7 +16,11 @@ import streamlit as st
 # Configuration
 # ---------------------------------------------------------------------
 DEFAULT_WORKBOOK = "2027 March Madness Player Pool Tracking Skeleton 2026 rnd5.xlsx"
+ONEDRIVE_FILE_PATH = "2027MMPlayerPoolStreamlit/2027 March Madness Player Pool Tracking.xlsx"
 # Public read-only OneDrive sharing link. Store this in Streamlit Secrets as ONEDRIVE_SHARE_URL.
+GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
+OAUTH_AUTHORITY = "https://login.microsoftonline.com/common/oauth2/v2.0"
+GRAPH_SCOPES = "Files.Read User.Read offline_access"
 
 DRAFT_ORDER_SHEET = "DraftOrder"
 DRAFT_SHEET = "Draft"
@@ -897,10 +903,10 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
 
 
 # ---------------------------------------------------------------------
-# Public OneDrive helper
+# Public OneDrive helpers
 # ---------------------------------------------------------------------
 def get_onedrive_share_url():
-    """Read the anonymous read-only OneDrive sharing URL from Streamlit secrets."""
+    """Read the public OneDrive sharing URL from Streamlit Secrets."""
     if "onedrive" in st.secrets:
         url = st.secrets["onedrive"].get("share_url")
     else:
@@ -914,85 +920,60 @@ def get_onedrive_share_url():
 
 
 def download_onedrive_workbook_from_share(share_url):
-    """Download the current Excel workbook and read its embedded last-saved time.
+    """Download an anonymously shared OneDrive workbook.
 
-    The OneDrive download response does not reliably expose the workbook's
-    actual edit time. Excel files store the last-saved timestamp in
-    docProps/core.xml, so read that value from the downloaded workbook instead.
+    The OneDrive link is an ``Anyone with the link can view`` link, so no
+    Microsoft login or Microsoft Graph token is required.  OneDrive can
+    return an HTML viewer page for a normal share URL; adding ``download=1``
+    asks OneDrive for the underlying file instead.
     """
-    separator = "&" if "?" in share_url else "?"
-    download_url = f"{share_url}{separator}download=1"
+    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+    parts = urlsplit(share_url)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    query["download"] = "1"
+    download_url = urlunsplit(
+        (parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment)
+    )
 
     response = requests.get(
         download_url,
-        headers={"User-Agent": "Mozilla/5.0"},
-        timeout=60,
+        timeout=90,
         allow_redirects=True,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Streamlit OneDrive workbook reader)",
+        },
     )
-    response.raise_for_status()
+
+    if not response.ok:
+        raise RuntimeError(
+            f"OneDrive returned HTTP {response.status_code} while downloading the shared workbook."
+        )
 
     content = response.content
+    content_type = response.headers.get("Content-Type", "unknown")
+
+    # .xlsx files are ZIP containers and therefore begin with PK.
     if not content.startswith(b"PK"):
-        content_type = response.headers.get("Content-Type", "unknown")
+        # A public link should be anonymously downloadable. If OneDrive
+        # instead returned an HTML page, surface a useful message rather
+        # than feeding the HTML to openpyxl.
+        preview = content[:200].decode("utf-8", errors="ignore").replace("\n", " ").strip()
         raise RuntimeError(
-            "OneDrive did not return the Excel workbook. "
-            "Make sure the OneDrive file is shared as 'Anyone with the link can view'. "
-            f"Content-Type: {content_type}"
+            "The OneDrive share link did not return the Excel workbook. "
+            "Make sure the file is shared as 'Anyone with the link can view' "
+            "and that downloads are allowed. "
+            f"Content-Type: {content_type}."
+            + (f" Response began with: {preview[:120]}" if preview else "")
         )
 
     temp_path = Path(".streamlit_onedrive_workbook.xlsx")
     temp_path.write_bytes(content)
 
-    # Prefer the timestamp Excel itself records as the workbook's last save.
-    # This is independent of when the Streamlit page was opened.
-    updated_time = None
-    try:
-        import zipfile
-        import xml.etree.ElementTree as ET
-        from zoneinfo import ZoneInfo
-
-        with zipfile.ZipFile(temp_path, "r") as archive:
-            core_xml = archive.read("docProps/core.xml")
-
-        root = ET.fromstring(core_xml)
-        modified_text = None
-        for element in root.iter():
-            if element.tag.rsplit("}", 1)[-1] == "modified":
-                modified_text = element.text
-                break
-
-        if modified_text:
-            value = modified_text.strip()
-            if value.endswith("Z"):
-                value = value[:-1] + "+00:00"
-
-            parsed = datetime.fromisoformat(value)
-
-            # Excel normally stores this as UTC. Convert timezone-aware values
-            # to Eastern Time for the dashboard display.
-            if parsed.tzinfo is not None:
-                parsed = parsed.astimezone(ZoneInfo("America/New_York"))
-                updated_time = parsed.replace(tzinfo=None)
-            else:
-                updated_time = parsed
-
-    except (KeyError, ValueError, TypeError, OSError, zipfile.BadZipFile, ET.ParseError):
-        updated_time = None
-
-    # Fallback only if the workbook does not contain a usable core timestamp.
-    if updated_time is None:
-        modified = response.headers.get("Last-Modified")
-        if modified:
-            try:
-                from email.utils import parsedate_to_datetime
-                updated_time = (
-                    parsedate_to_datetime(modified)
-                    .astimezone()
-                    .replace(tzinfo=None)
-                )
-            except (TypeError, ValueError, OverflowError):
-                updated_time = None
-
+    # A public download URL does not reliably expose the workbook's
+    # last-modified timestamp, so use the current download time for the
+    # dashboard's update indicator.
+    updated_time = datetime.now().replace(microsecond=0)
     return temp_path, updated_time
 
 
@@ -1022,17 +1003,20 @@ st.markdown(
 
 st.title("🏀 2027 March Madness Player Pool Dashboard")
 
-# In production, read the workbook directly from the user's OneDrive.
-# Local development still supports the existing workbook/file-uploader flow.
+# Production mode: read the workbook directly from the public OneDrive
+# sharing link. Visitors do NOT need to sign in with Microsoft.
+#
+# If the share URL is not configured, retain the local uploader flow so the
+# app remains convenient to run during development.
 workbook_path = Path(DEFAULT_WORKBOOK)
 cloud_updated_time = None
-
 onedrive_share_url = get_onedrive_share_url()
 
 if onedrive_share_url:
-    # Production mode: the dashboard is public and visitors do not sign in.
     try:
-        workbook_path, cloud_updated_time = download_onedrive_workbook_from_share(onedrive_share_url)
+        workbook_path, cloud_updated_time = download_onedrive_workbook_from_share(
+            onedrive_share_url
+        )
     except Exception as exc:
         st.error(f"Could not load the OneDrive workbook: {exc}")
         st.stop()
@@ -1074,7 +1058,7 @@ else:
     st.caption("Most Recent Game Input: None recorded")
 
 st.caption(
-    "Workbook Last Edited: "
+    "Standings Updated: "
     + data["updated_time"].strftime("%m/%d/%Y %I:%M %p")
 )
 
@@ -1271,6 +1255,6 @@ with tab4:
 
 st.divider()
 st.caption(
-    "The dashboard reads the Excel workbook from a read-only OneDrive share link. "
+    "The dashboard reads the Excel workbook from OneDrive. "
     "No workbook changes are made by the app."
 )
