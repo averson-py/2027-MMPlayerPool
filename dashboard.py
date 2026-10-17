@@ -1,10 +1,8 @@
 
 import os
 import re
-import secrets
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
-from urllib.parse import quote, urlencode
 
 import openpyxl
 import pandas as pd
@@ -16,11 +14,7 @@ import streamlit as st
 # Configuration
 # ---------------------------------------------------------------------
 DEFAULT_WORKBOOK = "2027 March Madness Player Pool Tracking Skeleton 2026 rnd5.xlsx"
-ONEDRIVE_FILE_PATH = "2027MMPlayerPoolStreamlit/2027 March Madness Player Pool Tracking.xlsx"
 # Public read-only OneDrive sharing link. Store this in Streamlit Secrets as ONEDRIVE_SHARE_URL.
-GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
-OAUTH_AUTHORITY = "https://login.microsoftonline.com/common/oauth2/v2.0"
-GRAPH_SCOPES = "Files.Read User.Read offline_access"
 
 DRAFT_ORDER_SHEET = "DraftOrder"
 DRAFT_SHEET = "Draft"
@@ -903,10 +897,10 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
 
 
 # ---------------------------------------------------------------------
-# Microsoft OneDrive / Graph helpers
+# Public OneDrive helper
 # ---------------------------------------------------------------------
 def get_onedrive_share_url():
-    """Read the public read-only OneDrive sharing URL from Streamlit secrets."""
+    """Read the anonymous read-only OneDrive sharing URL from Streamlit secrets."""
     if "onedrive" in st.secrets:
         url = st.secrets["onedrive"].get("share_url")
     else:
@@ -916,16 +910,11 @@ def get_onedrive_share_url():
         return None
 
     url = str(url).strip()
-    if not url:
-        return None
-
-    return url
+    return url or None
 
 
 def download_onedrive_workbook_from_share(share_url):
-    """Download the current Excel workbook through an anonymous OneDrive view link."""
-    # OneDrive supports adding download=1 to a view-sharing URL. The request
-    # follows OneDrive's redirects to the current file contents.
+    """Download the current Excel workbook through an anonymous OneDrive link."""
     separator = "&" if "?" in share_url else "?"
     download_url = f"{share_url}{separator}download=1"
 
@@ -938,13 +927,11 @@ def download_onedrive_workbook_from_share(share_url):
     response.raise_for_status()
 
     content = response.content
-    # XLSX files are ZIP containers and normally begin with PK. This catches
-    # cases where OneDrive returns an HTML sign-in/share page instead of the file.
     if not content.startswith(b"PK"):
         content_type = response.headers.get("Content-Type", "unknown")
         raise RuntimeError(
-            "OneDrive returned a web page instead of the Excel workbook. "
-            "Make sure the file is shared as 'Anyone with the link can view'. "
+            "OneDrive did not return the Excel workbook. "
+            "Make sure the OneDrive file is shared as 'Anyone with the link can view'. "
             f"Content-Type: {content_type}"
         )
 
@@ -959,187 +946,6 @@ def download_onedrive_workbook_from_share(share_url):
             updated_time = parsedate_to_datetime(modified).astimezone().replace(tzinfo=None)
         except (TypeError, ValueError, OverflowError):
             updated_time = None
-
-    return temp_path, updated_time
-
-
-def get_azure_config():
-    """Read Microsoft Entra app settings from Streamlit secrets.
-
-    Kept as a fallback for local/legacy deployments. Production can use the
-    public OneDrive share link above so dashboard visitors do not need to sign in.
-    """
-    if "azure" in st.secrets:
-        azure = st.secrets["azure"]
-        client_id = azure.get("client_id")
-        client_secret = azure.get("client_secret")
-        redirect_uri = azure.get("redirect_uri")
-    else:
-        client_id = st.secrets.get("AZURE_CLIENT_ID")
-        client_secret = st.secrets.get("AZURE_CLIENT_SECRET")
-        redirect_uri = st.secrets.get("AZURE_REDIRECT_URI")
-
-    if not client_id and not client_secret and not redirect_uri:
-        return None
-
-    missing = []
-    if not client_id:
-        missing.append("client_id")
-    if not client_secret:
-        missing.append("client_secret")
-    if not redirect_uri:
-        missing.append("redirect_uri")
-    if missing:
-        raise RuntimeError("Missing Azure secret(s): " + ", ".join(missing))
-
-    return {
-        "client_id": client_id,
-        "client_secret": client_secret,
-        "redirect_uri": redirect_uri,
-    }
-
-
-def build_microsoft_login_url(config):
-    """Build the Microsoft OAuth authorization URL."""
-    state = st.session_state.get("oauth_state")
-    if not state:
-        state = secrets.token_urlsafe(32)
-        st.session_state["oauth_state"] = state
-
-    params = {
-        "client_id": config["client_id"],
-        "response_type": "code",
-        "redirect_uri": config["redirect_uri"],
-        "response_mode": "query",
-        "scope": GRAPH_SCOPES,
-        "state": state,
-    }
-    return f"{OAUTH_AUTHORITY}/authorize?{urlencode(params)}"
-
-
-def exchange_code_for_token(config, code):
-    """Exchange an OAuth authorization code for a Graph access token."""
-    response = requests.post(
-        f"{OAUTH_AUTHORITY}/token",
-        data={
-            "client_id": config["client_id"],
-            "client_secret": config["client_secret"],
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": config["redirect_uri"],
-            "scope": GRAPH_SCOPES,
-        },
-        timeout=30,
-    )
-    response.raise_for_status()
-    return response.json()
-
-
-def refresh_graph_token(config, refresh_token):
-    """Refresh an expired Graph access token."""
-    response = requests.post(
-        f"{OAUTH_AUTHORITY}/token",
-        data={
-            "client_id": config["client_id"],
-            "client_secret": config["client_secret"],
-            "grant_type": "refresh_token",
-            "refresh_token": refresh_token,
-            "scope": GRAPH_SCOPES,
-        },
-        timeout=30,
-    )
-    response.raise_for_status()
-    return response.json()
-
-
-def get_graph_access_token(config):
-    """Return a valid delegated Graph access token for the signed-in user."""
-    now = int(datetime.now(timezone.utc).timestamp())
-
-    access_token = st.session_state.get("graph_access_token")
-    expires_at = st.session_state.get("graph_token_expires_at", 0)
-    if access_token and now < expires_at - 60:
-        return access_token
-
-    query = dict(st.query_params)
-    if "error" in query:
-        error = query.get("error_description", query.get("error", "Unknown sign-in error"))
-        raise RuntimeError(f"Microsoft sign-in failed: {error}")
-
-    if "code" in query:
-        expected_state = st.session_state.get("oauth_state")
-        returned_state = query.get("state")
-        if expected_state and returned_state != expected_state:
-            raise RuntimeError("Microsoft sign-in state validation failed. Please try again.")
-
-        token_data = exchange_code_for_token(config, query["code"])
-        if "access_token" not in token_data:
-            raise RuntimeError(
-                token_data.get("error_description", "Microsoft did not return an access token.")
-            )
-
-        st.session_state["graph_access_token"] = token_data["access_token"]
-        st.session_state["graph_token_expires_at"] = now + int(token_data.get("expires_in", 3600))
-        if token_data.get("refresh_token"):
-            st.session_state["graph_refresh_token"] = token_data["refresh_token"]
-        st.session_state.pop("oauth_state", None)
-        st.query_params.clear()
-        return st.session_state["graph_access_token"]
-
-    refresh_token = st.session_state.get("graph_refresh_token")
-    if refresh_token:
-        try:
-            token_data = refresh_graph_token(config, refresh_token)
-            if "access_token" in token_data:
-                st.session_state["graph_access_token"] = token_data["access_token"]
-                st.session_state["graph_token_expires_at"] = now + int(token_data.get("expires_in", 3600))
-                if token_data.get("refresh_token"):
-                    st.session_state["graph_refresh_token"] = token_data["refresh_token"]
-                return st.session_state["graph_access_token"]
-        except requests.RequestException:
-            st.session_state.pop("graph_refresh_token", None)
-
-    return None
-
-
-def download_onedrive_workbook(config):
-    """Download the configured Excel workbook from the signed-in user's OneDrive."""
-    access_token = get_graph_access_token(config)
-    if not access_token:
-        return None, None
-
-    encoded_path = quote(ONEDRIVE_FILE_PATH, safe="/")
-    metadata_url = f"{GRAPH_BASE_URL}/me/drive/root:/{encoded_path}"
-    headers = {"Authorization": f"Bearer {access_token}"}
-
-    metadata_response = requests.get(metadata_url, headers=headers, timeout=30)
-    if metadata_response.status_code == 401:
-        st.session_state.pop("graph_access_token", None)
-        st.session_state["graph_token_expires_at"] = 0
-        access_token = get_graph_access_token(config)
-        if not access_token:
-            return None, None
-        headers = {"Authorization": f"Bearer {access_token}"}
-        metadata_response = requests.get(metadata_url, headers=headers, timeout=30)
-
-    metadata_response.raise_for_status()
-    metadata = metadata_response.json()
-
-    content_response = requests.get(
-        f"{metadata_url}:/content",
-        headers=headers,
-        timeout=60,
-    )
-    content_response.raise_for_status()
-
-    temp_path = Path(".streamlit_onedrive_workbook.xlsx")
-    temp_path.write_bytes(content_response.content)
-
-    modified = metadata.get("lastModifiedDateTime")
-    updated_time = None
-    if modified:
-        updated_time = datetime.fromisoformat(modified.replace("Z", "+00:00"))
-        updated_time = updated_time.astimezone().replace(tzinfo=None)
 
     return temp_path, updated_time
 
@@ -1178,27 +984,11 @@ cloud_updated_time = None
 onedrive_share_url = get_onedrive_share_url()
 
 if onedrive_share_url:
-    # Production mode: everyone sees the dashboard without Microsoft sign-in.
+    # Production mode: the dashboard is public and visitors do not sign in.
     try:
         workbook_path, cloud_updated_time = download_onedrive_workbook_from_share(onedrive_share_url)
     except Exception as exc:
         st.error(f"Could not load the OneDrive workbook: {exc}")
-        st.stop()
-elif azure_config is not None:
-    # Legacy authenticated mode retained as a fallback.
-    try:
-        workbook_path, cloud_updated_time = download_onedrive_workbook(azure_config)
-    except Exception as exc:
-        st.error(f"Could not load the OneDrive workbook: {exc}")
-        st.stop()
-
-    if workbook_path is None:
-        st.info("Sign in with Microsoft to load the March Madness workbook from OneDrive.")
-        st.link_button(
-            "🔐 Sign in with Microsoft",
-            build_microsoft_login_url(azure_config),
-            use_container_width=True,
-        )
         st.stop()
 else:
     with st.sidebar:
@@ -1435,6 +1225,6 @@ with tab4:
 
 st.divider()
 st.caption(
-    "The dashboard reads the Excel workbook from OneDrive. "
+    "The dashboard reads the Excel workbook from a read-only OneDrive share link. "
     "No workbook changes are made by the app."
 )
