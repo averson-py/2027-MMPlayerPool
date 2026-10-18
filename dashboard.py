@@ -336,6 +336,48 @@ def load_data(file_path, updated_time=None):
             if team_name is not None and str(team_name).strip():
                 teams_out.add(str(team_name).strip().casefold())
 
+    # Workbook last-edited timestamp is maintained by the local stats updater
+    # in GameResults!D2. This is the authoritative timestamp displayed by
+    # the dashboard; it does not depend on OneDrive's file modified time.
+    workbook_updated_time = None
+    if GAME_RESULTS_SHEET not in workbook.sheetnames:
+        raise ValueError(f"Missing required sheet: {GAME_RESULTS_SHEET}")
+
+    ws = workbook[GAME_RESULTS_SHEET]
+    raw_updated_time = ws["D2"].value
+    if raw_updated_time is None or str(raw_updated_time).strip() == "":
+        raise ValueError("GameResults!D2 is empty. The stats updater must write the workbook update date/time to cell D2.")
+
+    if isinstance(raw_updated_time, datetime):
+        workbook_updated_time = raw_updated_time
+    else:
+        raw_updated_text = str(raw_updated_time).strip()
+        try:
+            workbook_updated_time = datetime.fromisoformat(
+                raw_updated_text.replace("Z", "+00:00")
+            )
+        except ValueError:
+            for date_format in (
+                "%m/%d/%Y %I:%M %p",
+                "%m/%d/%Y %H:%M",
+                "%Y-%m-%d %H:%M:%S",
+                "%Y-%m-%d %H:%M",
+            ):
+                try:
+                    workbook_updated_time = datetime.strptime(raw_updated_text, date_format)
+                    break
+                except ValueError:
+                    continue
+
+        if workbook_updated_time is None:
+            raise ValueError(
+                "GameResults!D2 does not contain a recognizable date/time. "
+                "Expected an Excel date/time value or a standard date/time string."
+            )
+
+    if workbook_updated_time.tzinfo is not None:
+        workbook_updated_time = workbook_updated_time.astimezone().replace(tzinfo=None)
+
     # Most recent game result
     latest_game_result = {"Round": "", "Winner": "", "Loser": ""}
     if GAME_RESULTS_SHEET in workbook.sheetnames:
@@ -367,11 +409,7 @@ def load_data(file_path, updated_time=None):
         "player_names": player_names,
         "teams_out": teams_out,
         "latest_game_result": latest_game_result,
-        "updated_time": (
-            updated_time
-            if updated_time is not None
-            else datetime.fromtimestamp(Path(file_path).stat().st_mtime)
-        ),
+        "updated_time": workbook_updated_time,
     }
 
 
@@ -970,11 +1008,9 @@ def download_onedrive_workbook_from_share(share_url):
     temp_path = Path(".streamlit_onedrive_workbook.xlsx")
     temp_path.write_bytes(content)
 
-    # A public download URL does not reliably expose the workbook's
-    # last-modified timestamp, so use the current download time for the
-    # dashboard's update indicator.
-    updated_time = datetime.now().replace(microsecond=0)
-    return temp_path, updated_time
+    # The workbook itself contains the authoritative last-edited timestamp
+    # in GameResults!D2. load_data() reads that cell after the download.
+    return temp_path, None
 
 
 # ---------------------------------------------------------------------
@@ -1058,7 +1094,7 @@ else:
     st.caption("Most Recent Game Input: None recorded")
 
 st.caption(
-    "Standings Updated: "
+    "Workbook Last Edited: "
     + data["updated_time"].strftime("%m/%d/%Y %I:%M %p")
 )
 
