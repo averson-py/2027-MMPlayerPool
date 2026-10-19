@@ -1280,7 +1280,7 @@ with tab1:
                 fontSize=9,
                 fontWeight="bold",
                 baseline="middle",
-                color="#333333",
+                color="#FFFFFF",
             ).encode(
                 text="Team Owner:N",
             )
