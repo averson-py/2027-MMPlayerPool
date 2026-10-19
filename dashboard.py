@@ -1094,7 +1094,7 @@ else:
     st.caption("Most Recent Game Input: None recorded")
 
 st.caption(
-    "Workbook Last Edited: "
+    "Standings Updated: "
     + data["updated_time"].strftime("%m/%d/%Y %I:%M %p")
 )
 
