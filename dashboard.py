@@ -996,11 +996,32 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
     # unusually large tables.
     actual_height = compact_height if compact_height <= height else height
 
-    st.dataframe(
-        styled,
-        use_container_width=True,
-        hide_index=hide_index,
-        height=actual_height,
+    # Streamlit's dataframe renderer can ignore pandas Styler header CSS on
+    # some Streamlit versions. Render the styled HTML directly so the header
+    # formatting is applied reliably. The wrapper keeps wide tables scrollable
+    # on mobile while preserving the existing cell/background formatting.
+    if hide_index:
+        styled = styled.hide(axis="index")
+
+    table_html = styled.to_html()
+    st.markdown(
+        f"""
+        <div style="width:100%; overflow-x:auto;">
+            <style>
+                table.dataframe thead th {{
+                    background-color: {BLUE} !important;
+                    color: #FFFFFF !important;
+                    font-weight: 700 !important;
+                    text-align: center !important;
+                }}
+                table.dataframe tbody td {{
+                    text-align: center;
+                }}
+            </style>
+            {table_html}
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
 
