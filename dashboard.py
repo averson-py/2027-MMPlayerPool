@@ -1026,6 +1026,15 @@ st.set_page_config(
 st.markdown(
     """
     <style>
+    /* Hide Streamlit's top app toolbar/header and footer for a cleaner
+       dashboard, especially on mobile. */
+    header[data-testid="stHeader"],
+    div[data-testid="stToolbar"],
+    #MainMenu,
+    footer {
+        display: none !important;
+    }
+
     .block-container {padding-top: 1.2rem; padding-bottom: 2rem;}
     div[data-testid="stMetric"] {
         border: 1px solid #d9d9d9;
