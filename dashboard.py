@@ -1,4 +1,5 @@
 
+import colorsys
 import os
 import re
 import secrets
@@ -1246,6 +1247,51 @@ with tab1:
             owner_order = list(data["drafters"])
             rank_max = max(len(owner_order), int(chart_data["Rank"].max()))
 
+            # Generate exactly one deterministic, unique color per pool member.
+            # The palette is sized from the actual number of pool members, so
+            # it automatically expands/shrinks with the pool.
+            def make_owner_colors(owners):
+                count = len(owners)
+                if count == 0:
+                    return []
+
+                colors = []
+                used = set()
+
+                for i in range(count):
+                    # Evenly distribute hues around the color wheel.
+                    hue = i / count
+                    red, green, blue = colorsys.hsv_to_rgb(hue, 0.72, 0.82)
+                    color = "#{:02X}{:02X}{:02X}".format(
+                        round(red * 255),
+                        round(green * 255),
+                        round(blue * 255),
+                    )
+
+                    # Guard against an accidental RGB rounding collision.
+                    # This keeps the guarantee of one unique hex color per owner.
+                    if color in used:
+                        step = 1 / max(count * 1000, 1)
+                        attempt = 1
+                        while color in used:
+                            adjusted_hue = (hue + step * attempt) % 1.0
+                            red, green, blue = colorsys.hsv_to_rgb(
+                                adjusted_hue, 0.72, 0.82
+                            )
+                            color = "#{:02X}{:02X}{:02X}".format(
+                                round(red * 255),
+                                round(green * 255),
+                                round(blue * 255),
+                            )
+                            attempt += 1
+
+                    used.add(color)
+                    colors.append(color)
+
+                return colors
+
+            owner_colors = make_owner_colors(owner_order)
+
             base = alt.Chart(chart_data).encode(
                 x=alt.X(
                     "Round:N",
@@ -1258,7 +1304,13 @@ with tab1:
                     title=None,
                     axis=alt.Axis(values=list(range(1, rank_max + 1))),
                 ),
-                color=alt.Color("Team Owner:N", title=None, sort=owner_order, legend=None),
+                color=alt.Color(
+                    "Team Owner:N",
+                    title=None,
+                    sort=owner_order,
+                    legend=None,
+                    scale=alt.Scale(domain=owner_order, range=owner_colors),
+                ),
                 tooltip=["Round:N", "Team Owner:N", "Rank:Q"],
             )
 
