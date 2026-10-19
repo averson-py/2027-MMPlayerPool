@@ -1004,22 +1004,30 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
         styled = styled.hide(axis="index")
 
     table_html = styled.to_html()
+
+    # Render the table directly rather than wrapping it in a <div>.
+    # The wrapper was causing a literal closing </div> to appear underneath
+    # the table in some Streamlit deployments. The table itself is explicitly
+    # sized to the full available width.
     st.markdown(
         f"""
-        <div style="width:100%; overflow-x:auto;">
-            <style>
-                table.dataframe thead th {{
-                    background-color: {BLUE} !important;
-                    color: #FFFFFF !important;
-                    font-weight: 700 !important;
-                    text-align: center !important;
-                }}
-                table.dataframe tbody td {{
-                    text-align: center;
-                }}
-            </style>
-            {table_html}
-        </div>
+        <style>
+            table.dataframe {{
+                width: 100% !important;
+                max-width: 100% !important;
+                border-collapse: collapse;
+            }}
+            table.dataframe thead th {{
+                background-color: {BLUE} !important;
+                color: #FFFFFF !important;
+                font-weight: 700 !important;
+                text-align: center !important;
+            }}
+            table.dataframe tbody td {{
+                text-align: center;
+            }}
+        </style>
+        {table_html}
         """,
         unsafe_allow_html=True,
     )
