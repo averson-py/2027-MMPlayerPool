@@ -1130,11 +1130,6 @@ tab1, tab2, tab3, tab4 = st.tabs([
 
 with tab1:
     st.subheader("Tournament Standings")
-    if not standings.empty:
-        st.bar_chart(
-            standings.set_index("Team Owner")[["Total FPts"]],
-            height=300,
-        )
     display_df(
         standings,
         height=520,
@@ -1276,11 +1271,6 @@ with tab4:
     st.caption(
         "Projected FPts = seed average games × season-average FPts, summed by draftee."
     )
-    if not ratings.empty:
-        st.bar_chart(
-            ratings.set_index("Team Owner")[["Projected FPts"]],
-            height=300,
-        )
     display_df(
         ratings,
         height=520,
