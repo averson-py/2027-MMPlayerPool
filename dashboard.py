@@ -2,9 +2,9 @@
 import os
 import re
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-
+from urllib.parse import quote, urlencode
 
 import openpyxl
 import pandas as pd
@@ -267,9 +267,7 @@ def load_data(file_path, updated_time=None):
             "tourn_pts": sum_numeric_values(tournament_values[0:6]),
             "tourn_reb": sum_numeric_values(tournament_values[6:12]),
             "tourn_ast": sum_numeric_values(tournament_values[12:18]),
-            "tourn_pts_rounds": tournament_values[0:6],
-            "tourn_reb_rounds": tournament_values[6:12],
-            "tourn_ast_rounds": tournament_values[12:18],
+            "round_values": list(tournament_values),
         })
 
     # Player/team data
@@ -339,48 +337,6 @@ def load_data(file_path, updated_time=None):
             if team_name is not None and str(team_name).strip():
                 teams_out.add(str(team_name).strip().casefold())
 
-    # Workbook last-edited timestamp is maintained by the local stats updater
-    # in GameResults!D2. This is the authoritative timestamp displayed by
-    # the dashboard; it does not depend on OneDrive's file modified time.
-    workbook_updated_time = None
-    if GAME_RESULTS_SHEET not in workbook.sheetnames:
-        raise ValueError(f"Missing required sheet: {GAME_RESULTS_SHEET}")
-
-    ws = workbook[GAME_RESULTS_SHEET]
-    raw_updated_time = ws["D2"].value
-    if raw_updated_time is None or str(raw_updated_time).strip() == "":
-        raise ValueError("GameResults!D2 is empty. The stats updater must write the workbook update date/time to cell D2.")
-
-    if isinstance(raw_updated_time, datetime):
-        workbook_updated_time = raw_updated_time
-    else:
-        raw_updated_text = str(raw_updated_time).strip()
-        try:
-            workbook_updated_time = datetime.fromisoformat(
-                raw_updated_text.replace("Z", "+00:00")
-            )
-        except ValueError:
-            for date_format in (
-                "%m/%d/%Y %I:%M %p",
-                "%m/%d/%Y %H:%M",
-                "%Y-%m-%d %H:%M:%S",
-                "%Y-%m-%d %H:%M",
-            ):
-                try:
-                    workbook_updated_time = datetime.strptime(raw_updated_text, date_format)
-                    break
-                except ValueError:
-                    continue
-
-        if workbook_updated_time is None:
-            raise ValueError(
-                "GameResults!D2 does not contain a recognizable date/time. "
-                "Expected an Excel date/time value or a standard date/time string."
-            )
-
-    if workbook_updated_time.tzinfo is not None:
-        workbook_updated_time = workbook_updated_time.astimezone().replace(tzinfo=None)
-
     # Most recent game result
     latest_game_result = {"Round": "", "Winner": "", "Loser": ""}
     if GAME_RESULTS_SHEET in workbook.sheetnames:
@@ -412,7 +368,11 @@ def load_data(file_path, updated_time=None):
         "player_names": player_names,
         "teams_out": teams_out,
         "latest_game_result": latest_game_result,
-        "updated_time": workbook_updated_time,
+        "updated_time": (
+            updated_time
+            if updated_time is not None
+            else datetime.fromtimestamp(Path(file_path).stat().st_mtime)
+        ),
     }
 
 
@@ -453,52 +413,6 @@ def make_team_rows(data, selected_draftee):
             ),
         })
     return result
-
-
-def make_standings_round_history(data):
-    """Return cumulative fantasy points for every draftee after each tournament round."""
-    round_names = [
-        "First Round",
-        "Second Round",
-        "Sweet Sixteen",
-        "Elite Eight",
-        "Final Four",
-        "National Title",
-    ]
-
-    # Draft columns are grouped as 6 rounds of PTS, followed by 6 REB,
-    # followed by 6 AST. For each round, add PTS + REB + AST for every
-    # drafted player, then accumulate the result through the tournament.
-    round_totals = {
-        draftee: [0.0] * len(round_names)
-        for draftee in data["drafters"]
-    }
-
-    for row in data["draft_rows"]:
-        owner = row["draftee"]
-        pts = row.get("tourn_pts_rounds", [None] * 6)
-        reb = row.get("tourn_reb_rounds", [None] * 6)
-        ast = row.get("tourn_ast_rounds", [None] * 6)
-
-        for i in range(6):
-            round_total = sum_numeric_values([pts[i], reb[i], ast[i]])
-            if round_total is not None:
-                round_totals.setdefault(owner, [0.0] * len(round_names))[i] += round_total
-
-    # Convert round-by-round scoring into cumulative standings.
-    result = []
-    running_total = {owner: 0.0 for owner in round_totals}
-    for i, round_name in enumerate(round_names):
-        for owner, values in round_totals.items():
-            running_total[owner] += values[i]
-
-        cumulative = {"Round": round_name}
-        for owner in data["drafters"]:
-            value = running_total.get(owner, 0.0)
-            cumulative[owner] = int(value) if float(value).is_integer() else value
-        result.append(cumulative)
-
-    return pd.DataFrame(result)
 
 
 def make_standings(data):
@@ -552,6 +466,67 @@ def make_standings(data):
         "Active Players", "Poss. Games Remaining", "MVP", "MVP FPts"
     ]]
 
+
+
+def make_standings_progression(data):
+    """Return cumulative team FPts after each tournament round.
+
+    Each drafted player's tournament stats are stored as 6 groups of 3
+    columns in Draft: PTS, REB, AST for First Round through National Title.
+    For each round, sum those three stats for every drafted player, then
+    sum the players belonging to each pool member. Values are cumulative,
+    so a team scoring 100 in Round 1 and 50 in Round 2 appears as 100 then 150.
+    """
+    round_names = [
+        "First",
+        "Second",
+        "Sweet Sixteen",
+        "Elite Eight",
+        "Final Four",
+        "National Title",
+    ]
+
+    # Each round occupies three columns in the existing Draft sheet:
+    # PTS, REB, AST.
+    round_totals = {
+        draftee: [0.0] * len(round_names)
+        for draftee in data["drafters"]
+    }
+
+    any_score_by_round = [False] * len(round_names)
+
+    for row in data["draft_rows"]:
+        draftee = row["draftee"]
+        values = row.get("round_values", [])
+        for round_index in range(len(round_names)):
+            start = round_index * 3
+            round_values = values[start:start + 3]
+            round_score = sum_numeric_values(round_values)
+            if round_score is not None:
+                round_totals.setdefault(draftee, [0.0] * len(round_names))
+                round_totals[draftee][round_index] += float(round_score)
+                any_score_by_round[round_index] = True
+
+    # Determine the latest round that actually has data. This prevents
+    # future rounds from appearing as fake flat totals before they are played.
+    latest_round_index = -1
+    for i, has_score in enumerate(any_score_by_round):
+        if has_score:
+            latest_round_index = i
+
+    if latest_round_index < 0:
+        return pd.DataFrame()
+
+    rows = {}
+    for draftee in data["drafters"]:
+        cumulative = 0.0
+        values = []
+        for round_index in range(latest_round_index + 1):
+            cumulative += round_totals.get(draftee, [0.0] * len(round_names))[round_index]
+            values.append(int(cumulative) if cumulative.is_integer() else cumulative)
+        rows[draftee] = values
+
+    return pd.DataFrame(rows, index=round_names[:latest_round_index + 1])
 
 def make_power_rankings(data):
     positions = {
@@ -990,10 +965,10 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
 
 
 # ---------------------------------------------------------------------
-# Public OneDrive helpers
+# Microsoft OneDrive / Graph helpers
 # ---------------------------------------------------------------------
 def get_onedrive_share_url():
-    """Read the public OneDrive sharing URL from Streamlit Secrets."""
+    """Read the public read-only OneDrive sharing URL from Streamlit secrets."""
     if "onedrive" in st.secrets:
         url = st.secrets["onedrive"].get("share_url")
     else:
@@ -1003,63 +978,232 @@ def get_onedrive_share_url():
         return None
 
     url = str(url).strip()
-    return url or None
+    if not url:
+        return None
+
+    return url
 
 
 def download_onedrive_workbook_from_share(share_url):
-    """Download an anonymously shared OneDrive workbook.
-
-    The OneDrive link is an ``Anyone with the link can view`` link, so no
-    Microsoft login or Microsoft Graph token is required.  OneDrive can
-    return an HTML viewer page for a normal share URL; adding ``download=1``
-    asks OneDrive for the underlying file instead.
-    """
-    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
-
-    parts = urlsplit(share_url)
-    query = dict(parse_qsl(parts.query, keep_blank_values=True))
-    query["download"] = "1"
-    download_url = urlunsplit(
-        (parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment)
-    )
+    """Download the current Excel workbook through an anonymous OneDrive view link."""
+    # OneDrive supports adding download=1 to a view-sharing URL. The request
+    # follows OneDrive's redirects to the current file contents.
+    separator = "&" if "?" in share_url else "?"
+    download_url = f"{share_url}{separator}download=1"
 
     response = requests.get(
         download_url,
-        timeout=90,
+        headers={"User-Agent": "Mozilla/5.0"},
+        timeout=60,
         allow_redirects=True,
-        headers={
-            "User-Agent": "Mozilla/5.0 (Streamlit OneDrive workbook reader)",
-        },
     )
-
-    if not response.ok:
-        raise RuntimeError(
-            f"OneDrive returned HTTP {response.status_code} while downloading the shared workbook."
-        )
+    response.raise_for_status()
 
     content = response.content
-    content_type = response.headers.get("Content-Type", "unknown")
-
-    # .xlsx files are ZIP containers and therefore begin with PK.
+    # XLSX files are ZIP containers and normally begin with PK. This catches
+    # cases where OneDrive returns an HTML sign-in/share page instead of the file.
     if not content.startswith(b"PK"):
-        # A public link should be anonymously downloadable. If OneDrive
-        # instead returned an HTML page, surface a useful message rather
-        # than feeding the HTML to openpyxl.
-        preview = content[:200].decode("utf-8", errors="ignore").replace("\n", " ").strip()
+        content_type = response.headers.get("Content-Type", "unknown")
         raise RuntimeError(
-            "The OneDrive share link did not return the Excel workbook. "
-            "Make sure the file is shared as 'Anyone with the link can view' "
-            "and that downloads are allowed. "
-            f"Content-Type: {content_type}."
-            + (f" Response began with: {preview[:120]}" if preview else "")
+            "OneDrive returned a web page instead of the Excel workbook. "
+            "Make sure the file is shared as 'Anyone with the link can view'. "
+            f"Content-Type: {content_type}"
         )
 
     temp_path = Path(".streamlit_onedrive_workbook.xlsx")
     temp_path.write_bytes(content)
 
-    # The workbook itself contains the authoritative last-edited timestamp
-    # in GameResults!D2. load_data() reads that cell after the download.
-    return temp_path, None
+    updated_time = None
+    modified = response.headers.get("Last-Modified")
+    if modified:
+        try:
+            from email.utils import parsedate_to_datetime
+            updated_time = parsedate_to_datetime(modified).astimezone().replace(tzinfo=None)
+        except (TypeError, ValueError, OverflowError):
+            updated_time = None
+
+    return temp_path, updated_time
+
+
+def get_azure_config():
+    """Read Microsoft Entra app settings from Streamlit secrets.
+
+    Kept as a fallback for local/legacy deployments. Production can use the
+    public OneDrive share link above so dashboard visitors do not need to sign in.
+    """
+    if "azure" in st.secrets:
+        azure = st.secrets["azure"]
+        client_id = azure.get("client_id")
+        client_secret = azure.get("client_secret")
+        redirect_uri = azure.get("redirect_uri")
+    else:
+        client_id = st.secrets.get("AZURE_CLIENT_ID")
+        client_secret = st.secrets.get("AZURE_CLIENT_SECRET")
+        redirect_uri = st.secrets.get("AZURE_REDIRECT_URI")
+
+    if not client_id and not client_secret and not redirect_uri:
+        return None
+
+    missing = []
+    if not client_id:
+        missing.append("client_id")
+    if not client_secret:
+        missing.append("client_secret")
+    if not redirect_uri:
+        missing.append("redirect_uri")
+    if missing:
+        raise RuntimeError("Missing Azure secret(s): " + ", ".join(missing))
+
+    return {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "redirect_uri": redirect_uri,
+    }
+
+
+def build_microsoft_login_url(config):
+    """Build the Microsoft OAuth authorization URL."""
+    state = st.session_state.get("oauth_state")
+    if not state:
+        state = secrets.token_urlsafe(32)
+        st.session_state["oauth_state"] = state
+
+    params = {
+        "client_id": config["client_id"],
+        "response_type": "code",
+        "redirect_uri": config["redirect_uri"],
+        "response_mode": "query",
+        "scope": GRAPH_SCOPES,
+        "state": state,
+    }
+    return f"{OAUTH_AUTHORITY}/authorize?{urlencode(params)}"
+
+
+def exchange_code_for_token(config, code):
+    """Exchange an OAuth authorization code for a Graph access token."""
+    response = requests.post(
+        f"{OAUTH_AUTHORITY}/token",
+        data={
+            "client_id": config["client_id"],
+            "client_secret": config["client_secret"],
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": config["redirect_uri"],
+            "scope": GRAPH_SCOPES,
+        },
+        timeout=30,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def refresh_graph_token(config, refresh_token):
+    """Refresh an expired Graph access token."""
+    response = requests.post(
+        f"{OAUTH_AUTHORITY}/token",
+        data={
+            "client_id": config["client_id"],
+            "client_secret": config["client_secret"],
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "scope": GRAPH_SCOPES,
+        },
+        timeout=30,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def get_graph_access_token(config):
+    """Return a valid delegated Graph access token for the signed-in user."""
+    now = int(datetime.now(timezone.utc).timestamp())
+
+    access_token = st.session_state.get("graph_access_token")
+    expires_at = st.session_state.get("graph_token_expires_at", 0)
+    if access_token and now < expires_at - 60:
+        return access_token
+
+    query = dict(st.query_params)
+    if "error" in query:
+        error = query.get("error_description", query.get("error", "Unknown sign-in error"))
+        raise RuntimeError(f"Microsoft sign-in failed: {error}")
+
+    if "code" in query:
+        expected_state = st.session_state.get("oauth_state")
+        returned_state = query.get("state")
+        if expected_state and returned_state != expected_state:
+            raise RuntimeError("Microsoft sign-in state validation failed. Please try again.")
+
+        token_data = exchange_code_for_token(config, query["code"])
+        if "access_token" not in token_data:
+            raise RuntimeError(
+                token_data.get("error_description", "Microsoft did not return an access token.")
+            )
+
+        st.session_state["graph_access_token"] = token_data["access_token"]
+        st.session_state["graph_token_expires_at"] = now + int(token_data.get("expires_in", 3600))
+        if token_data.get("refresh_token"):
+            st.session_state["graph_refresh_token"] = token_data["refresh_token"]
+        st.session_state.pop("oauth_state", None)
+        st.query_params.clear()
+        return st.session_state["graph_access_token"]
+
+    refresh_token = st.session_state.get("graph_refresh_token")
+    if refresh_token:
+        try:
+            token_data = refresh_graph_token(config, refresh_token)
+            if "access_token" in token_data:
+                st.session_state["graph_access_token"] = token_data["access_token"]
+                st.session_state["graph_token_expires_at"] = now + int(token_data.get("expires_in", 3600))
+                if token_data.get("refresh_token"):
+                    st.session_state["graph_refresh_token"] = token_data["refresh_token"]
+                return st.session_state["graph_access_token"]
+        except requests.RequestException:
+            st.session_state.pop("graph_refresh_token", None)
+
+    return None
+
+
+def download_onedrive_workbook(config):
+    """Download the configured Excel workbook from the signed-in user's OneDrive."""
+    access_token = get_graph_access_token(config)
+    if not access_token:
+        return None, None
+
+    encoded_path = quote(ONEDRIVE_FILE_PATH, safe="/")
+    metadata_url = f"{GRAPH_BASE_URL}/me/drive/root:/{encoded_path}"
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    metadata_response = requests.get(metadata_url, headers=headers, timeout=30)
+    if metadata_response.status_code == 401:
+        st.session_state.pop("graph_access_token", None)
+        st.session_state["graph_token_expires_at"] = 0
+        access_token = get_graph_access_token(config)
+        if not access_token:
+            return None, None
+        headers = {"Authorization": f"Bearer {access_token}"}
+        metadata_response = requests.get(metadata_url, headers=headers, timeout=30)
+
+    metadata_response.raise_for_status()
+    metadata = metadata_response.json()
+
+    content_response = requests.get(
+        f"{metadata_url}:/content",
+        headers=headers,
+        timeout=60,
+    )
+    content_response.raise_for_status()
+
+    temp_path = Path(".streamlit_onedrive_workbook.xlsx")
+    temp_path.write_bytes(content_response.content)
+
+    modified = metadata.get("lastModifiedDateTime")
+    updated_time = None
+    if modified:
+        updated_time = datetime.fromisoformat(modified.replace("Z", "+00:00"))
+        updated_time = updated_time.astimezone().replace(tzinfo=None)
+
+    return temp_path, updated_time
 
 
 # ---------------------------------------------------------------------
@@ -1075,15 +1219,6 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    /* Hide Streamlit's top app toolbar/header and footer for a cleaner
-       dashboard, especially on mobile. */
-    header[data-testid="stHeader"],
-    div[data-testid="stToolbar"],
-    #MainMenu,
-    footer {
-        display: none !important;
-    }
-
     .block-container {padding-top: 1.2rem; padding-bottom: 2rem;}
     div[data-testid="stMetric"] {
         border: 1px solid #d9d9d9;
@@ -1097,22 +1232,36 @@ st.markdown(
 
 st.title("🏀 2027 March Madness Player Pool Dashboard")
 
-# Production mode: read the workbook directly from the public OneDrive
-# sharing link. Visitors do NOT need to sign in with Microsoft.
-#
-# If the share URL is not configured, retain the local uploader flow so the
-# app remains convenient to run during development.
+# In production, read the workbook directly from the user's OneDrive.
+# Local development still supports the existing workbook/file-uploader flow.
 workbook_path = Path(DEFAULT_WORKBOOK)
 cloud_updated_time = None
+
 onedrive_share_url = get_onedrive_share_url()
+azure_config = get_azure_config()
 
 if onedrive_share_url:
+    # Production mode: everyone sees the dashboard without Microsoft sign-in.
     try:
-        workbook_path, cloud_updated_time = download_onedrive_workbook_from_share(
-            onedrive_share_url
-        )
+        workbook_path, cloud_updated_time = download_onedrive_workbook_from_share(onedrive_share_url)
     except Exception as exc:
         st.error(f"Could not load the OneDrive workbook: {exc}")
+        st.stop()
+elif azure_config is not None:
+    # Legacy authenticated mode retained as a fallback.
+    try:
+        workbook_path, cloud_updated_time = download_onedrive_workbook(azure_config)
+    except Exception as exc:
+        st.error(f"Could not load the OneDrive workbook: {exc}")
+        st.stop()
+
+    if workbook_path is None:
+        st.info("Sign in with Microsoft to load the March Madness workbook from OneDrive.")
+        st.link_button(
+            "🔐 Sign in with Microsoft",
+            build_microsoft_login_url(azure_config),
+            use_container_width=True,
+        )
         st.stop()
 else:
     with st.sidebar:
@@ -1179,6 +1328,14 @@ tab1, tab2, tab3, tab4 = st.tabs([
 
 with tab1:
     st.subheader("Tournament Standings")
+    st.caption("Cumulative pool points after each round")
+    progression = make_standings_progression(data)
+    if not progression.empty:
+        st.line_chart(
+            progression,
+            height=420,
+            use_container_width=True,
+        )
     display_df(
         standings,
         height=520,
@@ -1207,19 +1364,6 @@ with tab1:
         },
         reverse_columns={"Draft Position": True},
     )
-
-    st.subheader("Standings Progression")
-    st.caption(
-        "Cumulative FPts after each tournament round. Each draftee's score "
-        "is the sum of PTS + REB + AST from every player on their team."
-    )
-    standings_history = make_standings_round_history(data)
-    if not standings_history.empty:
-        st.line_chart(
-            standings_history.set_index("Round"),
-            height=450,
-            use_container_width=True,
-        )
 
     st.subheader("Power Rankings")
     display_df(
