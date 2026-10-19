@@ -267,6 +267,9 @@ def load_data(file_path, updated_time=None):
             "tourn_pts": sum_numeric_values(tournament_values[0:6]),
             "tourn_reb": sum_numeric_values(tournament_values[6:12]),
             "tourn_ast": sum_numeric_values(tournament_values[12:18]),
+            "tourn_pts_rounds": tournament_values[0:6],
+            "tourn_reb_rounds": tournament_values[6:12],
+            "tourn_ast_rounds": tournament_values[12:18],
         })
 
     # Player/team data
@@ -450,6 +453,52 @@ def make_team_rows(data, selected_draftee):
             ),
         })
     return result
+
+
+def make_standings_round_history(data):
+    """Return cumulative fantasy points for every draftee after each tournament round."""
+    round_names = [
+        "First Round",
+        "Second Round",
+        "Sweet Sixteen",
+        "Elite Eight",
+        "Final Four",
+        "National Title",
+    ]
+
+    # Draft columns are grouped as 6 rounds of PTS, followed by 6 REB,
+    # followed by 6 AST. For each round, add PTS + REB + AST for every
+    # drafted player, then accumulate the result through the tournament.
+    round_totals = {
+        draftee: [0.0] * len(round_names)
+        for draftee in data["drafters"]
+    }
+
+    for row in data["draft_rows"]:
+        owner = row["draftee"]
+        pts = row.get("tourn_pts_rounds", [None] * 6)
+        reb = row.get("tourn_reb_rounds", [None] * 6)
+        ast = row.get("tourn_ast_rounds", [None] * 6)
+
+        for i in range(6):
+            round_total = sum_numeric_values([pts[i], reb[i], ast[i]])
+            if round_total is not None:
+                round_totals.setdefault(owner, [0.0] * len(round_names))[i] += round_total
+
+    # Convert round-by-round scoring into cumulative standings.
+    result = []
+    running_total = {owner: 0.0 for owner in round_totals}
+    for i, round_name in enumerate(round_names):
+        for owner, values in round_totals.items():
+            running_total[owner] += values[i]
+
+        cumulative = {"Round": round_name}
+        for owner in data["drafters"]:
+            value = running_total.get(owner, 0.0)
+            cumulative[owner] = int(value) if float(value).is_integer() else value
+        result.append(cumulative)
+
+    return pd.DataFrame(result)
 
 
 def make_standings(data):
@@ -1158,6 +1207,19 @@ with tab1:
         },
         reverse_columns={"Draft Position": True},
     )
+
+    st.subheader("Standings Progression")
+    st.caption(
+        "Cumulative FPts after each tournament round. Each draftee's score "
+        "is the sum of PTS + REB + AST from every player on their team."
+    )
+    standings_history = make_standings_round_history(data)
+    if not standings_history.empty:
+        st.line_chart(
+            standings_history.set_index("Round"),
+            height=450,
+            use_container_width=True,
+        )
 
     st.subheader("Power Rankings")
     display_df(
