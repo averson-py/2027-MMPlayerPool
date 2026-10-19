@@ -1239,20 +1239,53 @@ with tab1:
         )
         try:
             import altair as alt
-            chart = (
-                alt.Chart(chart_data)
-                .mark_line(point=True)
-                .encode(
-                    x=alt.X("Round:N", sort=[
-                        "First Round", "Second Round", "Sweet Sixteen",
-                        "Elite Eight", "Final Four", "National Title"
-                    ], title=None),
-                    y=alt.Y("Rank:Q", scale=alt.Scale(reverse=True), title="Rank"),
-                    color=alt.Color("Team Owner:N", title=None),
-                    tooltip=["Round:N", "Team Owner:N", "Rank:Q"],
-                )
-                .properties(height=450)
+            round_order = [
+                "First Round", "Second Round", "Sweet Sixteen",
+                "Elite Eight", "Final Four", "National Title"
+            ]
+            owner_order = list(data["drafters"])
+            rank_max = max(len(owner_order), int(chart_data["Rank"].max()))
+
+            base = alt.Chart(chart_data).encode(
+                x=alt.X(
+                    "Round:N",
+                    sort=round_order,
+                    title=None,
+                ),
+                y=alt.Y(
+                    "Rank:Q",
+                    scale=alt.Scale(domain=[1, rank_max], reverse=True),
+                    title="Rank",
+                    axis=alt.Axis(values=list(range(1, rank_max + 1))),
+                ),
+                color=alt.Color("Team Owner:N", title=None, sort=owner_order),
+                tooltip=["Round:N", "Team Owner:N", "Rank:Q"],
             )
+
+            lines = base.mark_line()
+            points = base.mark_point(filled=True, size=55)
+
+            # Put a small rounded label behind every point so the owner's name
+            # is visible without having to hover. The labels use the same
+            # series color as the corresponding line.
+            label_bg = base.mark_rect(
+                width=62,
+                height=18,
+                cornerRadius=5,
+                opacity=0.92,
+                color="white",
+                strokeWidth=0.5,
+            )
+            labels = base.mark_text(
+                fontSize=9,
+                fontWeight="bold",
+                baseline="middle",
+                color="#333333",
+            ).encode(
+                text="Team Owner:N",
+            )
+
+            chart = alt.layer(lines, points, label_bg, labels).properties(height=500)
             st.altair_chart(chart, use_container_width=True)
         except ImportError:
             # Fallback if Altair is unavailable in the deployment environment.
