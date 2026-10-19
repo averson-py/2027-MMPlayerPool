@@ -1255,7 +1255,7 @@ with tab1:
                 y=alt.Y(
                     "Rank:Q",
                     scale=alt.Scale(domain=[1, rank_max], reverse=True),
-                    title="Rank",
+                    title=None,
                     axis=alt.Axis(values=list(range(1, rank_max + 1))),
                 ),
                 color=alt.Color("Team Owner:N", title=None, sort=owner_order, legend=None),
