@@ -1216,7 +1216,7 @@ with tab1:
     )
 
     st.subheader("Standings Progression")
-    st.caption("League ranking after each tournament round. Rank 1 is the best.")
+    st.caption("League ranking after each tournament round.")
     standings_history = make_standings_round_history(data)
     if not standings_history.empty:
         # Plot ranking rather than points so the chart is much easier to read.
@@ -1322,7 +1322,7 @@ with tab1:
             # the same series color as the corresponding line, while the
             # owner name is always white and bold for maximum contrast.
             label_bg = base.mark_rect(
-                width=62,
+                width=54,
                 height=18,
                 cornerRadius=5,
                 opacity=0.92,
