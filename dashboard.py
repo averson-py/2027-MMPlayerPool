@@ -1215,6 +1215,21 @@ with tab1:
     )
     standings_history = make_standings_round_history(data)
     if not standings_history.empty:
+        round_order = [
+            "First Round",
+            "Second Round",
+            "Sweet Sixteen",
+            "Elite Eight",
+            "Final Four",
+            "National Title",
+        ]
+        standings_history["Round"] = pd.Categorical(
+            standings_history["Round"],
+            categories=round_order,
+            ordered=True,
+        )
+        standings_history = standings_history.sort_values("Round")
+
         st.line_chart(
             standings_history.set_index("Round"),
             height=450,
