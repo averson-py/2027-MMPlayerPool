@@ -456,7 +456,7 @@ def make_team_rows(data, selected_draftee):
 
 
 def make_standings_round_history(data):
-    """Return cumulative fantasy points for every draftee after each tournament round."""
+    """Return each draftee's ranking after each tournament round."""
     round_names = [
         "First Round",
         "Second Round",
@@ -485,18 +485,24 @@ def make_standings_round_history(data):
             if round_total is not None:
                 round_totals.setdefault(owner, [0.0] * len(round_names))[i] += round_total
 
-    # Convert round-by-round scoring into cumulative standings.
+    # Convert round-by-round scoring into cumulative totals, then rank
+    # everyone after each round. Rank 1 is the best (highest) total.
     result = []
     running_total = {owner: 0.0 for owner in round_totals}
     for i, round_name in enumerate(round_names):
         for owner, values in round_totals.items():
             running_total[owner] += values[i]
 
-        cumulative = {"Round": round_name}
+        ordered = sorted(
+            data["drafters"],
+            key=lambda owner: (-running_total.get(owner, 0.0), owner.casefold()),
+        )
+        rankings = {owner: rank for rank, owner in enumerate(ordered, start=1)}
+
+        row = {"Round": round_name}
         for owner in data["drafters"]:
-            value = running_total.get(owner, 0.0)
-            cumulative[owner] = int(value) if float(value).is_integer() else value
-        result.append(cumulative)
+            row[owner] = rankings.get(owner)
+        result.append(row)
 
     return pd.DataFrame(result)
 
@@ -1209,32 +1215,52 @@ with tab1:
     )
 
     st.subheader("Standings Progression")
-    st.caption(
-        "Cumulative FPts after each tournament round. Each draftee's score "
-        "is the sum of PTS + REB + AST from every player on their team."
-    )
+    st.caption("League ranking after each tournament round. Rank 1 is the best.")
     standings_history = make_standings_round_history(data)
     if not standings_history.empty:
-        round_order = [
-            "First Round",
-            "Second Round",
-            "Sweet Sixteen",
-            "Elite Eight",
-            "Final Four",
-            "National Title",
-        ]
-        standings_history["Round"] = pd.Categorical(
-            standings_history["Round"],
-            categories=round_order,
+        # Plot ranking rather than points so the chart is much easier to read.
+        # Reverse the Y axis so Rank 1 appears at the top of the chart.
+        chart_data = standings_history.melt(
+            id_vars="Round",
+            var_name="Team Owner",
+            value_name="Rank",
+        )
+        chart_data["Round"] = pd.Categorical(
+            chart_data["Round"],
+            categories=[
+                "First Round",
+                "Second Round",
+                "Sweet Sixteen",
+                "Elite Eight",
+                "Final Four",
+                "National Title",
+            ],
             ordered=True,
         )
-        standings_history = standings_history.sort_values("Round")
-
-        st.line_chart(
-            standings_history.set_index("Round"),
-            height=450,
-            use_container_width=True,
-        )
+        try:
+            import altair as alt
+            chart = (
+                alt.Chart(chart_data)
+                .mark_line(point=True)
+                .encode(
+                    x=alt.X("Round:N", sort=[
+                        "First Round", "Second Round", "Sweet Sixteen",
+                        "Elite Eight", "Final Four", "National Title"
+                    ], title=None),
+                    y=alt.Y("Rank:Q", scale=alt.Scale(reverse=True), title="Rank"),
+                    color=alt.Color("Team Owner:N", title=None),
+                    tooltip=["Round:N", "Team Owner:N", "Rank:Q"],
+                )
+                .properties(height=450)
+            )
+            st.altair_chart(chart, use_container_width=True)
+        except ImportError:
+            # Fallback if Altair is unavailable in the deployment environment.
+            st.line_chart(
+                standings_history.set_index("Round"),
+                height=450,
+                use_container_width=True,
+            )
 
     st.subheader("Power Rankings")
     display_df(
