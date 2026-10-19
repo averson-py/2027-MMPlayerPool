@@ -1280,9 +1280,9 @@ with tab1:
                 fontSize=9,
                 fontWeight="bold",
                 baseline="middle",
-                color="#FFFFFF",
             ).encode(
                 text="Team Owner:N",
+                color=alt.value("#FFFFFF"),
             )
 
             chart = alt.layer(lines, points, label_bg, labels).properties(height=500)
