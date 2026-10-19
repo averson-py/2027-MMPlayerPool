@@ -1,4 +1,5 @@
 
+import colorsys
 import os
 import re
 import secrets
@@ -1246,6 +1247,25 @@ with tab1:
             owner_order = list(data["drafters"])
             rank_max = max(len(owner_order), int(chart_data["Rank"].max()))
 
+            # Generate exactly one distinct, deterministic color per pool member.
+            # This is sized from the actual number of drafters, so it continues
+            # to work if the pool grows beyond 12 people (or shrinks).
+            def make_owner_colors(owners):
+                count = len(owners)
+                if count == 0:
+                    return []
+                colors = []
+                for i in range(count):
+                    hue = i / count
+                    red, green, blue = colorsys.hsv_to_rgb(hue, 0.72, 0.82)
+                    colors.append(
+                        "#%02X%02X%02X"
+                        % (round(red * 255), round(green * 255), round(blue * 255))
+                    )
+                return colors
+
+            owner_colors = make_owner_colors(owner_order)
+
             base = alt.Chart(chart_data).encode(
                 x=alt.X(
                     "Round:N",
@@ -1258,7 +1278,12 @@ with tab1:
                     title="Rank",
                     axis=alt.Axis(values=list(range(1, rank_max + 1))),
                 ),
-                color=alt.Color("Team Owner:N", title=None, sort=owner_order),
+                color=alt.Color(
+                    "Team Owner:N",
+                    title=None,
+                    sort=owner_order,
+                    scale=alt.Scale(domain=owner_order, range=owner_colors),
+                ),
                 tooltip=["Round:N", "Team Owner:N", "Rank:Q"],
             )
 
