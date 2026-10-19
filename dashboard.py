@@ -1266,15 +1266,15 @@ with tab1:
             points = base.mark_point(filled=True, size=55)
 
             # Put a small rounded label behind every point so the owner's name
-            # is visible without having to hover. The labels use the same
-            # series color as the corresponding line.
+            # is visible without having to hover. The label background uses
+            # the same series color as the corresponding line, while the
+            # owner name is always white and bold for maximum contrast.
             label_bg = base.mark_rect(
                 width=62,
                 height=18,
                 cornerRadius=5,
                 opacity=0.92,
-                color="white",
-                strokeWidth=0.5,
+                strokeWidth=0,
             )
             labels = base.mark_text(
                 fontSize=9,
