@@ -930,15 +930,7 @@ def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, p
     # existing conditional formatting/background colors.
     styled = styled.set_properties(**{"text-align": "center"})
     styled = styled.set_table_styles([
-        {
-            "selector": "th",
-            "props": [
-                ("text-align", "center"),
-                ("background-color", BLUE),
-                ("color", "#FFFFFF"),
-                ("font-weight", "700"),
-            ],
-        }
+        {"selector": "th", "props": [("text-align", "center")]}
     ])
 
     # Preserve the original green/blue/yellow/purple column identity.
@@ -996,40 +988,11 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
     # unusually large tables.
     actual_height = compact_height if compact_height <= height else height
 
-    # Streamlit's dataframe renderer can ignore pandas Styler header CSS on
-    # some Streamlit versions. Render the styled HTML directly so the header
-    # formatting is applied reliably. The wrapper keeps wide tables scrollable
-    # on mobile while preserving the existing cell/background formatting.
-    if hide_index:
-        styled = styled.hide(axis="index")
-
-    table_html = styled.to_html()
-
-    # Render the table directly rather than wrapping it in a <div>.
-    # The wrapper was causing a literal closing </div> to appear underneath
-    # the table in some Streamlit deployments. The table itself is explicitly
-    # sized to the full available width.
-    st.markdown(
-        f"""
-        <style>
-            table.dataframe {{
-                width: 100% !important;
-                max-width: 100% !important;
-                border-collapse: collapse;
-            }}
-            table.dataframe thead th {{
-                background-color: {BLUE} !important;
-                color: #FFFFFF !important;
-                font-weight: 700 !important;
-                text-align: center !important;
-            }}
-            table.dataframe tbody td {{
-                text-align: center;
-            }}
-        </style>
-        {table_html}
-        """,
-        unsafe_allow_html=True,
+    st.dataframe(
+        styled,
+        use_container_width=True,
+        hide_index=hide_index,
+        height=actual_height,
     )
 
 
