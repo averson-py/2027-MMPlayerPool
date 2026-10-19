@@ -930,7 +930,15 @@ def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, p
     # existing conditional formatting/background colors.
     styled = styled.set_properties(**{"text-align": "center"})
     styled = styled.set_table_styles([
-        {"selector": "th", "props": [("text-align", "center")]}
+        {
+            "selector": "th",
+            "props": [
+                ("text-align", "center"),
+                ("background-color", BLUE),
+                ("color", "#FFFFFF"),
+                ("font-weight", "700"),
+            ],
+        }
     ])
 
     # Preserve the original green/blue/yellow/purple column identity.
