@@ -644,7 +644,7 @@ def make_power_rankings(data):
 
         projected = None
         if t["Total FPts"] is not None or estimated is not None:
-            projected = round((t["Total FPts"] or 0) + (estimated or 0))
+            projected = round((t["Total FPts"] or 0) + (estimated or 0), 1)
 
         result.append({**t, "FPts per game": round(fpg, 1) if fpg is not None else None, "Projected Score": projected})
 
@@ -722,7 +722,7 @@ def make_performers(data, positive=True):
         result.append({
             "Player Name": row["player_name"],
             "Team": team,
-            "Avg FPts/Game": round(tournament_avg, 1),
+            "Avg. FPts/Tourn. Game": round(tournament_avg, 1),
             "Delta From Average": round(delta, 1),
             "Team Owner": row["draftee"],
             "Games Played": games,
@@ -743,7 +743,7 @@ def make_performers(data, positive=True):
         row["Rank"] = i
 
     return pd.DataFrame(result)[[
-        "Rank", "Player Name", "Team", "Avg FPts/Game",
+        "Rank", "Player Name", "Team", "Avg. FPts/Tourn. Game",
         "Delta From Average", "Team Owner", "Games Played",
         "Poss. Games Remaining", "_team_out",
     ]], result
@@ -812,7 +812,7 @@ def make_draft_ratings(data):
 # ---------------------------------------------------------------------
 # Streamlit presentation helpers
 # ---------------------------------------------------------------------
-def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, pink_last=False, rank_rwg=False, performance_gradient=None, column_colors=None, one_decimal_columns=None):
+def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, pink_last=False, rank_rwg=False, performance_gradient=None, column_colors=None):
     scale_columns = scale_columns or {}
     reverse_columns = reverse_columns or {}
 
@@ -940,14 +940,14 @@ def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, p
     # expose pandas' trailing floating-point zeros.
     one_decimal_columns = {
         "FPts per game",
-        "Avg FPts/Game",
+        "Avg. FPts/Tourn. Game",
         "Delta From Average",
         "Delta From Season Avg.",
-        "Avg FPts/Game",
         "Projected FPts",
+        "Projected Score",
+        "Total FPts",
+        "MVP FPts",
     }
-    if one_decimal_columns:
-        one_decimal_columns = one_decimal_columns | set(one_decimal_columns)
     format_map = {}
     for col in df.columns:
         if col in one_decimal_columns:
@@ -988,7 +988,7 @@ def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, p
     return styled
 
 
-def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None, column_colors=None, one_decimal_columns=None):
+def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None, column_colors=None):
     if df.empty:
         st.info("No data available yet.")
         return
@@ -1001,7 +1001,6 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
         rank_rwg=rank_rwg,
         performance_gradient=performance_gradient,
         column_colors=column_colors,
-        one_decimal_columns=one_decimal_columns,
     )
 
     # Size the table to its actual row count so short tables do not
@@ -1405,8 +1404,8 @@ with tab2:
     # This avoids Streamlit/pandas rendering the underlying floats with
     # six decimal places on some pandas/Streamlit versions.
     for display_df_ in (over_display, under_display):
-        if "Avg FPts/Game" in display_df_.columns:
-            display_df_["Avg FPts/Game"] = display_df_["Avg FPts/Game"].apply(
+        if "Avg. FPts/Tourn. Game" in display_df_.columns:
+            display_df_["Avg. FPts/Tourn. Game"] = display_df_["Avg. FPts/Tourn. Game"].apply(
                 lambda x: f"{float(x):.1f}" if pd.notna(x) else ""
             )
 
@@ -1505,7 +1504,6 @@ with tab3:
                     "Tourn. REB": LIGHT_GREEN,
                     "Tourn. AST": LIGHT_GREEN,
                 },
-                one_decimal_columns={"FPts", "PPG", "RPG", "APG", "Tourn. FPts"},
             )
 
 with tab4:
