@@ -1485,11 +1485,13 @@ with tab3:
         team_rows = make_team_rows(data, selected_draftee)
         team_df = pd.DataFrame(team_rows)
 
-        # Team View only: display Tournament FPts to exactly one decimal place.
-        if "Tourn. FPts" in team_df.columns:
-            team_df["Tourn. FPts"] = team_df["Tourn. FPts"].apply(
-                lambda value: "" if pd.isna(value) else f"{float(value):.1f}"
-            )
+        # Team View only: display FPts, PPG, RPG, APG, and Tournament FPts
+        # to exactly one decimal place.
+        for column in ["FPts", "PPG", "RPG", "APG", "Tourn. FPts"]:
+            if column in team_df.columns:
+                team_df[column] = team_df[column].apply(
+                    lambda value: "" if pd.isna(value) else f"{float(value):.1f}"
+                )
 
         if team_df.empty:
             st.info("No drafted players found for this team owner.")
