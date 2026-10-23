@@ -1456,6 +1456,11 @@ with tab2:
                     and str(stats.get("Team")).strip().casefold() in data["teams_out"]
                 ),
             }])
+            for column in ["FPts", "PPG", "RPG", "APG", "Tourn. FPts"]:
+                if column in result.columns:
+                    result[column] = result[column].apply(
+                        lambda value: "" if pd.isna(value) else f"{float(value):.1f}"
+                    )
             st.caption(f"Showing Player Finder statistics for {selected_player}.")
             display_df(
                 result,
