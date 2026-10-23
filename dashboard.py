@@ -28,7 +28,6 @@ DRAFT_SHEET = "Draft"
 TEAM_DATA_SHEET = "TeamData"
 TEAMS_OUT_SHEET = "TeamsOut"
 GAME_RESULTS_SHEET = "GameResults"
-CONFIG_SHEET = "Config"
 
 DRAFTER_START_ROW = 2
 
@@ -69,28 +68,6 @@ def sum_numeric_values(values):
 
 def sum_existing_values(values):
     return sum_numeric_values(values)
-
-
-def weighted_fantasy_points(points, rebounds, assists, weights):
-    """Calculate fantasy points using the scoring weights from Config!A2:C2."""
-    values = [points, rebounds, assists]
-    numeric = []
-    for value in values:
-        try:
-            numeric.append(float(value))
-        except (TypeError, ValueError):
-            numeric.append(None)
-
-    weighted = []
-    for value, weight in zip(numeric, weights):
-        if value is not None:
-            weighted.append(value * weight)
-
-    if not weighted:
-        return None
-
-    total = sum(weighted)
-    return int(total) if total.is_integer() else total
 
 
 def format_stat(value):
@@ -244,22 +221,10 @@ def load_data(file_path, updated_time=None):
         keep_links=False,
     )
 
-    required_sheets = [DRAFT_ORDER_SHEET, DRAFT_SHEET, TEAM_DATA_SHEET, CONFIG_SHEET]
+    required_sheets = [DRAFT_ORDER_SHEET, DRAFT_SHEET, TEAM_DATA_SHEET]
     missing = [s for s in required_sheets if s not in workbook.sheetnames]
     if missing:
         raise ValueError("Missing required sheet(s): " + ", ".join(missing))
-
-    # Fantasy scoring weights. Config!A2:C2 correspond to PTS, REB, AST.
-    config_ws = workbook[CONFIG_SHEET]
-    fantasy_weights = []
-    for cell in ("A2", "B2", "C2"):
-        value = config_ws[cell].value
-        try:
-            fantasy_weights.append(float(value))
-        except (TypeError, ValueError):
-            raise ValueError(
-                f"Config!{cell} must contain a numeric fantasy-point value."
-            )
 
     # Draft order
     drafters = []
@@ -348,10 +313,10 @@ def load_data(file_path, updated_time=None):
         ppg = get_value("PPG")
         rpg = get_value("RPG")
         apg = get_value("APG")
-        # Season FPts are calculated from the season PPG/RPG/APG values
-        # using the configurable PTS/REB/AST weights in Config!A2:C2.
-        total_fantasy_points = weighted_fantasy_points(
-            ppg, rpg, apg, fantasy_weights
+        total_fantasy_points = (
+            get_value("Tot. FPts")
+            if "Tot. FPts" in headers
+            else sum_numeric_values([ppg, rpg, apg])
         )
 
         player_stats[player_key] = {
@@ -442,7 +407,6 @@ def load_data(file_path, updated_time=None):
                     break
 
     return {
-        "fantasy_weights": fantasy_weights,
         "drafters": drafters,
         "draft_rows": draft_rows,
         "player_stats": player_stats,
@@ -453,13 +417,12 @@ def load_data(file_path, updated_time=None):
     }
 
 
-def player_total(row, fantasy_weights):
-    return weighted_fantasy_points(
+def player_total(row):
+    return sum_existing_values([
         row.get("tourn_pts"),
         row.get("tourn_reb"),
         row.get("tourn_ast"),
-        fantasy_weights,
-    )
+    ])
 
 
 def make_team_rows(data, selected_draftee):
@@ -481,7 +444,7 @@ def make_team_rows(data, selected_draftee):
             "PPG": stats.get("PPG"),
             "RPG": stats.get("RPG"),
             "APG": stats.get("APG"),
-            "Tourn. FPts": player_total(row, data["fantasy_weights"]),
+            "Tourn. FPts": player_total(row),
             "Tourn. PTS": row.get("tourn_pts"),
             "Tourn. REB": row.get("tourn_reb"),
             "Tourn. AST": row.get("tourn_ast"),
@@ -519,9 +482,7 @@ def make_standings_round_history(data):
         ast = row.get("tourn_ast_rounds", [None] * 6)
 
         for i in range(6):
-            round_total = weighted_fantasy_points(
-                pts[i], reb[i], ast[i], data["fantasy_weights"]
-            )
+            round_total = sum_numeric_values([pts[i], reb[i], ast[i]])
             if round_total is not None:
                 round_totals.setdefault(owner, [0.0] * len(round_names))[i] += round_total
 
@@ -569,7 +530,7 @@ def make_standings(data):
 
         t = totals[key]
         t["Total FPts"] = sum_existing_values([
-            t["Total FPts"], player_total(row, data["fantasy_weights"])
+            t["Total FPts"], player_total(row)
         ])
 
         stats = data["player_stats"].get(row["player_name"].casefold(), {})
@@ -579,10 +540,10 @@ def make_standings(data):
 
         t["Poss. Games Remaining"] += row.get("possible_games_remaining") or 0
 
-        pf = player_total(row, data["fantasy_weights"])
+        pf = player_total(row)
         if pf is not None and (t["MVP FPts"] is None or pf > t["MVP FPts"]):
             t["MVP"] = row["player_name"]
-            t["MVP FPts"] = pf
+            t["MVP FPts"] = round(float(pf), 1)
 
     standings = list(totals.values())
     standings.sort(key=lambda x: (
@@ -617,7 +578,7 @@ def make_power_rankings(data):
             "Poss. Games Remaining": 0,
         })
         t = totals[key]
-        t["Total FPts"] = sum_existing_values([t["Total FPts"], player_total(row, data["fantasy_weights"])])
+        t["Total FPts"] = sum_existing_values([t["Total FPts"], player_total(row)])
 
         stats = data["player_stats"].get(row["player_name"].casefold(), {})
         team = stats.get("Team")
@@ -644,7 +605,7 @@ def make_power_rankings(data):
 
         projected = None
         if t["Total FPts"] is not None or estimated is not None:
-            projected = round((t["Total FPts"] or 0) + (estimated or 0), 1)
+            projected = round((t["Total FPts"] or 0) + (estimated or 0))
 
         result.append({**t, "FPts per game": round(fpg, 1) if fpg is not None else None, "Projected Score": projected})
 
@@ -671,7 +632,7 @@ def make_player_rankings(data):
         result.append({
             "Player Name": row["player_name"],
             "Team": team,
-            "Total FPts": player_total(row, data["fantasy_weights"]),
+            "Total FPts": player_total(row),
             "Team Owner": row["draftee"],
             "Games Played": row.get("games_played", 0),
             "Poss. Games Remaining": row.get("possible_games_remaining", 0),
@@ -700,7 +661,7 @@ def make_player_rankings(data):
 def make_performers(data, positive=True):
     result = []
     for row in data["draft_rows"]:
-        total = player_total(row, data["fantasy_weights"])
+        total = player_total(row)
         games = row.get("games_played", 0)
         if games <= 0 or total is None:
             continue
@@ -812,7 +773,7 @@ def make_draft_ratings(data):
 # ---------------------------------------------------------------------
 # Streamlit presentation helpers
 # ---------------------------------------------------------------------
-def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, pink_last=False, rank_rwg=False, performance_gradient=None, column_colors=None):
+def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, pink_last=False, rank_rwg=False, performance_gradient=None):
     scale_columns = scale_columns or {}
     reverse_columns = reverse_columns or {}
 
@@ -943,10 +904,8 @@ def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, p
         "Avg. FPts/Tourn. Game",
         "Delta From Average",
         "Delta From Season Avg.",
+        "Avg. FPts/Tourn. Game",
         "Projected FPts",
-        "Projected Score",
-        "Total FPts",
-        "MVP FPts",
     }
     format_map = {}
     for col in df.columns:
@@ -974,21 +933,37 @@ def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, p
         {"selector": "th", "props": [("text-align", "center")]}
     ])
 
-    # Optional column-specific background colors. These are applied after the
-    # row/scale styling so the requested Team View stat groups are actually
-    # visible, while leaving the existing scale styling intact elsewhere.
-    if column_colors:
-        for col, bg in column_colors.items():
-            if col in df.columns:
-                styled = styled.set_properties(
-                    subset=[col],
-                    **{"background-color": bg}
-                )
+    # Preserve the original green/blue/yellow/purple column identity.
+    base_colors = {
+        "Total FPts": LIGHT_GREEN,
+        "Projected Score": LIGHT_PURPLE,
+        "Projected FPts": LIGHT_PURPLE,
+        "Active Players": LIGHT_BLUE,
+        "Poss. Games Remaining": LIGHT_YELLOW,
+        "MVP": LIGHT_RED,
+        "MVP FPts": LIGHT_PURPLE,
+        "FPts per game": LIGHT_RED,
+        "Games Played": LIGHT_ORANGE,
+        "Regions": LIGHT_GREEN,
+        "FPts": LIGHT_BLUE,
+        "PPG": LIGHT_BLUE,
+        "RPG": LIGHT_BLUE,
+        "APG": LIGHT_BLUE,
+        "Tourn. FPts": LIGHT_GREEN,
+        "Tourn. PTS": LIGHT_GREEN,
+        "Tourn. REB": LIGHT_GREEN,
+        "Tourn. AST": LIGHT_GREEN,
+    }
+
+    for col, bg in base_colors.items():
+        if col in df.columns:
+            # Apply only to cells not already handled by scale styling.
+            pass
 
     return styled
 
 
-def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None, column_colors=None):
+def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None):
     if df.empty:
         st.info("No data available yet.")
         return
@@ -1000,7 +975,6 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
         pink_last=pink_last,
         rank_rwg=rank_rwg,
         performance_gradient=performance_gradient,
-        column_colors=column_colors,
     )
 
     # Size the table to its actual row count so short tables do not
@@ -1447,7 +1421,7 @@ with tab2:
                 "PPG": stats.get("PPG"),
                 "RPG": stats.get("RPG"),
                 "APG": stats.get("APG"),
-                "Tourn. FPts": player_total(row, data["fantasy_weights"]),
+                "Tourn. FPts": player_total(row),
                 "Tourn. PTS": row.get("tourn_pts"),
                 "Tourn. REB": row.get("tourn_reb"),
                 "Tourn. AST": row.get("tourn_ast"),
@@ -1457,20 +1431,7 @@ with tab2:
                 ),
             }])
             st.caption(f"Showing Player Finder statistics for {selected_player}.")
-            display_df(
-                result,
-                height=90,
-                column_colors={
-                    "FPts": LIGHT_BLUE,
-                    "PPG": LIGHT_BLUE,
-                    "RPG": LIGHT_BLUE,
-                    "APG": LIGHT_BLUE,
-                    "Tourn. FPts": LIGHT_GREEN,
-                    "Tourn. PTS": LIGHT_GREEN,
-                    "Tourn. REB": LIGHT_GREEN,
-                    "Tourn. AST": LIGHT_GREEN,
-                },
-            )
+            display_df(result, height=90)
 
 with tab3:
     st.subheader("Team View")
@@ -1491,19 +1452,28 @@ with tab3:
             st.caption(
                 f"Showing {len(team_df)} player(s) drafted by {selected_draftee}."
             )
-            display_df(
-                team_df,
-                height=500,
-                column_colors={
-                    "FPts": LIGHT_BLUE,
-                    "PPG": LIGHT_BLUE,
-                    "RPG": LIGHT_BLUE,
-                    "APG": LIGHT_BLUE,
-                    "Tourn. FPts": LIGHT_GREEN,
-                    "Tourn. PTS": LIGHT_GREEN,
-                    "Tourn. REB": LIGHT_GREEN,
-                    "Tourn. AST": LIGHT_GREEN,
-                },
+
+            # Team View: show all requested season/tournament statistics to
+            # exactly one decimal place without changing formatting anywhere
+            # else in the dashboard.
+            team_view_decimal_columns = [
+                "FPts",
+                "PPG",
+                "RPG",
+                "APG",
+                "Tourn. FPts",
+            ]
+            team_view_styled = style_table(team_df)
+            team_view_styled = team_view_styled.format({
+                col: (lambda value: "" if pd.isna(value) else f"{float(value):.1f}")
+                for col in team_view_decimal_columns
+                if col in team_df.columns
+            })
+            st.dataframe(
+                team_view_styled,
+                use_container_width=True,
+                hide_index=True,
+                height=min(500, 38 + (len(team_df) * 35) + 4),
             )
 
 with tab4:
