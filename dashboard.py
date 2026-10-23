@@ -644,7 +644,7 @@ def make_power_rankings(data):
 
         projected = None
         if t["Total FPts"] is not None or estimated is not None:
-            projected = round((t["Total FPts"] or 0) + (estimated or 0))
+            projected = round((t["Total FPts"] or 0) + (estimated or 0), 1)
 
         result.append({**t, "FPts per game": round(fpg, 1) if fpg is not None else None, "Projected Score": projected})
 
@@ -943,8 +943,9 @@ def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, p
         "Avg FPts/Game",
         "Delta From Average",
         "Delta From Season Avg.",
-        "Avg FPts/Game",
         "Projected FPts",
+        "Projected Score",
+        "Total FPts",
     }
     format_map = {}
     for col in df.columns:
