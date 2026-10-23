@@ -773,7 +773,7 @@ def make_draft_ratings(data):
 # ---------------------------------------------------------------------
 # Streamlit presentation helpers
 # ---------------------------------------------------------------------
-def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, pink_last=False, rank_rwg=False, performance_gradient=None, team_view=False):
+def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, pink_last=False, rank_rwg=False, performance_gradient=None, column_colors=None):
     scale_columns = scale_columns or {}
     reverse_columns = reverse_columns or {}
 
@@ -881,23 +881,6 @@ def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, p
                         f"background-color: {rank_color}; color: #000000;"
                     )
 
-        # Team View: visually separate season statistics from tournament
-        # statistics. These colors are intentionally applied only to the
-        # Team View table so the other tables retain their existing styling.
-        if team_view:
-            season_stat_color = "#DDEBF7"   # pale blue
-            tournament_stat_color = "#E2F0D9"  # pale green
-            for col in ("FPts", "PPG", "RPG", "APG"):
-                if col in row.index:
-                    styles[row.index.get_loc(col)] = (
-                        f"background-color: {season_stat_color}"
-                    )
-            for col in ("Tourn. FPts", "Tourn. PTS", "Tourn. REB", "Tourn. AST"):
-                if col in row.index:
-                    styles[row.index.get_loc(col)] = (
-                        f"background-color: {tournament_stat_color}"
-                    )
-
         # Eliminated players: bold red text across the entire player row.
         # `_team_out` is kept outside the displayed dataframe.
         if team_out_flags is not None:
@@ -950,37 +933,21 @@ def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, p
         {"selector": "th", "props": [("text-align", "center")]}
     ])
 
-    # Preserve the original green/blue/yellow/purple column identity.
-    base_colors = {
-        "Total FPts": LIGHT_GREEN,
-        "Projected Score": LIGHT_PURPLE,
-        "Projected FPts": LIGHT_PURPLE,
-        "Active Players": LIGHT_BLUE,
-        "Poss. Games Remaining": LIGHT_YELLOW,
-        "MVP": LIGHT_RED,
-        "MVP FPts": LIGHT_PURPLE,
-        "FPts per game": LIGHT_RED,
-        "Games Played": LIGHT_ORANGE,
-        "Regions": LIGHT_GREEN,
-        "FPts": LIGHT_BLUE,
-        "PPG": LIGHT_BLUE,
-        "RPG": LIGHT_BLUE,
-        "APG": LIGHT_BLUE,
-        "Tourn. FPts": LIGHT_GREEN,
-        "Tourn. PTS": LIGHT_GREEN,
-        "Tourn. REB": LIGHT_GREEN,
-        "Tourn. AST": LIGHT_GREEN,
-    }
-
-    for col, bg in base_colors.items():
-        if col in df.columns:
-            # Apply only to cells not already handled by scale styling.
-            pass
+    # Optional column-specific background colors. These are applied after the
+    # row/scale styling so the requested Team View stat groups are actually
+    # visible, while leaving the existing scale styling intact elsewhere.
+    if column_colors:
+        for col, bg in column_colors.items():
+            if col in df.columns:
+                styled = styled.set_properties(
+                    subset=[col],
+                    **{"background-color": bg}
+                )
 
     return styled
 
 
-def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None, team_view=False):
+def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None, column_colors=None):
     if df.empty:
         st.info("No data available yet.")
         return
@@ -992,7 +959,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
         pink_last=pink_last,
         rank_rwg=rank_rwg,
         performance_gradient=performance_gradient,
-        team_view=team_view,
+        column_colors=column_colors,
     )
 
     # Size the table to its actual row count so short tables do not
@@ -1449,7 +1416,20 @@ with tab2:
                 ),
             }])
             st.caption(f"Showing Player Finder statistics for {selected_player}.")
-            display_df(result, height=90)
+            display_df(
+                result,
+                height=90,
+                column_colors={
+                    "FPts": LIGHT_BLUE,
+                    "PPG": LIGHT_BLUE,
+                    "RPG": LIGHT_BLUE,
+                    "APG": LIGHT_BLUE,
+                    "Tourn. FPts": LIGHT_GREEN,
+                    "Tourn. PTS": LIGHT_GREEN,
+                    "Tourn. REB": LIGHT_GREEN,
+                    "Tourn. AST": LIGHT_GREEN,
+                },
+            )
 
 with tab3:
     st.subheader("Team View")
@@ -1470,7 +1450,20 @@ with tab3:
             st.caption(
                 f"Showing {len(team_df)} player(s) drafted by {selected_draftee}."
             )
-            display_df(team_df, height=500)
+            display_df(
+                team_df,
+                height=500,
+                column_colors={
+                    "FPts": LIGHT_BLUE,
+                    "PPG": LIGHT_BLUE,
+                    "RPG": LIGHT_BLUE,
+                    "APG": LIGHT_BLUE,
+                    "Tourn. FPts": LIGHT_GREEN,
+                    "Tourn. PTS": LIGHT_GREEN,
+                    "Tourn. REB": LIGHT_GREEN,
+                    "Tourn. AST": LIGHT_GREEN,
+                },
+            )
 
 with tab4:
     st.subheader("Draft Ratings")
