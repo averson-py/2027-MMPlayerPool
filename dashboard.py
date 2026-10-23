@@ -28,6 +28,7 @@ DRAFT_SHEET = "Draft"
 TEAM_DATA_SHEET = "TeamData"
 TEAMS_OUT_SHEET = "TeamsOut"
 GAME_RESULTS_SHEET = "GameResults"
+CONFIG_SHEET = "Config"
 
 DRAFTER_START_ROW = 2
 
@@ -68,6 +69,28 @@ def sum_numeric_values(values):
 
 def sum_existing_values(values):
     return sum_numeric_values(values)
+
+
+def weighted_fantasy_points(points, rebounds, assists, weights):
+    """Calculate fantasy points using the scoring weights from Config!A2:C2."""
+    values = [points, rebounds, assists]
+    numeric = []
+    for value in values:
+        try:
+            numeric.append(float(value))
+        except (TypeError, ValueError):
+            numeric.append(None)
+
+    weighted = []
+    for value, weight in zip(numeric, weights):
+        if value is not None:
+            weighted.append(value * weight)
+
+    if not weighted:
+        return None
+
+    total = sum(weighted)
+    return int(total) if total.is_integer() else total
 
 
 def format_stat(value):
@@ -221,10 +244,22 @@ def load_data(file_path, updated_time=None):
         keep_links=False,
     )
 
-    required_sheets = [DRAFT_ORDER_SHEET, DRAFT_SHEET, TEAM_DATA_SHEET]
+    required_sheets = [DRAFT_ORDER_SHEET, DRAFT_SHEET, TEAM_DATA_SHEET, CONFIG_SHEET]
     missing = [s for s in required_sheets if s not in workbook.sheetnames]
     if missing:
         raise ValueError("Missing required sheet(s): " + ", ".join(missing))
+
+    # Fantasy scoring weights. Config!A2:C2 correspond to PTS, REB, AST.
+    config_ws = workbook[CONFIG_SHEET]
+    fantasy_weights = []
+    for cell in ("A2", "B2", "C2"):
+        value = config_ws[cell].value
+        try:
+            fantasy_weights.append(float(value))
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"Config!{cell} must contain a numeric fantasy-point value."
+            )
 
     # Draft order
     drafters = []
@@ -313,10 +348,10 @@ def load_data(file_path, updated_time=None):
         ppg = get_value("PPG")
         rpg = get_value("RPG")
         apg = get_value("APG")
-        total_fantasy_points = (
-            get_value("Tot. FPts")
-            if "Tot. FPts" in headers
-            else sum_numeric_values([ppg, rpg, apg])
+        # Season FPts are calculated from the season PPG/RPG/APG values
+        # using the configurable PTS/REB/AST weights in Config!A2:C2.
+        total_fantasy_points = weighted_fantasy_points(
+            ppg, rpg, apg, fantasy_weights
         )
 
         player_stats[player_key] = {
@@ -407,6 +442,7 @@ def load_data(file_path, updated_time=None):
                     break
 
     return {
+        "fantasy_weights": fantasy_weights,
         "drafters": drafters,
         "draft_rows": draft_rows,
         "player_stats": player_stats,
@@ -417,12 +453,13 @@ def load_data(file_path, updated_time=None):
     }
 
 
-def player_total(row):
-    return sum_existing_values([
+def player_total(row, fantasy_weights):
+    return weighted_fantasy_points(
         row.get("tourn_pts"),
         row.get("tourn_reb"),
         row.get("tourn_ast"),
-    ])
+        fantasy_weights,
+    )
 
 
 def make_team_rows(data, selected_draftee):
@@ -444,7 +481,7 @@ def make_team_rows(data, selected_draftee):
             "PPG": stats.get("PPG"),
             "RPG": stats.get("RPG"),
             "APG": stats.get("APG"),
-            "Tourn. FPts": player_total(row),
+            "Tourn. FPts": player_total(row, data["fantasy_weights"]),
             "Tourn. PTS": row.get("tourn_pts"),
             "Tourn. REB": row.get("tourn_reb"),
             "Tourn. AST": row.get("tourn_ast"),
@@ -482,7 +519,9 @@ def make_standings_round_history(data):
         ast = row.get("tourn_ast_rounds", [None] * 6)
 
         for i in range(6):
-            round_total = sum_numeric_values([pts[i], reb[i], ast[i]])
+            round_total = weighted_fantasy_points(
+                pts[i], reb[i], ast[i], data["fantasy_weights"]
+            )
             if round_total is not None:
                 round_totals.setdefault(owner, [0.0] * len(round_names))[i] += round_total
 
@@ -530,7 +569,7 @@ def make_standings(data):
 
         t = totals[key]
         t["Total FPts"] = sum_existing_values([
-            t["Total FPts"], player_total(row)
+            t["Total FPts"], player_total(row, data["fantasy_weights"])
         ])
 
         stats = data["player_stats"].get(row["player_name"].casefold(), {})
@@ -540,7 +579,7 @@ def make_standings(data):
 
         t["Poss. Games Remaining"] += row.get("possible_games_remaining") or 0
 
-        pf = player_total(row)
+        pf = player_total(row, data["fantasy_weights"])
         if pf is not None and (t["MVP FPts"] is None or pf > t["MVP FPts"]):
             t["MVP"] = row["player_name"]
             t["MVP FPts"] = pf
@@ -578,7 +617,7 @@ def make_power_rankings(data):
             "Poss. Games Remaining": 0,
         })
         t = totals[key]
-        t["Total FPts"] = sum_existing_values([t["Total FPts"], player_total(row)])
+        t["Total FPts"] = sum_existing_values([t["Total FPts"], player_total(row, data["fantasy_weights"])])
 
         stats = data["player_stats"].get(row["player_name"].casefold(), {})
         team = stats.get("Team")
@@ -632,7 +671,7 @@ def make_player_rankings(data):
         result.append({
             "Player Name": row["player_name"],
             "Team": team,
-            "Total FPts": player_total(row),
+            "Total FPts": player_total(row, data["fantasy_weights"]),
             "Team Owner": row["draftee"],
             "Games Played": row.get("games_played", 0),
             "Poss. Games Remaining": row.get("possible_games_remaining", 0),
@@ -661,7 +700,7 @@ def make_player_rankings(data):
 def make_performers(data, positive=True):
     result = []
     for row in data["draft_rows"]:
-        total = player_total(row)
+        total = player_total(row, data["fantasy_weights"])
         games = row.get("games_played", 0)
         if games <= 0 or total is None:
             continue
@@ -1406,7 +1445,7 @@ with tab2:
                 "PPG": stats.get("PPG"),
                 "RPG": stats.get("RPG"),
                 "APG": stats.get("APG"),
-                "Tourn. FPts": player_total(row),
+                "Tourn. FPts": player_total(row, data["fantasy_weights"]),
                 "Tourn. PTS": row.get("tourn_pts"),
                 "Tourn. REB": row.get("tourn_reb"),
                 "Tourn. AST": row.get("tourn_ast"),
