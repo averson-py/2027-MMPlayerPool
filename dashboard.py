@@ -1,11 +1,8 @@
 
-import colorsys
 import os
 import re
-import secrets
 from datetime import datetime
 from pathlib import Path
-
 
 import openpyxl
 import pandas as pd
@@ -17,18 +14,13 @@ import streamlit as st
 # Configuration
 # ---------------------------------------------------------------------
 DEFAULT_WORKBOOK = "2027 March Madness Player Pool Tracking Skeleton 2026 rnd5.xlsx"
-ONEDRIVE_FILE_PATH = "2027MMPlayerPoolStreamlit/2027 March Madness Player Pool Tracking.xlsx"
 # Public read-only OneDrive sharing link. Store this in Streamlit Secrets as ONEDRIVE_SHARE_URL.
-GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
-OAUTH_AUTHORITY = "https://login.microsoftonline.com/common/oauth2/v2.0"
-GRAPH_SCOPES = "Files.Read User.Read offline_access"
 
 DRAFT_ORDER_SHEET = "DraftOrder"
 DRAFT_SHEET = "Draft"
 TEAM_DATA_SHEET = "TeamData"
 TEAMS_OUT_SHEET = "TeamsOut"
 GAME_RESULTS_SHEET = "GameResults"
-CONFIG_SHEET = "Config"
 
 DRAFTER_START_ROW = 2
 
@@ -69,28 +61,6 @@ def sum_numeric_values(values):
 
 def sum_existing_values(values):
     return sum_numeric_values(values)
-
-
-def weighted_fantasy_points(points, rebounds, assists, weights):
-    """Calculate fantasy points using the scoring weights from Config!A2:C2."""
-    values = [points, rebounds, assists]
-    numeric = []
-    for value in values:
-        try:
-            numeric.append(float(value))
-        except (TypeError, ValueError):
-            numeric.append(None)
-
-    weighted = []
-    for value, weight in zip(numeric, weights):
-        if value is not None:
-            weighted.append(value * weight)
-
-    if not weighted:
-        return None
-
-    total = sum(weighted)
-    return int(total) if total.is_integer() else total
 
 
 def format_stat(value):
@@ -244,22 +214,10 @@ def load_data(file_path, updated_time=None):
         keep_links=False,
     )
 
-    required_sheets = [DRAFT_ORDER_SHEET, DRAFT_SHEET, TEAM_DATA_SHEET, CONFIG_SHEET]
+    required_sheets = [DRAFT_ORDER_SHEET, DRAFT_SHEET, TEAM_DATA_SHEET]
     missing = [s for s in required_sheets if s not in workbook.sheetnames]
     if missing:
         raise ValueError("Missing required sheet(s): " + ", ".join(missing))
-
-    # Fantasy scoring weights. Config!A2:C2 correspond to PTS, REB, AST.
-    config_ws = workbook[CONFIG_SHEET]
-    fantasy_weights = []
-    for cell in ("A2", "B2", "C2"):
-        value = config_ws[cell].value
-        try:
-            fantasy_weights.append(float(value))
-        except (TypeError, ValueError):
-            raise ValueError(
-                f"Config!{cell} must contain a numeric fantasy-point value."
-            )
 
     # Draft order
     drafters = []
@@ -303,9 +261,6 @@ def load_data(file_path, updated_time=None):
             "tourn_pts": sum_numeric_values(tournament_values[0:6]),
             "tourn_reb": sum_numeric_values(tournament_values[6:12]),
             "tourn_ast": sum_numeric_values(tournament_values[12:18]),
-            "tourn_pts_rounds": tournament_values[0:6],
-            "tourn_reb_rounds": tournament_values[6:12],
-            "tourn_ast_rounds": tournament_values[12:18],
         })
 
     # Player/team data
@@ -348,10 +303,10 @@ def load_data(file_path, updated_time=None):
         ppg = get_value("PPG")
         rpg = get_value("RPG")
         apg = get_value("APG")
-        # Season FPts are calculated from the season PPG/RPG/APG values
-        # using the configurable PTS/REB/AST weights in Config!A2:C2.
-        total_fantasy_points = weighted_fantasy_points(
-            ppg, rpg, apg, fantasy_weights
+        total_fantasy_points = (
+            get_value("Tot. FPts")
+            if "Tot. FPts" in headers
+            else sum_numeric_values([ppg, rpg, apg])
         )
 
         player_stats[player_key] = {
@@ -374,48 +329,6 @@ def load_data(file_path, updated_time=None):
             team_name = values[0]
             if team_name is not None and str(team_name).strip():
                 teams_out.add(str(team_name).strip().casefold())
-
-    # Workbook last-edited timestamp is maintained by the local stats updater
-    # in GameResults!D2. This is the authoritative timestamp displayed by
-    # the dashboard; it does not depend on OneDrive's file modified time.
-    workbook_updated_time = None
-    if GAME_RESULTS_SHEET not in workbook.sheetnames:
-        raise ValueError(f"Missing required sheet: {GAME_RESULTS_SHEET}")
-
-    ws = workbook[GAME_RESULTS_SHEET]
-    raw_updated_time = ws["D2"].value
-    if raw_updated_time is None or str(raw_updated_time).strip() == "":
-        raise ValueError("GameResults!D2 is empty. The stats updater must write the workbook update date/time to cell D2.")
-
-    if isinstance(raw_updated_time, datetime):
-        workbook_updated_time = raw_updated_time
-    else:
-        raw_updated_text = str(raw_updated_time).strip()
-        try:
-            workbook_updated_time = datetime.fromisoformat(
-                raw_updated_text.replace("Z", "+00:00")
-            )
-        except ValueError:
-            for date_format in (
-                "%m/%d/%Y %I:%M %p",
-                "%m/%d/%Y %H:%M",
-                "%Y-%m-%d %H:%M:%S",
-                "%Y-%m-%d %H:%M",
-            ):
-                try:
-                    workbook_updated_time = datetime.strptime(raw_updated_text, date_format)
-                    break
-                except ValueError:
-                    continue
-
-        if workbook_updated_time is None:
-            raise ValueError(
-                "GameResults!D2 does not contain a recognizable date/time. "
-                "Expected an Excel date/time value or a standard date/time string."
-            )
-
-    if workbook_updated_time.tzinfo is not None:
-        workbook_updated_time = workbook_updated_time.astimezone().replace(tzinfo=None)
 
     # Most recent game result
     latest_game_result = {"Round": "", "Winner": "", "Loser": ""}
@@ -442,24 +355,26 @@ def load_data(file_path, updated_time=None):
                     break
 
     return {
-        "fantasy_weights": fantasy_weights,
         "drafters": drafters,
         "draft_rows": draft_rows,
         "player_stats": player_stats,
         "player_names": player_names,
         "teams_out": teams_out,
         "latest_game_result": latest_game_result,
-        "updated_time": workbook_updated_time,
+        "updated_time": (
+            updated_time
+            if updated_time is not None
+            else datetime.fromtimestamp(Path(file_path).stat().st_mtime)
+        ),
     }
 
 
-def player_total(row, fantasy_weights):
-    return weighted_fantasy_points(
+def player_total(row):
+    return sum_existing_values([
         row.get("tourn_pts"),
         row.get("tourn_reb"),
         row.get("tourn_ast"),
-        fantasy_weights,
-    )
+    ])
 
 
 def make_team_rows(data, selected_draftee):
@@ -481,7 +396,7 @@ def make_team_rows(data, selected_draftee):
             "PPG": stats.get("PPG"),
             "RPG": stats.get("RPG"),
             "APG": stats.get("APG"),
-            "Tourn. FPts": player_total(row, data["fantasy_weights"]),
+            "Tourn. FPts": player_total(row),
             "Tourn. PTS": row.get("tourn_pts"),
             "Tourn. REB": row.get("tourn_reb"),
             "Tourn. AST": row.get("tourn_ast"),
@@ -491,60 +406,6 @@ def make_team_rows(data, selected_draftee):
             ),
         })
     return result
-
-
-def make_standings_round_history(data):
-    """Return each draftee's ranking after each tournament round."""
-    round_names = [
-        "First Round",
-        "Second Round",
-        "Sweet Sixteen",
-        "Elite Eight",
-        "Final Four",
-        "National Title",
-    ]
-
-    # Draft columns are grouped as 6 rounds of PTS, followed by 6 REB,
-    # followed by 6 AST. For each round, add PTS + REB + AST for every
-    # drafted player, then accumulate the result through the tournament.
-    round_totals = {
-        draftee: [0.0] * len(round_names)
-        for draftee in data["drafters"]
-    }
-
-    for row in data["draft_rows"]:
-        owner = row["draftee"]
-        pts = row.get("tourn_pts_rounds", [None] * 6)
-        reb = row.get("tourn_reb_rounds", [None] * 6)
-        ast = row.get("tourn_ast_rounds", [None] * 6)
-
-        for i in range(6):
-            round_total = weighted_fantasy_points(
-                pts[i], reb[i], ast[i], data["fantasy_weights"]
-            )
-            if round_total is not None:
-                round_totals.setdefault(owner, [0.0] * len(round_names))[i] += round_total
-
-    # Convert round-by-round scoring into cumulative totals, then rank
-    # everyone after each round. Rank 1 is the best (highest) total.
-    result = []
-    running_total = {owner: 0.0 for owner in round_totals}
-    for i, round_name in enumerate(round_names):
-        for owner, values in round_totals.items():
-            running_total[owner] += values[i]
-
-        ordered = sorted(
-            data["drafters"],
-            key=lambda owner: (-running_total.get(owner, 0.0), owner.casefold()),
-        )
-        rankings = {owner: rank for rank, owner in enumerate(ordered, start=1)}
-
-        row = {"Round": round_name}
-        for owner in data["drafters"]:
-            row[owner] = rankings.get(owner)
-        result.append(row)
-
-    return pd.DataFrame(result)
 
 
 def make_standings(data):
@@ -569,7 +430,7 @@ def make_standings(data):
 
         t = totals[key]
         t["Total FPts"] = sum_existing_values([
-            t["Total FPts"], player_total(row, data["fantasy_weights"])
+            t["Total FPts"], player_total(row)
         ])
 
         stats = data["player_stats"].get(row["player_name"].casefold(), {})
@@ -579,7 +440,7 @@ def make_standings(data):
 
         t["Poss. Games Remaining"] += row.get("possible_games_remaining") or 0
 
-        pf = player_total(row, data["fantasy_weights"])
+        pf = player_total(row)
         if pf is not None and (t["MVP FPts"] is None or pf > t["MVP FPts"]):
             t["MVP"] = row["player_name"]
             t["MVP FPts"] = pf
@@ -617,7 +478,7 @@ def make_power_rankings(data):
             "Poss. Games Remaining": 0,
         })
         t = totals[key]
-        t["Total FPts"] = sum_existing_values([t["Total FPts"], player_total(row, data["fantasy_weights"])])
+        t["Total FPts"] = sum_existing_values([t["Total FPts"], player_total(row)])
 
         stats = data["player_stats"].get(row["player_name"].casefold(), {})
         team = stats.get("Team")
@@ -644,7 +505,7 @@ def make_power_rankings(data):
 
         projected = None
         if t["Total FPts"] is not None or estimated is not None:
-            projected = round((t["Total FPts"] or 0) + (estimated or 0), 1)
+            projected = round((t["Total FPts"] or 0) + (estimated or 0))
 
         result.append({**t, "FPts per game": round(fpg, 1) if fpg is not None else None, "Projected Score": projected})
 
@@ -671,7 +532,7 @@ def make_player_rankings(data):
         result.append({
             "Player Name": row["player_name"],
             "Team": team,
-            "Total FPts": player_total(row, data["fantasy_weights"]),
+            "Total FPts": player_total(row),
             "Team Owner": row["draftee"],
             "Games Played": row.get("games_played", 0),
             "Poss. Games Remaining": row.get("possible_games_remaining", 0),
@@ -700,7 +561,7 @@ def make_player_rankings(data):
 def make_performers(data, positive=True):
     result = []
     for row in data["draft_rows"]:
-        total = player_total(row, data["fantasy_weights"])
+        total = player_total(row)
         games = row.get("games_played", 0)
         if games <= 0 or total is None:
             continue
@@ -722,7 +583,7 @@ def make_performers(data, positive=True):
         result.append({
             "Player Name": row["player_name"],
             "Team": team,
-            "Avg. FPts/Tourn. Game": round(tournament_avg, 1),
+            "Avg FPts/Game": round(tournament_avg, 1),
             "Delta From Average": round(delta, 1),
             "Team Owner": row["draftee"],
             "Games Played": games,
@@ -743,7 +604,7 @@ def make_performers(data, positive=True):
         row["Rank"] = i
 
     return pd.DataFrame(result)[[
-        "Rank", "Player Name", "Team", "Avg. FPts/Tourn. Game",
+        "Rank", "Player Name", "Team", "Avg FPts/Game",
         "Delta From Average", "Team Owner", "Games Played",
         "Poss. Games Remaining", "_team_out",
     ]], result
@@ -812,7 +673,7 @@ def make_draft_ratings(data):
 # ---------------------------------------------------------------------
 # Streamlit presentation helpers
 # ---------------------------------------------------------------------
-def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, pink_last=False, rank_rwg=False, performance_gradient=None, column_colors=None):
+def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, pink_last=False, rank_rwg=False, performance_gradient=None):
     scale_columns = scale_columns or {}
     reverse_columns = reverse_columns or {}
 
@@ -938,15 +799,13 @@ def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, p
     # Display numeric values cleanly. Calculations remain unchanged.
     # One-decimal fields show exactly one decimal; integer fields do not
     # expose pandas' trailing floating-point zeros.
-    one_decimal_columns = {
+    one_decimal_columns = set(one_decimal_columns or set()) | {
         "FPts per game",
-        "Avg. FPts/Tourn. Game",
+        "Avg FPts/Game",
         "Delta From Average",
         "Delta From Season Avg.",
+        "Avg FPts/Game",
         "Projected FPts",
-        "Projected Score",
-        "Total FPts",
-        "MVP FPts",
     }
     format_map = {}
     for col in df.columns:
@@ -974,21 +833,37 @@ def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, p
         {"selector": "th", "props": [("text-align", "center")]}
     ])
 
-    # Optional column-specific background colors. These are applied after the
-    # row/scale styling so the requested Team View stat groups are actually
-    # visible, while leaving the existing scale styling intact elsewhere.
-    if column_colors:
-        for col, bg in column_colors.items():
-            if col in df.columns:
-                styled = styled.set_properties(
-                    subset=[col],
-                    **{"background-color": bg}
-                )
+    # Preserve the original green/blue/yellow/purple column identity.
+    base_colors = {
+        "Total FPts": LIGHT_GREEN,
+        "Projected Score": LIGHT_PURPLE,
+        "Projected FPts": LIGHT_PURPLE,
+        "Active Players": LIGHT_BLUE,
+        "Poss. Games Remaining": LIGHT_YELLOW,
+        "MVP": LIGHT_RED,
+        "MVP FPts": LIGHT_PURPLE,
+        "FPts per game": LIGHT_RED,
+        "Games Played": LIGHT_ORANGE,
+        "Regions": LIGHT_GREEN,
+        "FPts": LIGHT_BLUE,
+        "PPG": LIGHT_BLUE,
+        "RPG": LIGHT_BLUE,
+        "APG": LIGHT_BLUE,
+        "Tourn. FPts": LIGHT_GREEN,
+        "Tourn. PTS": LIGHT_GREEN,
+        "Tourn. REB": LIGHT_GREEN,
+        "Tourn. AST": LIGHT_GREEN,
+    }
+
+    for col, bg in base_colors.items():
+        if col in df.columns:
+            # Apply only to cells not already handled by scale styling.
+            pass
 
     return styled
 
 
-def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None, column_colors=None):
+def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None, one_decimal_columns=None):
     if df.empty:
         st.info("No data available yet.")
         return
@@ -1000,7 +875,6 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
         pink_last=pink_last,
         rank_rwg=rank_rwg,
         performance_gradient=performance_gradient,
-        column_colors=column_colors,
     )
 
     # Size the table to its actual row count so short tables do not
@@ -1023,10 +897,10 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
 
 
 # ---------------------------------------------------------------------
-# Public OneDrive helpers
+# Public OneDrive helper
 # ---------------------------------------------------------------------
 def get_onedrive_share_url():
-    """Read the public OneDrive sharing URL from Streamlit Secrets."""
+    """Read the anonymous read-only OneDrive sharing URL from Streamlit secrets."""
     if "onedrive" in st.secrets:
         url = st.secrets["onedrive"].get("share_url")
     else:
@@ -1040,59 +914,159 @@ def get_onedrive_share_url():
 
 
 def download_onedrive_workbook_from_share(share_url):
-    """Download an anonymously shared OneDrive workbook.
+    """Download the current OneDrive workbook using Microsoft Graph."""
 
-    The OneDrive link is an ``Anyone with the link can view`` link, so no
-    Microsoft login or Microsoft Graph token is required.  OneDrive can
-    return an HTML viewer page for a normal share URL; adding ``download=1``
-    asks OneDrive for the underlying file instead.
-    """
-    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+    import base64
 
-    parts = urlsplit(share_url)
-    query = dict(parse_qsl(parts.query, keep_blank_values=True))
-    query["download"] = "1"
-    download_url = urlunsplit(
-        (parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment)
+    share_url = str(share_url).strip()
+
+    # -------------------------------------------------------------
+    # Get Azure application credentials from Streamlit Secrets
+    # -------------------------------------------------------------
+    try:
+        azure = st.secrets["azure"]
+
+        client_id = azure["client_id"]
+        client_secret = azure["client_secret"]
+        tenant_id = azure["tenant_id"]
+
+    except Exception as exc:
+        raise RuntimeError(
+            "Azure credentials are missing from Streamlit Secrets. "
+            "Expected [azure] client_id, client_secret, and tenant_id."
+        ) from exc
+
+    # -------------------------------------------------------------
+    # Get an application access token
+    # -------------------------------------------------------------
+    token_url = (
+        f"https://login.microsoftonline.com/{tenant_id}"
+        "/oauth2/v2.0/token"
     )
+
+    token_response = requests.post(
+        token_url,
+        data={
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "scope": "https://graph.microsoft.com/.default",
+            "grant_type": "client_credentials",
+        },
+        timeout=60,
+    )
+
+    if token_response.status_code != 200:
+        raise RuntimeError(
+            "Microsoft authentication failed "
+            f"(HTTP {token_response.status_code}). "
+            f"Response: {token_response.text[:500]}"
+        )
+
+    access_token = token_response.json().get("access_token")
+
+    if not access_token:
+        raise RuntimeError(
+            "Microsoft authentication succeeded but no access token was returned."
+        )
+
+    # -------------------------------------------------------------
+    # Convert the OneDrive sharing URL into a Graph sharing token
+    # -------------------------------------------------------------
+    encoded = base64.urlsafe_b64encode(
+        share_url.encode("utf-8")
+    ).decode("utf-8").rstrip("=")
+
+    share_token = f"u!{encoded}"
+
+    # -------------------------------------------------------------
+    # Ask Microsoft Graph for the shared DriveItem
+    # -------------------------------------------------------------
+    metadata_url = (
+        f"https://graph.microsoft.com/v1.0/shares/"
+        f"{share_token}/driveItem"
+    )
+
+    graph_headers = {
+        "Authorization": f"Bearer {access_token}",
+        "User-Agent": "MMPlayerPoolDashboard",
+    }
 
     response = requests.get(
-        download_url,
-        timeout=90,
-        allow_redirects=True,
-        headers={
-            "User-Agent": "Mozilla/5.0 (Streamlit OneDrive workbook reader)",
-        },
+        metadata_url,
+        headers=graph_headers,
+        timeout=60,
     )
 
-    if not response.ok:
+    if response.status_code != 200:
         raise RuntimeError(
-            f"OneDrive returned HTTP {response.status_code} while downloading the shared workbook."
+            "Microsoft Graph could not access the shared OneDrive file "
+            f"(HTTP {response.status_code}). "
+            f"Response: {response.text[:500]}"
         )
 
-    content = response.content
-    content_type = response.headers.get("Content-Type", "unknown")
+    item = response.json()
 
-    # .xlsx files are ZIP containers and therefore begin with PK.
+    # -------------------------------------------------------------
+    # Get the temporary download URL supplied by Graph
+    # -------------------------------------------------------------
+    download_url = item.get("@microsoft.graph.downloadUrl")
+
+    if not download_url:
+        raise RuntimeError(
+            "Microsoft Graph found the OneDrive item, but did not provide "
+            "a downloadable workbook URL."
+        )
+
+    # The download URL returned by Graph is already authenticated.
+    file_response = requests.get(
+        download_url,
+        headers={"User-Agent": "MMPlayerPoolDashboard"},
+        timeout=60,
+    )
+
+    if file_response.status_code != 200:
+        raise RuntimeError(
+            "OneDrive workbook download failed "
+            f"(HTTP {file_response.status_code})."
+        )
+
+    content = file_response.content
+
+    # XLSX files are ZIP containers and therefore begin with PK.
     if not content.startswith(b"PK"):
-        # A public link should be anonymously downloadable. If OneDrive
-        # instead returned an HTML page, surface a useful message rather
-        # than feeding the HTML to openpyxl.
-        preview = content[:200].decode("utf-8", errors="ignore").replace("\n", " ").strip()
-        raise RuntimeError(
-            "The OneDrive share link did not return the Excel workbook. "
-            "Make sure the file is shared as 'Anyone with the link can view' "
-            "and that downloads are allowed. "
-            f"Content-Type: {content_type}."
-            + (f" Response began with: {preview[:120]}" if preview else "")
+        content_type = file_response.headers.get(
+            "Content-Type",
+            "unknown",
         )
 
+        raise RuntimeError(
+            "OneDrive did not return the Excel workbook. "
+            f"Content-Type: {content_type}"
+        )
+
+    # -------------------------------------------------------------
+    # Save the workbook locally for the existing dashboard code
+    # -------------------------------------------------------------
     temp_path = Path(".streamlit_onedrive_workbook.xlsx")
     temp_path.write_bytes(content)
 
-    # The workbook itself contains the authoritative last-edited timestamp
-    # in GameResults!D2. load_data() reads that cell after the download.
-    return temp_path, None
+    updated_time = None
+
+    modified = file_response.headers.get("Last-Modified")
+
+    if modified:
+        try:
+            from email.utils import parsedate_to_datetime
+
+            updated_time = (
+                parsedate_to_datetime(modified)
+                .astimezone()
+                .replace(tzinfo=None)
+            )
+        except (TypeError, ValueError, OverflowError):
+            updated_time = None
+
+    return temp_path, updated_time
 
 
 # ---------------------------------------------------------------------
@@ -1108,15 +1082,6 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    /* Hide Streamlit's top app toolbar/header and footer for a cleaner
-       dashboard, especially on mobile. */
-    header[data-testid="stHeader"],
-    div[data-testid="stToolbar"],
-    #MainMenu,
-    footer {
-        display: none !important;
-    }
-
     .block-container {padding-top: 1.2rem; padding-bottom: 2rem;}
     div[data-testid="stMetric"] {
         border: 1px solid #d9d9d9;
@@ -1130,20 +1095,17 @@ st.markdown(
 
 st.title("🏀 2027 March Madness Player Pool Dashboard")
 
-# Production mode: read the workbook directly from the public OneDrive
-# sharing link. Visitors do NOT need to sign in with Microsoft.
-#
-# If the share URL is not configured, retain the local uploader flow so the
-# app remains convenient to run during development.
+# In production, read the workbook directly from the user's OneDrive.
+# Local development still supports the existing workbook/file-uploader flow.
 workbook_path = Path(DEFAULT_WORKBOOK)
 cloud_updated_time = None
+
 onedrive_share_url = get_onedrive_share_url()
 
 if onedrive_share_url:
+    # Production mode: the dashboard is public and visitors do not sign in.
     try:
-        workbook_path, cloud_updated_time = download_onedrive_workbook_from_share(
-            onedrive_share_url
-        )
+        workbook_path, cloud_updated_time = download_onedrive_workbook_from_share(onedrive_share_url)
     except Exception as exc:
         st.error(f"Could not load the OneDrive workbook: {exc}")
         st.stop()
@@ -1212,6 +1174,11 @@ tab1, tab2, tab3, tab4 = st.tabs([
 
 with tab1:
     st.subheader("Tournament Standings")
+    if not standings.empty:
+        st.bar_chart(
+            standings.set_index("Team Owner")[["Total FPts"]],
+            height=300,
+        )
     display_df(
         standings,
         height=520,
@@ -1240,138 +1207,6 @@ with tab1:
         },
         reverse_columns={"Draft Position": True},
     )
-
-    st.subheader("Standings Progression")
-    st.caption("League ranking after each tournament round.")
-    standings_history = make_standings_round_history(data)
-    if not standings_history.empty:
-        # Plot ranking rather than points so the chart is much easier to read.
-        # Reverse the Y axis so Rank 1 appears at the top of the chart.
-        chart_data = standings_history.melt(
-            id_vars="Round",
-            var_name="Team Owner",
-            value_name="Rank",
-        )
-        chart_data["Round"] = pd.Categorical(
-            chart_data["Round"],
-            categories=[
-                "First Round",
-                "Second Round",
-                "Sweet Sixteen",
-                "Elite Eight",
-                "Final Four",
-                "National Title",
-            ],
-            ordered=True,
-        )
-        try:
-            import altair as alt
-            round_order = [
-                "First Round", "Second Round", "Sweet Sixteen",
-                "Elite Eight", "Final Four", "National Title"
-            ]
-            owner_order = list(data["drafters"])
-            rank_max = max(len(owner_order), int(chart_data["Rank"].max()))
-
-            # Generate exactly one deterministic, unique color per pool member.
-            # The palette is sized from the actual number of pool members, so
-            # it automatically expands/shrinks with the pool.
-            def make_owner_colors(owners):
-                count = len(owners)
-                if count == 0:
-                    return []
-
-                colors = []
-                used = set()
-
-                for i in range(count):
-                    # Evenly distribute hues around the color wheel.
-                    hue = i / count
-                    red, green, blue = colorsys.hsv_to_rgb(hue, 0.72, 0.82)
-                    color = "#{:02X}{:02X}{:02X}".format(
-                        round(red * 255),
-                        round(green * 255),
-                        round(blue * 255),
-                    )
-
-                    # Guard against an accidental RGB rounding collision.
-                    # This keeps the guarantee of one unique hex color per owner.
-                    if color in used:
-                        step = 1 / max(count * 1000, 1)
-                        attempt = 1
-                        while color in used:
-                            adjusted_hue = (hue + step * attempt) % 1.0
-                            red, green, blue = colorsys.hsv_to_rgb(
-                                adjusted_hue, 0.72, 0.82
-                            )
-                            color = "#{:02X}{:02X}{:02X}".format(
-                                round(red * 255),
-                                round(green * 255),
-                                round(blue * 255),
-                            )
-                            attempt += 1
-
-                    used.add(color)
-                    colors.append(color)
-
-                return colors
-
-            owner_colors = make_owner_colors(owner_order)
-
-            base = alt.Chart(chart_data).encode(
-                x=alt.X(
-                    "Round:N",
-                    sort=round_order,
-                    title=None,
-                ),
-                y=alt.Y(
-                    "Rank:Q",
-                    scale=alt.Scale(domain=[1, rank_max], reverse=True),
-                    title=None,
-                    axis=alt.Axis(values=list(range(1, rank_max + 1))),
-                ),
-                color=alt.Color(
-                    "Team Owner:N",
-                    title=None,
-                    sort=owner_order,
-                    legend=None,
-                    scale=alt.Scale(domain=owner_order, range=owner_colors),
-                ),
-                tooltip=["Round:N", "Team Owner:N", "Rank:Q"],
-            )
-
-            lines = base.mark_line()
-            points = base.mark_point(filled=True, size=55)
-
-            # Put a small rounded label behind every point so the owner's name
-            # is visible without having to hover. The label background uses
-            # the same series color as the corresponding line, while the
-            # owner name is always white and bold for maximum contrast.
-            label_bg = base.mark_rect(
-                width=54,
-                height=18,
-                cornerRadius=5,
-                opacity=0.92,
-                strokeWidth=0,
-            )
-            labels = base.mark_text(
-                fontSize=9,
-                fontWeight="bold",
-                baseline="middle",
-            ).encode(
-                text="Team Owner:N",
-                color=alt.value("#FFFFFF"),
-            )
-
-            chart = alt.layer(lines, points, label_bg, labels).properties(height=500)
-            st.altair_chart(chart, use_container_width=True)
-        except ImportError:
-            # Fallback if Altair is unavailable in the deployment environment.
-            st.line_chart(
-                standings_history.set_index("Round"),
-                height=450,
-                use_container_width=True,
-            )
 
     st.subheader("Power Rankings")
     display_df(
@@ -1404,8 +1239,8 @@ with tab2:
     # This avoids Streamlit/pandas rendering the underlying floats with
     # six decimal places on some pandas/Streamlit versions.
     for display_df_ in (over_display, under_display):
-        if "Avg. FPts/Tourn. Game" in display_df_.columns:
-            display_df_["Avg. FPts/Tourn. Game"] = display_df_["Avg. FPts/Tourn. Game"].apply(
+        if "Avg FPts/Game" in display_df_.columns:
+            display_df_["Avg FPts/Game"] = display_df_["Avg FPts/Game"].apply(
                 lambda x: f"{float(x):.1f}" if pd.notna(x) else ""
             )
 
@@ -1447,7 +1282,7 @@ with tab2:
                 "PPG": stats.get("PPG"),
                 "RPG": stats.get("RPG"),
                 "APG": stats.get("APG"),
-                "Tourn. FPts": player_total(row, data["fantasy_weights"]),
+                "Tourn. FPts": player_total(row),
                 "Tourn. PTS": row.get("tourn_pts"),
                 "Tourn. REB": row.get("tourn_reb"),
                 "Tourn. AST": row.get("tourn_ast"),
@@ -1457,20 +1292,7 @@ with tab2:
                 ),
             }])
             st.caption(f"Showing Player Finder statistics for {selected_player}.")
-            display_df(
-                result,
-                height=90,
-                column_colors={
-                    "FPts": LIGHT_BLUE,
-                    "PPG": LIGHT_BLUE,
-                    "RPG": LIGHT_BLUE,
-                    "APG": LIGHT_BLUE,
-                    "Tourn. FPts": LIGHT_GREEN,
-                    "Tourn. PTS": LIGHT_GREEN,
-                    "Tourn. REB": LIGHT_GREEN,
-                    "Tourn. AST": LIGHT_GREEN,
-                },
-            )
+            display_df(result, height=90)
 
 with tab3:
     st.subheader("Team View")
@@ -1494,16 +1316,7 @@ with tab3:
             display_df(
                 team_df,
                 height=500,
-                column_colors={
-                    "FPts": LIGHT_BLUE,
-                    "PPG": LIGHT_BLUE,
-                    "RPG": LIGHT_BLUE,
-                    "APG": LIGHT_BLUE,
-                    "Tourn. FPts": LIGHT_GREEN,
-                    "Tourn. PTS": LIGHT_GREEN,
-                    "Tourn. REB": LIGHT_GREEN,
-                    "Tourn. AST": LIGHT_GREEN,
-                },
+                one_decimal_columns={"FPts", "PPG", "RPG", "APG", "Tourn. FPts"},
             )
 
 with tab4:
@@ -1511,6 +1324,11 @@ with tab4:
     st.caption(
         "Projected FPts = seed average games × season-average FPts, summed by draftee."
     )
+    if not ratings.empty:
+        st.bar_chart(
+            ratings.set_index("Team Owner")[["Projected FPts"]],
+            height=300,
+        )
     display_df(
         ratings,
         height=520,
@@ -1530,6 +1348,6 @@ with tab4:
 
 st.divider()
 st.caption(
-    "The dashboard reads the Excel workbook from OneDrive. "
+    "The dashboard reads the Excel workbook from a read-only OneDrive share link. "
     "No workbook changes are made by the app."
 )
