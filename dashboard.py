@@ -773,7 +773,7 @@ def make_draft_ratings(data):
 # ---------------------------------------------------------------------
 # Streamlit presentation helpers
 # ---------------------------------------------------------------------
-def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, pink_last=False, rank_rwg=False, performance_gradient=None):
+def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, pink_last=False, rank_rwg=False, performance_gradient=None, team_view=False):
     scale_columns = scale_columns or {}
     reverse_columns = reverse_columns or {}
 
@@ -881,6 +881,23 @@ def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, p
                         f"background-color: {rank_color}; color: #000000;"
                     )
 
+        # Team View: visually separate season statistics from tournament
+        # statistics. These colors are intentionally applied only to the
+        # Team View table so the other tables retain their existing styling.
+        if team_view:
+            season_stat_color = "#DDEBF7"   # pale blue
+            tournament_stat_color = "#E2F0D9"  # pale green
+            for col in ("FPts", "PPG", "RPG", "APG"):
+                if col in row.index:
+                    styles[row.index.get_loc(col)] = (
+                        f"background-color: {season_stat_color}"
+                    )
+            for col in ("Tourn. FPts", "Tourn. PTS", "Tourn. REB", "Tourn. AST"):
+                if col in row.index:
+                    styles[row.index.get_loc(col)] = (
+                        f"background-color: {tournament_stat_color}"
+                    )
+
         # Eliminated players: bold red text across the entire player row.
         # `_team_out` is kept outside the displayed dataframe.
         if team_out_flags is not None:
@@ -963,7 +980,7 @@ def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, p
     return styled
 
 
-def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None):
+def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None, team_view=False):
     if df.empty:
         st.info("No data available yet.")
         return
@@ -975,6 +992,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
         pink_last=pink_last,
         rank_rwg=rank_rwg,
         performance_gradient=performance_gradient,
+        team_view=team_view,
     )
 
     # Size the table to its actual row count so short tables do not
