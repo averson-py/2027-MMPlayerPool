@@ -722,7 +722,7 @@ def make_performers(data, positive=True):
         result.append({
             "Player Name": row["player_name"],
             "Team": team,
-            "Avg FPts/Game": round(tournament_avg, 1),
+            "Avg. FPts/Tourn. Game": round(tournament_avg, 1),
             "Delta From Average": round(delta, 1),
             "Team Owner": row["draftee"],
             "Games Played": games,
@@ -743,7 +743,7 @@ def make_performers(data, positive=True):
         row["Rank"] = i
 
     return pd.DataFrame(result)[[
-        "Rank", "Player Name", "Team", "Avg FPts/Game",
+        "Rank", "Player Name", "Team", "Avg. FPts/Tourn. Game",
         "Delta From Average", "Team Owner", "Games Played",
         "Poss. Games Remaining", "_team_out",
     ]], result
@@ -940,12 +940,13 @@ def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, p
     # expose pandas' trailing floating-point zeros.
     one_decimal_columns = {
         "FPts per game",
-        "Avg FPts/Game",
+        "Avg. FPts/Tourn. Game",
         "Delta From Average",
         "Delta From Season Avg.",
         "Projected FPts",
         "Projected Score",
         "Total FPts",
+        "MVP FPts",
     }
     format_map = {}
     for col in df.columns:
@@ -1403,8 +1404,8 @@ with tab2:
     # This avoids Streamlit/pandas rendering the underlying floats with
     # six decimal places on some pandas/Streamlit versions.
     for display_df_ in (over_display, under_display):
-        if "Avg FPts/Game" in display_df_.columns:
-            display_df_["Avg FPts/Game"] = display_df_["Avg FPts/Game"].apply(
+        if "Avg. FPts/Tourn. Game" in display_df_.columns:
+            display_df_["Avg. FPts/Tourn. Game"] = display_df_["Avg. FPts/Tourn. Game"].apply(
                 lambda x: f"{float(x):.1f}" if pd.notna(x) else ""
             )
 
