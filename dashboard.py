@@ -1427,7 +1427,6 @@ with tab0:
 
 with tab1:
     st.subheader("Tournament Standings")
-    st.subheader("Tournament Standings")
     display_df(
         standings,
         height=520,
