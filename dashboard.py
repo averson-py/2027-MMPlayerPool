@@ -1427,24 +1427,6 @@ with tab0:
 
 with tab1:
     st.subheader("Tournament Standings")
-    st.subheader("Power Rankings")
-    display_df(
-        power,
-        height=520,
-        rank_rwg=True,
-        scale_columns={
-            "Draft Position": (
-                power["Draft Position"].min(),
-                power["Draft Position"].max(),
-            ),
-            "Active Players": (
-                power["Active Players"].min(),
-                power["Active Players"].max(),
-            ),
-        },
-        reverse_columns={"Draft Position": True},
-    )
-
     st.subheader("Tournament Standings")
     display_df(
         standings,
@@ -1470,6 +1452,25 @@ with tab1:
             "MVP FPts": (
                 standings["MVP FPts"].min(),
                 standings["MVP FPts"].max(),
+            ),
+        },
+        reverse_columns={"Draft Position": True},
+    )
+
+
+    st.subheader("Power Rankings")
+    display_df(
+        power,
+        height=520,
+        rank_rwg=True,
+        scale_columns={
+            "Draft Position": (
+                power["Draft Position"].min(),
+                power["Draft Position"].max(),
+            ),
+            "Active Players": (
+                power["Active Players"].min(),
+                power["Active Players"].max(),
             ),
         },
         reverse_columns={"Draft Position": True},
