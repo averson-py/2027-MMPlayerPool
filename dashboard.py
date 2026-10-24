@@ -1259,30 +1259,17 @@ with tab0:
     else:
         c3.metric("📈 Projected Leader", "—")
     if latest["Winner"] and latest["Loser"]:
-        c4.markdown(
-            f"""
-            <div style="border:1px solid #d9d9d9; border-radius:10px; padding:10px 12px; height:136px; box-sizing:border-box;">
-                <div style="font-size:14px; color:#1f2937; margin-bottom:6px;">🏀 Most Recent Game</div>
-                <div style="font-size:34px; line-height:1.15; color:#1f2937; margin-bottom:7px;">
-                    {latest['Winner']}
-                </div>
-                <span style="display:inline-block; background-color:#fde7e7; color:#d32f2f; border-radius:999px; padding:3px 8px; font-size:14px; line-height:1.1;">
-                    ↓ def. {latest['Loser']} [{latest['Round']}]
-                </span>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        # Use Streamlit's native metric card so this card has the exact same
+        # height, padding, and responsive behavior as the other overview cards.
+        # A leading minus sign makes the delta render with the red down arrow;
+        # Streamlit strips the sign from the displayed text.
+        c4.metric(
+            "🏀 Most Recent Game",
+            latest["Winner"],
+            f"-def. {latest['Loser']} [{latest['Round']}]",
         )
     else:
-        c4.markdown(
-            """
-            <div style="border:1px solid #d9d9d9; border-radius:10px; padding:10px 12px; height:136px; box-sizing:border-box;">
-                <div style="font-size:14px; color:#1f2937; margin-bottom:6px;">🏀 Most Recent Game</div>
-                <div style="font-size:34px; line-height:1.15; color:#1f2937;">No game recorded</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        c4.metric("🏀 Most Recent Game", "No game recorded")
 
     st.markdown("### 🏁 Current Standings")
     if not standings.empty:
