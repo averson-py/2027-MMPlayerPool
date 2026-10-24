@@ -1292,38 +1292,6 @@ with tab0:
         else:
             st.metric("Most Recent Game", "No game recorded")
 
-    if not overview_history.empty:
-        st.markdown("### 📈 Standings Progression")
-        st.caption("League ranking after each completed tournament round.")
-        overview_chart = overview_history.melt(
-            id_vars="Round", var_name="Team Owner", value_name="Rank"
-        )
-        overview_chart["Round"] = pd.Categorical(
-            overview_chart["Round"],
-            categories=[
-                "First Round", "Second Round", "Sweet Sixteen",
-                "Elite Eight", "Final Four", "National Title",
-            ],
-            ordered=True,
-        )
-        try:
-            import altair as alt
-            chart = alt.Chart(overview_chart).mark_line(point=True).encode(
-                x=alt.X("Round:N", sort=[
-                    "First Round", "Second Round", "Sweet Sixteen",
-                    "Elite Eight", "Final Four", "National Title"
-                ]),
-                y=alt.Y("Rank:Q", scale=alt.Scale(reverse=True), title=None),
-                color=alt.Color("Team Owner:N", title=None),
-                tooltip=["Round:N", "Team Owner:N", "Rank:Q"],
-            ).properties(height=420)
-            st.altair_chart(chart, use_container_width=True)
-        except ImportError:
-            st.line_chart(
-                overview_history.set_index("Round"),
-                height=420,
-                use_container_width=True,
-            )
 
 with tab1:
     st.subheader("Tournament Standings")
