@@ -1293,37 +1293,6 @@ with tab0:
             st.metric("Most Recent Game", "No game recorded")
 
 
-with tab1:
-    st.subheader("Tournament Standings")
-    display_df(
-        standings,
-        height=520,
-        pink_last=True,
-        scale_columns={
-            "Draft Position": (
-                standings["Draft Position"].min(),
-                standings["Draft Position"].max(),
-            ),
-            "Total FPts": (
-                standings["Total FPts"].min(),
-                standings["Total FPts"].max(),
-            ),
-            "Active Players": (
-                standings["Active Players"].min(),
-                standings["Active Players"].max(),
-            ),
-            "Poss. Games Remaining": (
-                standings["Poss. Games Remaining"].min(),
-                standings["Poss. Games Remaining"].max(),
-            ),
-            "MVP FPts": (
-                standings["MVP FPts"].min(),
-                standings["MVP FPts"].max(),
-            ),
-        },
-        reverse_columns={"Draft Position": True},
-    )
-
     st.subheader("Standings Progression")
     st.caption("League ranking after each tournament round.")
     standings_history = make_standings_round_history(data)
@@ -1473,6 +1442,38 @@ with tab1:
         },
         reverse_columns={"Draft Position": True},
     )
+
+with tab1:
+    st.subheader("Tournament Standings")
+    display_df(
+        standings,
+        height=520,
+        pink_last=True,
+        scale_columns={
+            "Draft Position": (
+                standings["Draft Position"].min(),
+                standings["Draft Position"].max(),
+            ),
+            "Total FPts": (
+                standings["Total FPts"].min(),
+                standings["Total FPts"].max(),
+            ),
+            "Active Players": (
+                standings["Active Players"].min(),
+                standings["Active Players"].max(),
+            ),
+            "Poss. Games Remaining": (
+                standings["Poss. Games Remaining"].min(),
+                standings["Poss. Games Remaining"].max(),
+            ),
+            "MVP FPts": (
+                standings["MVP FPts"].min(),
+                standings["MVP FPts"].max(),
+            ),
+        },
+        reverse_columns={"Draft Position": True},
+    )
+
 
 with tab2:
     st.subheader("Player Rankings — Top 10")
