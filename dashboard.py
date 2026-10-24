@@ -1425,6 +1425,8 @@ with tab0:
                 use_container_width=True,
             )
 
+with tab1:
+    st.subheader("Tournament Standings")
     st.subheader("Power Rankings")
     display_df(
         power,
@@ -1443,7 +1445,6 @@ with tab0:
         reverse_columns={"Draft Position": True},
     )
 
-with tab1:
     st.subheader("Tournament Standings")
     display_df(
         standings,
