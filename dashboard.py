@@ -1261,7 +1261,7 @@ with tab0:
     if latest["Winner"] and latest["Loser"]:
         c4.markdown(
             f"""
-            <div style="border:1px solid #d9d9d9; border-radius:10px; padding:10px 12px; height:134px; box-sizing:border-box;">
+            <div style="border:1px solid #d9d9d9; border-radius:10px; padding:10px 12px; height:136px; box-sizing:border-box;">
                 <div style="font-size:14px; color:#1f2937; margin-bottom:6px;">🏀 Most Recent Game</div>
                 <div style="font-size:34px; line-height:1.15; color:#1f2937; margin-bottom:7px;">
                     {latest['Winner']}
@@ -1276,7 +1276,7 @@ with tab0:
     else:
         c4.markdown(
             """
-            <div style="border:1px solid #d9d9d9; border-radius:10px; padding:10px 12px; height:134px; box-sizing:border-box;">
+            <div style="border:1px solid #d9d9d9; border-radius:10px; padding:10px 12px; height:136px; box-sizing:border-box;">
                 <div style="font-size:14px; color:#1f2937; margin-bottom:6px;">🏀 Most Recent Game</div>
                 <div style="font-size:34px; line-height:1.15; color:#1f2937;">No game recorded</div>
             </div>
