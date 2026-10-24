@@ -1262,10 +1262,13 @@ with tab0:
         c4.markdown(
             f"""
             <div style="border:1px solid #d9d9d9; border-radius:10px; padding:14px 16px; min-height:96px;">
-                <div style="font-size:14px; color:#1f2937; margin-bottom:8px;">🏀 Most Recent Game</div>
-                <div style="font-size:24px; line-height:1.2; color:#1f2937;">
-                    {latest['Winner']} def. <span style="color:#d32f2f;">{latest['Loser']}</span>
+                <div style="font-size:14px; color:#1f2937; margin-bottom:8px;">Most Recent Game</div>
+                <div style="font-size:40px; line-height:1.15; color:#1f2937; margin-bottom:10px;">
+                    {latest['Winner']}
                 </div>
+                <span style="display:inline-block; background-color:#fde7e7; color:#d32f2f; border-radius:999px; padding:4px 9px; font-size:14px; line-height:1.1;">
+                    ↑ def. {latest['Loser']}
+                </span>
             </div>
             """,
             unsafe_allow_html=True,
@@ -1274,8 +1277,8 @@ with tab0:
         c4.markdown(
             """
             <div style="border:1px solid #d9d9d9; border-radius:10px; padding:14px 16px; min-height:96px;">
-                <div style="font-size:14px; color:#1f2937; margin-bottom:8px;">🏀 Most Recent Game</div>
-                <div style="font-size:24px; line-height:1.2; color:#1f2937;">No game recorded</div>
+                <div style="font-size:14px; color:#1f2937; margin-bottom:8px;">Most Recent Game</div>
+                <div style="font-size:40px; line-height:1.15; color:#1f2937;">No game recorded</div>
             </div>
             """,
             unsafe_allow_html=True,
