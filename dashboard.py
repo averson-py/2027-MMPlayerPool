@@ -1203,12 +1203,123 @@ c2.metric("Drafted Players", len(data["draft_rows"]))
 c3.metric("Players Active", int(standings["Active Players"].sum()) if not standings.empty else 0)
 c4.metric("Teams Eliminated", len(data["teams_out"]))
 
-tab1, tab2, tab3, tab4 = st.tabs([
+tab0, tab1, tab2, tab3, tab4 = st.tabs([
+    "🏠 Pool Overview",
     "🏆 Standings",
     "📊 Player Statistics",
     "👥 Team View",
     "🎯 Draft Ratings",
 ])
+
+with tab0:
+    st.subheader("Pool Overview")
+    st.caption("A quick look at the current state of the pool.")
+
+    # Current leaders and headline stats. These are all derived from the
+    # same standings/power-ranking data used elsewhere in the dashboard.
+    leader = standings.iloc[0] if not standings.empty else None
+    mvp_row = None
+    if not standings.empty:
+        mvp_candidates = standings.dropna(subset=["MVP FPts"])
+        if not mvp_candidates.empty:
+            mvp_row = mvp_candidates.loc[mvp_candidates["MVP FPts"].idxmax()]
+
+    projected_leader = power.iloc[0] if not power.empty else None
+    active_total = int(standings["Active Players"].sum()) if not standings.empty else 0
+
+    overview_history = make_standings_round_history(data)
+    biggest_mover_name = "—"
+    biggest_mover_text = "No completed rounds yet"
+    if not overview_history.empty and len(overview_history) >= 2:
+        previous = overview_history.iloc[-2]
+        current = overview_history.iloc[-1]
+        changes = []
+        for owner in data["drafters"]:
+            old_rank = previous.get(owner)
+            new_rank = current.get(owner)
+            if pd.notna(old_rank) and pd.notna(new_rank):
+                changes.append((float(old_rank) - float(new_rank), owner))
+        if changes:
+            movement, owner = max(changes, key=lambda x: (x[0], x[1].casefold()))
+            if movement > 0:
+                biggest_mover_name = owner
+                biggest_mover_text = f"↑ {int(movement)} spot{'s' if movement != 1 else ''}"
+            elif movement < 0:
+                movement_down = abs(movement)
+                biggest_mover_name = owner
+                biggest_mover_text = f"↓ {int(movement_down)} spot{'s' if movement_down != 1 else ''}"
+            else:
+                biggest_mover_name = "No movement"
+                biggest_mover_text = "Ranks unchanged"
+
+    c1, c2, c3, c4 = st.columns(4)
+    if leader is not None:
+        c1.metric("🏆 Current Leader", str(leader["Team Owner"]), f"{float(leader['Total FPts']):.1f} FPts")
+    else:
+        c1.metric("🏆 Current Leader", "—")
+    if mvp_row is not None:
+        c2.metric("⭐ Pool MVP", str(mvp_row["MVP"]), f"{float(mvp_row['MVP FPts']):.1f} FPts")
+    else:
+        c2.metric("⭐ Pool MVP", "—")
+    if projected_leader is not None:
+        c3.metric("📈 Projected Leader", str(projected_leader["Team Owner"]), f"{float(projected_leader['Projected Score']):.1f}")
+    else:
+        c3.metric("📈 Projected Leader", "—")
+    c4.metric("👥 Active Draftee Players", active_total)
+
+    st.markdown("### 🏁 Current Standings")
+    if not standings.empty:
+        overview_display = standings[[
+            "Rank", "Team Owner", "Total FPts", "Active Players", "MVP", "MVP FPts"
+        ]].head(10).copy()
+        for column in ["Total FPts", "MVP FPts"]:
+            overview_display[column] = overview_display[column].apply(
+                lambda value: "" if pd.isna(value) else f"{float(value):.1f}"
+            )
+        display_df(overview_display, height=390, pink_last=True)
+
+    st.markdown("### 📊 Biggest Recent Mover")
+    mover_col, game_col = st.columns(2)
+    with mover_col:
+        st.metric("Biggest Rank Change", biggest_mover_name, biggest_mover_text)
+    with game_col:
+        if latest["Winner"] and latest["Loser"]:
+            st.metric("Most Recent Game", latest["Winner"], f"def. {latest['Loser']}")
+        else:
+            st.metric("Most Recent Game", "No game recorded")
+
+    if not overview_history.empty:
+        st.markdown("### 📈 Standings Progression")
+        st.caption("League ranking after each completed tournament round.")
+        overview_chart = overview_history.melt(
+            id_vars="Round", var_name="Team Owner", value_name="Rank"
+        )
+        overview_chart["Round"] = pd.Categorical(
+            overview_chart["Round"],
+            categories=[
+                "First Round", "Second Round", "Sweet Sixteen",
+                "Elite Eight", "Final Four", "National Title",
+            ],
+            ordered=True,
+        )
+        try:
+            import altair as alt
+            chart = alt.Chart(overview_chart).mark_line(point=True).encode(
+                x=alt.X("Round:N", sort=[
+                    "First Round", "Second Round", "Sweet Sixteen",
+                    "Elite Eight", "Final Four", "National Title"
+                ]),
+                y=alt.Y("Rank:Q", scale=alt.Scale(reverse=True), title=None),
+                color=alt.Color("Team Owner:N", title=None),
+                tooltip=["Round:N", "Team Owner:N", "Rank:Q"],
+            ).properties(height=420)
+            st.altair_chart(chart, use_container_width=True)
+        except ImportError:
+            st.line_chart(
+                overview_history.set_index("Round"),
+                height=420,
+                use_container_width=True,
+            )
 
 with tab1:
     st.subheader("Tournament Standings")
