@@ -1176,13 +1176,6 @@ except Exception as exc:
     st.stop()
 
 latest = data["latest_game_result"]
-if latest["Winner"] and latest["Loser"]:
-    st.caption(
-        f"**Most Recent Game Input:** {latest['Round']} | "
-        f"Winner: {latest['Winner']} | Loser: {latest['Loser']}"
-    )
-else:
-    st.caption("Most Recent Game Input: None recorded")
 
 st.caption(
     "Standings Updated: "
@@ -1266,13 +1259,27 @@ with tab0:
     else:
         c3.metric("📈 Projected Leader", "—")
     if latest["Winner"] and latest["Loser"]:
-        c4.metric(
-            "🏀 Most Recent Game",
-            f"{latest['Winner']} def. {latest['Loser']}",
-            latest["Round"],
+        c4.markdown(
+            f"""
+            <div style="border:1px solid #d9d9d9; border-radius:10px; padding:14px 16px; min-height:96px;">
+                <div style="font-size:14px; color:#1f2937; margin-bottom:8px;">🏀 Most Recent Game</div>
+                <div style="font-size:24px; line-height:1.2; color:#1f2937;">
+                    {latest['Winner']} def. <span style="color:#d32f2f;">{latest['Loser']}</span>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
     else:
-        c4.metric("🏀 Most Recent Game", "No game recorded")
+        c4.markdown(
+            """
+            <div style="border:1px solid #d9d9d9; border-radius:10px; padding:14px 16px; min-height:96px;">
+                <div style="font-size:14px; color:#1f2937; margin-bottom:8px;">🏀 Most Recent Game</div>
+                <div style="font-size:24px; line-height:1.2; color:#1f2937;">No game recorded</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
     st.markdown("### 🏁 Current Standings")
     if not standings.empty:
