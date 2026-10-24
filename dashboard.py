@@ -1265,7 +1265,14 @@ with tab0:
         c3.metric("📈 Projected Leader", str(projected_leader["Team Owner"]), f"{float(projected_leader['Projected Score']):.1f}")
     else:
         c3.metric("📈 Projected Leader", "—")
-    c4.metric("👥 Active Draftee Players", active_total)
+    if latest["Winner"] and latest["Loser"]:
+        c4.metric(
+            "🏀 Most Recent Game",
+            f"{latest['Winner']} def. {latest['Loser']}",
+            latest["Round"],
+        )
+    else:
+        c4.metric("🏀 Most Recent Game", "No game recorded")
 
     st.markdown("### 🏁 Current Standings")
     if not standings.empty:
