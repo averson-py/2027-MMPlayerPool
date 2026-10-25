@@ -1249,17 +1249,27 @@ with tab0:
             risers = [item for item in changes if item[0] > 0]
             fallers = [item for item in changes if item[0] < 0]
             if risers:
-                movement, owner = max(risers, key=lambda x: (x[0], x[1].casefold()))
-                biggest_riser_name = owner
+                movement = max(item[0] for item in risers)
+                tied_risers = [
+                    owner for change, owner in risers
+                    if change == movement
+                ]
+                tied_risers.sort(key=str.casefold)
+                biggest_riser_name = ", ".join(tied_risers)
                 biggest_riser_text = f"↑ {int(movement)} spot{'s' if movement != 1 else ''}"
             else:
                 biggest_riser_name = "No riser"
                 biggest_riser_text = "No one moved up"
             if fallers:
-                movement, owner = min(fallers, key=lambda x: (x[0], x[1].casefold()))
+                movement = min(item[0] for item in fallers)
                 movement_down = abs(movement)
-                biggest_faller_name = owner
-                biggest_faller_text = f"-- ↓ {int(movement_down)} spot{'s' if movement_down != 1 else ''}"
+                tied_fallers = [
+                    owner for change, owner in fallers
+                    if change == movement
+                ]
+                tied_fallers.sort(key=str.casefold)
+                biggest_faller_name = ", ".join(tied_fallers)
+                biggest_faller_text = f"↓ {int(movement_down)} spot{'s' if movement_down != 1 else ''}"
             else:
                 biggest_faller_name = "No faller"
                 biggest_faller_text = "No one moved down"
