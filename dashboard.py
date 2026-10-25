@@ -1646,7 +1646,7 @@ with tab2:
     display_df(players, height=400
     )
 
-    st.markdown("### <span style='color:#2E8B57; font-weight:800;'>↑</span> Top Overperformers 🌟", unsafe_allow_html=True)
+    st.markdown("### <span style='color:#2E8B57; font-weight:800;'>↑</span> Top Overperformers 🦄", unsafe_allow_html=True)
     over_display = over.rename(columns={"Delta From Average": "Delta From Season Avg."}).copy()
     under_display = under.rename(columns={"Delta From Average": "Delta From Season Avg."}).copy()
 
