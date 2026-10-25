@@ -1346,8 +1346,8 @@ with tab0:
 
         payout_display = pd.DataFrame(payout_rows)
         display_df(payout_display, height=210)
-    # Biggest riser / faller / highest single-round score
-    c5, c6, c7 = st.columns(3)
+    # Biggest riser / faller / highest team round / highest individual game
+    c5, c6, c7, c8 = st.columns(4)
     if biggest_riser_name != "—":
         c5.metric("📈 Biggest Riser", biggest_riser_name, biggest_riser_text)
     else:
@@ -1358,9 +1358,8 @@ with tab0:
     else:
         c6.metric("📉 Biggest Faller", "—", biggest_faller_text)
 
-    # Highest single-round score: sum the FPts from all five players on
-    # each draftee's team for every tournament round, then find the largest
-    # team total. This is a team/draftee score, not an individual-player score.
+    # Highest single-round team score: sum the FPts from all five players
+    # on each draftee's team for every tournament round.
     highest_round_name = "—"
     highest_round_text = "No round scores recorded yet"
     round_names = [
@@ -1372,8 +1371,6 @@ with tab0:
         "National Title",
     ]
 
-    # Start every draftee at zero for every round so that a player who has
-    # no recorded stats in a round contributes 0 to the team's round total.
     round_totals = {
         owner: [0.0] * len(round_names)
         for owner in data["drafters"]
@@ -1412,6 +1409,43 @@ with tab0:
         highest_round_text = f"{highest_score:.1f} FPts • {highest_round}"
 
     c7.metric("🔥 Highest Single-Round Score", highest_round_name, highest_round_text)
+
+    # Highest single-game individual performance. Each player's tournament
+    # round stat line represents that player's performance in that round/game.
+    highest_game_player = "—"
+    highest_game_text = "No game scores recorded yet"
+    individual_game_scores = []
+
+    for row in data["draft_rows"]:
+        pts_rounds = row.get("tourn_pts_rounds", [None] * 6)
+        reb_rounds = row.get("tourn_reb_rounds", [None] * 6)
+        ast_rounds = row.get("tourn_ast_rounds", [None] * 6)
+
+        for i, round_name in enumerate(round_names):
+            game_fpts = weighted_fantasy_points(
+                pts_rounds[i],
+                reb_rounds[i],
+                ast_rounds[i],
+                data["fantasy_weights"],
+            )
+            if game_fpts is not None:
+                individual_game_scores.append(
+                    (float(game_fpts), row["player_name"], round_name)
+                )
+
+    if individual_game_scores:
+        highest_game_score, highest_game_player_name, highest_game_round = max(
+            individual_game_scores,
+            key=lambda x: (x[0], x[1].casefold())
+        )
+        highest_game_player = highest_game_player_name
+        highest_game_text = f"{highest_game_score:.1f} FPts • {highest_game_round}"
+
+    c8.metric(
+        "🔥 Highest Single-Game Performance",
+        highest_game_player,
+        highest_game_text,
+    )
 
 
     st.subheader("🚀 Standings Progression")
