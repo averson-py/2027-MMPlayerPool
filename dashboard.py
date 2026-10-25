@@ -1256,7 +1256,7 @@ with tab0:
                 ]
                 tied_risers.sort(key=str.casefold)
                 biggest_riser_name = ", ".join(tied_risers)
-                biggest_riser_text = f"↑ {int(movement)} spot{'s' if movement != 1 else ''}"
+                biggest_riser_text = f"{int(movement)} spot{'s' if movement != 1 else ''}"
             else:
                 biggest_riser_name = "No riser"
                 biggest_riser_text = "No one moved up"
