@@ -1302,7 +1302,7 @@ with tab0:
     else:
         c6.metric("📉 Biggest Faller", "—", biggest_faller_text)
 
-    st.subheader("📈 Standings Progression")
+    st.subheader("🚀 Standings Progression")
     st.caption("League ranking after each tournament round.")
     standings_history = make_standings_round_history(data)
     if not standings_history.empty:
