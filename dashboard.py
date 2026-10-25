@@ -1406,9 +1406,9 @@ with tab0:
             round_scores, key=lambda x: (x[0], x[1].casefold())
         )
         highest_round_name = highest_owner
-        highest_round_text = f"{highest_score:.1f} FPts • {highest_round}"
+        highest_round_text = f"{highest_score:.1f} FPts [ {highest_round} ]"
 
-    c7.metric("🔥 Highest Single-Round Score", highest_round_name, highest_round_text)
+    c7.metric("🧨 Highest Single-Round Score", highest_round_name, highest_round_text)
 
     # Highest single-game individual performance. Each player's tournament
     # round stat line represents that player's performance in that round/game.
@@ -1439,7 +1439,7 @@ with tab0:
             key=lambda x: (x[0], x[1].casefold())
         )
         highest_game_player = highest_game_player_name
-        highest_game_text = f"{highest_game_score:.1f} FPts • {highest_game_round}"
+        highest_game_text = f"{highest_game_score:.1f} FPts [ {highest_game_round} ]"
 
     c8.metric(
         "🔥 Highest Single-Game Performance",
