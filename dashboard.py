@@ -1358,10 +1358,9 @@ with tab0:
     else:
         c6.metric("📉 Biggest Faller", "—", biggest_faller_text)
 
-    # Highest single-round score: calculate each draftee's FPts from the
-    # individual PTS/REB/AST values recorded for each tournament round.
-    # This is deliberately separate from overview_history, which contains
-    # cumulative standings/rankings rather than round-by-round scores.
+    # Highest single-round score: sum the FPts from all five players on
+    # each draftee's team for every tournament round, then find the largest
+    # team total. This is a team/draftee score, not an individual-player score.
     highest_round_name = "—"
     highest_round_text = "No round scores recorded yet"
     round_names = [
@@ -1372,7 +1371,13 @@ with tab0:
         "Final Four",
         "National Title",
     ]
-    round_scores = []
+
+    # Start every draftee at zero for every round so that a player who has
+    # no recorded stats in a round contributes 0 to the team's round total.
+    round_totals = {
+        owner: [0.0] * len(round_names)
+        for owner in data["drafters"]
+    }
 
     for row in data["draft_rows"]:
         owner = row["draftee"]
@@ -1380,13 +1385,24 @@ with tab0:
         reb_rounds = row.get("tourn_reb_rounds", [None] * 6)
         ast_rounds = row.get("tourn_ast_rounds", [None] * 6)
 
-        for i, round_name in enumerate(round_names):
+        for i in range(len(round_names)):
             round_fpts = weighted_fantasy_points(
-                pts_rounds[i], reb_rounds[i], ast_rounds[i],
-                data["fantasy_weights"]
+                pts_rounds[i],
+                reb_rounds[i],
+                ast_rounds[i],
+                data["fantasy_weights"],
             )
             if round_fpts is not None:
-                round_scores.append((float(round_fpts), owner, round_name))
+                round_totals.setdefault(
+                    owner, [0.0] * len(round_names)
+                )[i] += float(round_fpts)
+
+    round_scores = [
+        (score, owner, round_names[i])
+        for owner, scores in round_totals.items()
+        for i, score in enumerate(scores)
+        if score > 0
+    ]
 
     if round_scores:
         highest_score, highest_owner, highest_round = max(
