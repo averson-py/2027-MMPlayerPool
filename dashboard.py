@@ -1279,16 +1279,44 @@ with tab0:
     else:
         c4.metric("🏀 Most Recent Game", "No game recorded")
 
-    st.markdown("### 🏁 Current Standings")
+    st.markdown("### 💸 Current Payouts 💰")
     if not standings.empty:
-        overview_display = standings[[
-            "Rank", "Team Owner", "Total FPts", "Active Players", "MVP", "MVP FPts"
-        ]].head(10).copy()
-        for column in ["Total FPts", "MVP FPts"]:
-            overview_display[column] = overview_display[column].apply(
-                lambda value: "" if pd.isna(value) else f"{float(value):.1f}"
-            )
-        display_df(overview_display, height=390, pink_last=True)
+        payout_rows = []
+
+        # Show the top three teams plus the team currently in last place.
+        payout_indices = list(range(min(3, len(standings))))
+        if len(standings) > 3:
+            payout_indices.append(len(standings) - 1)
+
+        rank_emojis = {1: "🥇", 2: "🥈", 3: "🥉"}
+        for index in payout_indices:
+            row = standings.iloc[index]
+            rank = int(row["Rank"])
+            owner = row["Team Owner"]
+            fpts = row["Total FPts"]
+
+            change_text = "—"
+            if not overview_history.empty and len(overview_history) >= 2:
+                previous = overview_history.iloc[-2]
+                current = overview_history.iloc[-1]
+                old_rank = previous.get(owner)
+                new_rank = current.get(owner)
+                if pd.notna(old_rank) and pd.notna(new_rank):
+                    movement = float(old_rank) - float(new_rank)
+                    if movement > 0:
+                        change_text = f"↑ {int(movement)}"
+                    elif movement < 0:
+                        change_text = f"↓ {int(abs(movement))}"
+
+            payout_rows.append({
+                "Rank": f"{rank_emojis.get(rank, rank)} {rank}",
+                "Player": owner,
+                "FPts": f"{float(fpts):.1f}" if pd.notna(fpts) else "",
+                "Change": change_text,
+            })
+
+        payout_display = pd.DataFrame(payout_rows)
+        display_df(payout_display, height=210)
 
     # Biggest riser / faller
     c5, c6 = st.columns(2)
