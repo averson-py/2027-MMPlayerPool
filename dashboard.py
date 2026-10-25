@@ -1283,17 +1283,41 @@ with tab0:
         display_df(overview_display, height=390, pink_last=True)
 
     st.markdown("### 📊 Biggest Recent Mover")
-    mover_col, game_col = st.columns(2)
-    with mover_col:
-        st.metric("Biggest Rank Change", biggest_mover_name, biggest_mover_text)
-    with game_col:
-        if latest["Winner"] and latest["Loser"]:
-            st.metric("Most Recent Game", latest["Winner"], f"def. {latest['Loser']}")
-        else:
-            st.metric("Most Recent Game", "No game recorded")
+    st.metric("Biggest Rank Change", biggest_mover_name, biggest_mover_text)
 
 
-    st.subheader("Standings Progression")
+with tab1:
+    st.subheader("Tournament Standings")
+    display_df(
+        standings,
+        height=520,
+        pink_last=True,
+        scale_columns={
+            "Draft Position": (
+                standings["Draft Position"].min(),
+                standings["Draft Position"].max(),
+            ),
+            "Total FPts": (
+                standings["Total FPts"].min(),
+                standings["Total FPts"].max(),
+            ),
+            "Active Players": (
+                standings["Active Players"].min(),
+                standings["Active Players"].max(),
+            ),
+            "Poss. Games Remaining": (
+                standings["Poss. Games Remaining"].min(),
+                standings["Poss. Games Remaining"].max(),
+            ),
+            "MVP FPts": (
+                standings["MVP FPts"].min(),
+                standings["MVP FPts"].max(),
+            ),
+        },
+        reverse_columns={"Draft Position": True},
+    )
+
+    st.subheader("📈 Standings Progression")
     st.caption("League ranking after each tournament round.")
     standings_history = make_standings_round_history(data)
     if not standings_history.empty:
@@ -1425,38 +1449,6 @@ with tab0:
                 use_container_width=True,
             )
 
-with tab1:
-    st.subheader("Tournament Standings")
-    display_df(
-        standings,
-        height=520,
-        pink_last=True,
-        scale_columns={
-            "Draft Position": (
-                standings["Draft Position"].min(),
-                standings["Draft Position"].max(),
-            ),
-            "Total FPts": (
-                standings["Total FPts"].min(),
-                standings["Total FPts"].max(),
-            ),
-            "Active Players": (
-                standings["Active Players"].min(),
-                standings["Active Players"].max(),
-            ),
-            "Poss. Games Remaining": (
-                standings["Poss. Games Remaining"].min(),
-                standings["Poss. Games Remaining"].max(),
-            ),
-            "MVP FPts": (
-                standings["MVP FPts"].min(),
-                standings["MVP FPts"].max(),
-            ),
-        },
-        reverse_columns={"Draft Position": True},
-    )
-
-
     st.subheader("Power Rankings")
     display_df(
         power,
@@ -1474,7 +1466,6 @@ with tab1:
         },
         reverse_columns={"Draft Position": True},
     )
-
 
 with tab2:
     st.subheader("Player Rankings — Top 10")
