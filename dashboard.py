@@ -1283,26 +1283,6 @@ with tab0:
     if not standings.empty:
         payout_rows = []
 
-        # Payout settings from Config!D2:G2:
-        # D2 = base payout, E2 = last-place multiplier,
-        # F2 = third-place multiplier, G2 = second-place multiplier.
-        payout_base = float(data["config"]["D2"])
-        last_payout = payout_base * float(data["config"]["E2"])
-        third_payout = payout_base * float(data["config"]["F2"])
-        second_payout = payout_base * float(data["config"]["G2"])
-        first_payout = (
-            payout_base * len(data["drafters"])
-            - last_payout
-            - third_payout
-            - second_payout
-        )
-        payout_by_rank = {
-            1: first_payout,
-            2: second_payout,
-            3: third_payout,
-            len(standings): last_payout,
-        }
-
         # Show the top three teams plus the team currently in last place.
         payout_indices = list(range(min(3, len(standings))))
         if len(standings) > 3:
@@ -1330,7 +1310,6 @@ with tab0:
 
             payout_rows.append({
                 "Rank": f"{rank_emojis.get(rank, rank)} {rank}",
-                "Payout": f"${payout_by_rank.get(rank, 0):,.0f}",
                 "Player": owner,
                 "FPts": f"{float(fpts):.1f}" if pd.notna(fpts) else "",
                 "Change": change_text,
