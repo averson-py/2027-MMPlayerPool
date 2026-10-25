@@ -1250,14 +1250,14 @@ with tab0:
         c1.metric("🏆 Current Leader", str(leader["Team Owner"]), f"{float(leader['Total FPts']):.1f} FPts")
     else:
         c1.metric("🏆 Current Leader", "—")
-    if mvp_row is not None:
-        c2.metric("⭐ Pool MVP", str(mvp_row["MVP"]), f"{float(mvp_row['MVP FPts']):.1f} FPts")
-    else:
-        c2.metric("⭐ Pool MVP", "—")
     if projected_leader is not None:
-        c3.metric("📈 Projected Leader", str(projected_leader["Team Owner"]), f"{float(projected_leader['Projected Score']):.1f}")
+        c2.metric("📈 Projected Leader", str(projected_leader["Team Owner"]), f"{float(projected_leader['Projected Score']):.1f}")
     else:
-        c3.metric("📈 Projected Leader", "—")
+        c2.metric("📈 Projected Leader", "—")
+    if mvp_row is not None:
+        c3.metric("⭐ Pool MVP", str(mvp_row["MVP"]), f"{float(mvp_row['MVP FPts']):.1f} FPts")
+    else:
+        c3.metric("⭐ Pool MVP", "—")
     if latest["Winner"] and latest["Loser"]:
         # Use Streamlit's native metric card so this card has the exact same
         # height, padding, and responsive behavior as the other overview cards.
