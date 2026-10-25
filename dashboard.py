@@ -1665,7 +1665,7 @@ with tab2:
         performance_gradient="green",
     )
 
-    st.markdown("### <span style='color:#C62828; font-weight:800;'>↓</span> Top Underperformers 💩", unsafe_allow_html=True)
+    st.markdown("### <span style='color:#C62828; font-weight:800;'>↓</span> Top Underperformers 🪠", unsafe_allow_html=True)
     display_df(
         under_display,
         height=240,
