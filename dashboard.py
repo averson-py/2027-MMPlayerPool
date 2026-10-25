@@ -1259,7 +1259,7 @@ with tab0:
                 movement, owner = min(fallers, key=lambda x: (x[0], x[1].casefold()))
                 movement_down = abs(movement)
                 biggest_faller_name = owner
-                biggest_faller_text = f"↓ {int(movement_down)} spot{'s' if movement_down != 1 else ''}"
+                biggest_faller_text = f"-- ↓ {int(movement_down)} spot{'s' if movement_down != 1 else ''}"
             else:
                 biggest_faller_name = "No faller"
                 biggest_faller_text = "No one moved down"
