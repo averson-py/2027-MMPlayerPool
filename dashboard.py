@@ -1259,9 +1259,9 @@ with tab0:
     else:
         c1.metric("🏆 Current Leader", "—")
     if projected_leader is not None:
-        c2.metric("📈 Projected Leader", str(projected_leader["Team Owner"]), f"{float(projected_leader['Projected Score']):.1f}")
+        c2.metric("🔮 Projected Leader", str(projected_leader["Team Owner"]), f"{float(projected_leader['Projected Score']):.1f}")
     else:
-        c2.metric("📈 Projected Leader", "—")
+        c2.metric("🔮 Projected Leader", "—")
     if mvp_row is not None:
         c3.metric("⭐ Pool MVP", str(mvp_row["MVP"]), f"{float(mvp_row['MVP FPts']):.1f} FPts")
     else:
