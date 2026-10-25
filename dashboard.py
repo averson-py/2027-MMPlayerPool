@@ -1295,7 +1295,7 @@ with tab0:
         c4.metric(
             "🏀 Most Recent Game Input",
             latest["Winner"],
-            f"-- def. {latest['Loser']} [ {latest['Round']} ]",
+            f"-- def. {latest['Loser']} [ {latest['Round']} ] --",
         )
     else:
         c4.metric("🏀 Most Recent Game", "No game recorded")
