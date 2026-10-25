@@ -1288,7 +1288,7 @@ with tab0:
         if len(standings) > 3:
             payout_indices.append(len(standings) - 1)
 
-        rank_emojis = {1: "🥇", 2: "🥈", 3: "🥉", (len(standings)):"💩"}
+        rank_emojis = {1: "🥇", 2: "🥈", 3: "🥉", (len(standings)):"🦨"}
         for index in payout_indices:
             row = standings.iloc[index]
             rank = int(row["Rank"])
