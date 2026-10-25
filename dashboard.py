@@ -261,6 +261,16 @@ def load_data(file_path, updated_time=None):
                 f"Config!{cell} must contain a numeric fantasy-point value."
             )
 
+    # Payout settings. Config!D2:G2 correspond to base payout,
+    # last-place multiplier, third-place multiplier, and second-place multiplier.
+    payout_config = {}
+    for cell in ("D2", "E2", "F2", "G2"):
+        value = config_ws[cell].value
+        try:
+            payout_config[cell] = float(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"Config!{cell} must contain a numeric payout value.")
+
     # Draft order
     drafters = []
     seen = set()
@@ -443,6 +453,7 @@ def load_data(file_path, updated_time=None):
 
     return {
         "fantasy_weights": fantasy_weights,
+        "payout_config": payout_config,
         "drafters": drafters,
         "draft_rows": draft_rows,
         "player_stats": player_stats,
@@ -1283,6 +1294,23 @@ with tab0:
     if not standings.empty:
         payout_rows = []
 
+        payout_base = data["payout_config"]["D2"]
+        last_payout = payout_base * data["payout_config"]["E2"]
+        third_payout = payout_base * data["payout_config"]["F2"]
+        second_payout = payout_base * data["payout_config"]["G2"]
+        first_payout = (
+            payout_base * len(data["drafters"])
+            - last_payout
+            - third_payout
+            - second_payout
+        )
+        payout_by_rank = {
+            1: first_payout,
+            2: second_payout,
+            3: third_payout,
+            len(standings): last_payout,
+        }
+
         # Show the top three teams plus the team currently in last place.
         payout_indices = list(range(min(3, len(standings))))
         if len(standings) > 3:
@@ -1310,6 +1338,7 @@ with tab0:
 
             payout_rows.append({
                 "Rank": f"{rank_emojis.get(rank, rank)} {rank}",
+                "Payout": f"${payout_by_rank.get(rank, 0):,.0f}",
                 "Player": owner,
                 "FPts": f"{float(fpts):.1f}" if pd.notna(fpts) else "",
                 "Change": change_text,
