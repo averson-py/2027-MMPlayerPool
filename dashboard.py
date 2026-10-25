@@ -1264,7 +1264,7 @@ with tab0:
         # A leading minus sign makes the delta render with the red down arrow;
         # Streamlit strips the sign from the displayed text.
         c4.metric(
-            "🏀 Most Recent Game",
+            "🏀 Most Recent Game Input",
             latest["Winner"],
             f"-- def. {latest['Loser']} [ {latest['Round']} ]",
         )
