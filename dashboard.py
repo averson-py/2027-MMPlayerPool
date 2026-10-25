@@ -1221,8 +1221,10 @@ with tab0:
     active_total = int(standings["Active Players"].sum()) if not standings.empty else 0
 
     overview_history = make_standings_round_history(data)
-    biggest_mover_name = "—"
-    biggest_mover_text = "No completed rounds yet"
+    biggest_riser_name = "—"
+    biggest_riser_text = "No completed rounds yet"
+    biggest_faller_name = "—"
+    biggest_faller_text = "No completed rounds yet"
     if not overview_history.empty and len(overview_history) >= 2:
         previous = overview_history.iloc[-2]
         current = overview_history.iloc[-1]
@@ -1233,17 +1235,23 @@ with tab0:
             if pd.notna(old_rank) and pd.notna(new_rank):
                 changes.append((float(old_rank) - float(new_rank), owner))
         if changes:
-            movement, owner = max(changes, key=lambda x: (x[0], x[1].casefold()))
-            if movement > 0:
-                biggest_mover_name = owner
-                biggest_mover_text = f"↑ {int(movement)} spot{'s' if movement != 1 else ''}"
-            elif movement < 0:
-                movement_down = abs(movement)
-                biggest_mover_name = owner
-                biggest_mover_text = f"↓ {int(movement_down)} spot{'s' if movement_down != 1 else ''}"
+            risers = [item for item in changes if item[0] > 0]
+            fallers = [item for item in changes if item[0] < 0]
+            if risers:
+                movement, owner = max(risers, key=lambda x: (x[0], x[1].casefold()))
+                biggest_riser_name = owner
+                biggest_riser_text = f"↑ {int(movement)} spot{'s' if movement != 1 else ''}"
             else:
-                biggest_mover_name = "No movement"
-                biggest_mover_text = "Ranks unchanged"
+                biggest_riser_name = "No riser"
+                biggest_riser_text = "No one moved up"
+            if fallers:
+                movement, owner = min(fallers, key=lambda x: (x[0], x[1].casefold()))
+                movement_down = abs(movement)
+                biggest_faller_name = owner
+                biggest_faller_text = f"↓ {int(movement_down)} spot{'s' if movement_down != 1 else ''}"
+            else:
+                biggest_faller_name = "No faller"
+                biggest_faller_text = "No one moved down"
 
     c1, c2, c3, c4 = st.columns(4)
     if leader is not None:
@@ -1282,9 +1290,17 @@ with tab0:
             )
         display_df(overview_display, height=390, pink_last=True)
 
-    st.markdown("### 📊 Biggest Recent Mover")
-    st.metric("Biggest Rank Change", biggest_mover_name, biggest_mover_text)
+    # Biggest riser / faller
+    c5, c6 = st.columns(2)
+    if biggest_riser_name != "—":
+        c5.metric("📈 Biggest Riser", biggest_riser_name, biggest_riser_text)
+    else:
+        c5.metric("📈 Biggest Riser", "—", biggest_riser_text)
 
+    if biggest_faller_name != "—":
+        c6.metric("📉 Biggest Faller", biggest_faller_name, biggest_faller_text)
+    else:
+        c6.metric("📉 Biggest Faller", "—", biggest_faller_text)
 
     st.subheader("📈 Standings Progression")
     st.caption("League ranking after each tournament round.")
