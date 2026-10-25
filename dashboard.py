@@ -1346,9 +1346,8 @@ with tab0:
 
         payout_display = pd.DataFrame(payout_rows)
         display_df(payout_display, height=210)
-
-    # Biggest riser / faller
-    c5, c6 = st.columns(2)
+    # Biggest riser / faller / highest single-round score
+    c5, c6, c7 = st.columns(3)
     if biggest_riser_name != "—":
         c5.metric("📈 Biggest Riser", biggest_riser_name, biggest_riser_text)
     else:
@@ -1358,6 +1357,26 @@ with tab0:
         c6.metric("📉 Biggest Faller", biggest_faller_name, biggest_faller_text)
     else:
         c6.metric("📉 Biggest Faller", "—", biggest_faller_text)
+
+    highest_round_name = "—"
+    highest_round_text = "No completed rounds yet"
+    if not overview_history.empty:
+        round_scores = []
+        for round_name in overview_history.index:
+            round_row = overview_history.loc[round_name]
+            for owner in data["drafters"]:
+                score = round_row.get(owner)
+                if pd.notna(score):
+                    round_scores.append((float(score), owner, str(round_name)))
+        if round_scores:
+            highest_score, highest_owner, highest_round = max(
+                round_scores, key=lambda x: (x[0], x[1].casefold())
+            )
+            highest_round_name = highest_owner
+            highest_round_text = f"{highest_score:.1f} FPts • {highest_round}"
+
+    c7.metric("🔥 Highest Single-Round Score", highest_round_name, highest_round_text)
+
 
     st.subheader("🚀 Standings Progression")
     st.caption("League ranking after each tournament round.")
