@@ -1339,7 +1339,7 @@ with tab0:
             payout_rows.append({
                 "Rank": f"{rank_emojis.get(rank, rank)} {rank}",
                 "Payout": f"${payout_by_rank.get(rank, 0):,.0f}",
-                "Player": owner,
+                "Team Owner": owner,
                 "FPts": f"{float(fpts):.1f}" if pd.notna(fpts) else "",
                 "Change": change_text,
             })
