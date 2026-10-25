@@ -1349,14 +1349,14 @@ with tab0:
     # Biggest riser / faller / highest team round / highest individual game
     c5, c6, c7, c8 = st.columns(4)
     if biggest_riser_name != "—":
-        c5.metric("📈 Biggest Riser", biggest_riser_name, biggest_riser_text)
+        c5.metric("📈 Biggest Riser This Round", biggest_riser_name, biggest_riser_text)
     else:
-        c5.metric("📈 Biggest Riser", "—", biggest_riser_text)
+        c5.metric("📈 Biggest Riser This Round", "—", biggest_riser_text)
 
     if biggest_faller_name != "—":
-        c6.metric("📉 Biggest Faller", biggest_faller_name, biggest_faller_text)
+        c6.metric("📉 Biggest Faller This Round", biggest_faller_name, biggest_faller_text)
     else:
-        c6.metric("📉 Biggest Faller", "—", biggest_faller_text)
+        c6.metric("📉 Biggest Faller This Round", "—", biggest_faller_text)
 
     # Highest single-round team score: sum the FPts from all five players
     # on each draftee's team for every tournament round.
