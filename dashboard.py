@@ -1250,21 +1250,21 @@ with tab0:
         c1.metric("🏆 Current Leader", str(leader["Team Owner"]), f"{float(leader['Total FPts']):.1f} FPts")
     else:
         c1.metric("🏆 Current Leader", "—")
-    if mvp_row is not None:
-        c2.metric("⭐ Pool MVP", str(mvp_row["MVP"]), f"{float(mvp_row['MVP FPts']):.1f} FPts")
-    else:
-        c2.metric("⭐ Pool MVP", "—")
     if projected_leader is not None:
-        c3.metric("📈 Projected Leader", str(projected_leader["Team Owner"]), f"{float(projected_leader['Projected Score']):.1f}")
+        c2.metric("📈 Projected Leader", str(projected_leader["Team Owner"]), f"{float(projected_leader['Projected Score']):.1f}")
     else:
-        c3.metric("📈 Projected Leader", "—")
+        c2.metric("📈 Projected Leader", "—")
+    if mvp_row is not None:
+        c3.metric("⭐ Pool MVP", str(mvp_row["MVP"]), f"{float(mvp_row['MVP FPts']):.1f} FPts")
+    else:
+        c3.metric("⭐ Pool MVP", "—")
     if latest["Winner"] and latest["Loser"]:
         # Use Streamlit's native metric card so this card has the exact same
         # height, padding, and responsive behavior as the other overview cards.
         # A leading minus sign makes the delta render with the red down arrow;
         # Streamlit strips the sign from the displayed text.
         c4.metric(
-            "🏀 Most Recent Game Input",
+            "🏀 Most Recent Game",
             latest["Winner"],
             f"-- def. {latest['Loser']} [ {latest['Round']} ]",
         )
@@ -1283,10 +1283,48 @@ with tab0:
         display_df(overview_display, height=390, pink_last=True)
 
     st.markdown("### 📊 Biggest Recent Mover")
-    st.metric("Biggest Rank Change", biggest_mover_name, biggest_mover_text)
+    mover_col, game_col = st.columns(2)
+    with mover_col:
+        st.metric("Biggest Rank Change", biggest_mover_name, biggest_mover_text)
+    with game_col:
+        if latest["Winner"] and latest["Loser"]:
+            st.metric("Most Recent Game", latest["Winner"], f"def. {latest['Loser']}")
+        else:
+            st.metric("Most Recent Game", "No game recorded")
 
 
-    st.subheader("📈 Standings Progression")
+with tab1:
+    st.subheader("Tournament Standings")
+    display_df(
+        standings,
+        height=520,
+        pink_last=True,
+        scale_columns={
+            "Draft Position": (
+                standings["Draft Position"].min(),
+                standings["Draft Position"].max(),
+            ),
+            "Total FPts": (
+                standings["Total FPts"].min(),
+                standings["Total FPts"].max(),
+            ),
+            "Active Players": (
+                standings["Active Players"].min(),
+                standings["Active Players"].max(),
+            ),
+            "Poss. Games Remaining": (
+                standings["Poss. Games Remaining"].min(),
+                standings["Poss. Games Remaining"].max(),
+            ),
+            "MVP FPts": (
+                standings["MVP FPts"].min(),
+                standings["MVP FPts"].max(),
+            ),
+        },
+        reverse_columns={"Draft Position": True},
+    )
+
+    st.subheader("Standings Progression")
     st.caption("League ranking after each tournament round.")
     standings_history = make_standings_round_history(data)
     if not standings_history.empty:
@@ -1418,38 +1456,6 @@ with tab0:
                 use_container_width=True,
             )
 
-with tab1:
-    st.subheader("Tournament Standings")
-    display_df(
-        standings,
-        height=520,
-        pink_last=True,
-        scale_columns={
-            "Draft Position": (
-                standings["Draft Position"].min(),
-                standings["Draft Position"].max(),
-            ),
-            "Total FPts": (
-                standings["Total FPts"].min(),
-                standings["Total FPts"].max(),
-            ),
-            "Active Players": (
-                standings["Active Players"].min(),
-                standings["Active Players"].max(),
-            ),
-            "Poss. Games Remaining": (
-                standings["Poss. Games Remaining"].min(),
-                standings["Poss. Games Remaining"].max(),
-            ),
-            "MVP FPts": (
-                standings["MVP FPts"].min(),
-                standings["MVP FPts"].max(),
-            ),
-        },
-        reverse_columns={"Draft Position": True},
-    )
-
-
     st.subheader("Power Rankings")
     display_df(
         power,
@@ -1467,7 +1473,6 @@ with tab1:
         },
         reverse_columns={"Draft Position": True},
     )
-
 
 with tab2:
     st.subheader("Player Rankings — Top 10")
