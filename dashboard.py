@@ -1358,22 +1358,42 @@ with tab0:
     else:
         c6.metric("📉 Biggest Faller", "—", biggest_faller_text)
 
+    # Highest single-round score: calculate each draftee's FPts from the
+    # individual PTS/REB/AST values recorded for each tournament round.
+    # This is deliberately separate from overview_history, which contains
+    # cumulative standings/rankings rather than round-by-round scores.
     highest_round_name = "—"
-    highest_round_text = "No completed rounds yet"
-    if not overview_history.empty:
-        round_scores = []
-        for round_name in overview_history.index:
-            round_row = overview_history.loc[round_name]
-            for owner in data["drafters"]:
-                score = round_row.get(owner)
-                if pd.notna(score):
-                    round_scores.append((float(score), owner, str(round_name)))
-        if round_scores:
-            highest_score, highest_owner, highest_round = max(
-                round_scores, key=lambda x: (x[0], x[1].casefold())
+    highest_round_text = "No round scores recorded yet"
+    round_names = [
+        "First Round",
+        "Second Round",
+        "Sweet Sixteen",
+        "Elite Eight",
+        "Final Four",
+        "National Title",
+    ]
+    round_scores = []
+
+    for row in data["draft_rows"]:
+        owner = row["draftee"]
+        pts_rounds = row.get("tourn_pts_rounds", [None] * 6)
+        reb_rounds = row.get("tourn_reb_rounds", [None] * 6)
+        ast_rounds = row.get("tourn_ast_rounds", [None] * 6)
+
+        for i, round_name in enumerate(round_names):
+            round_fpts = weighted_fantasy_points(
+                pts_rounds[i], reb_rounds[i], ast_rounds[i],
+                data["fantasy_weights"]
             )
-            highest_round_name = highest_owner
-            highest_round_text = f"{highest_score:.1f} FPts • {highest_round}"
+            if round_fpts is not None:
+                round_scores.append((float(round_fpts), owner, round_name))
+
+    if round_scores:
+        highest_score, highest_owner, highest_round = max(
+            round_scores, key=lambda x: (x[0], x[1].casefold())
+        )
+        highest_round_name = highest_owner
+        highest_round_text = f"{highest_score:.1f} FPts • {highest_round}"
 
     c7.metric("🔥 Highest Single-Round Score", highest_round_name, highest_round_text)
 
