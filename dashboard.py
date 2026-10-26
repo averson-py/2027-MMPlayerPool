@@ -539,11 +539,31 @@ def make_standings_round_history(data):
             if round_total is not None:
                 round_totals.setdefault(owner, [0.0] * len(round_names))[i] += round_total
 
+    # Only include rounds that have at least one numeric stat recorded for
+    # at least one drafted player. This prevents future/unplayed rounds from
+    # appearing in the progression chart before any games have been played.
+    played_round_indexes = []
+    for i in range(len(round_names)):
+        has_numeric_value = False
+        for row in data["draft_rows"]:
+            for key in ("tourn_pts_rounds", "tourn_reb_rounds", "tourn_ast_rounds"):
+                values = row.get(key, [None] * len(round_names))
+                if i < len(values):
+                    value = values[i]
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        has_numeric_value = True
+                        break
+            if has_numeric_value:
+                break
+        if has_numeric_value:
+            played_round_indexes.append(i)
+
     # Convert round-by-round scoring into cumulative totals, then rank
-    # everyone after each round. Rank 1 is the best (highest) total.
+    # everyone after each played round. Rank 1 is the best (highest) total.
     result = []
     running_total = {owner: 0.0 for owner in round_totals}
-    for i, round_name in enumerate(round_names):
+    for i in played_round_indexes:
+        round_name = round_names[i]
         for owner, values in round_totals.items():
             running_total[owner] += values[i]
 
