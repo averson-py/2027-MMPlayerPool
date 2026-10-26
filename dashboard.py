@@ -394,10 +394,11 @@ def load_data(file_path, updated_time=None):
 
     ws = workbook[GAME_RESULTS_SHEET]
     raw_updated_time = ws["D2"].value
+    # A brand-new/pre-draft workbook may not have a stats-updater timestamp yet.
+    # Treat a blank D2 as "not updated yet" instead of rejecting the workbook.
     if raw_updated_time is None or str(raw_updated_time).strip() == "":
-        raise ValueError("GameResults!D2 is empty. The stats updater must write the workbook update date/time to cell D2.")
-
-    if isinstance(raw_updated_time, datetime):
+        workbook_updated_time = None
+    elif isinstance(raw_updated_time, datetime):
         workbook_updated_time = raw_updated_time
     else:
         raw_updated_text = str(raw_updated_time).strip()
@@ -1188,10 +1189,13 @@ except Exception as exc:
 
 latest = data["latest_game_result"]
 
-st.caption(
-    "Standings Updated: "
-    + data["updated_time"].strftime("%m/%d/%Y %I:%M %p")
-)
+if data["updated_time"] is None:
+    st.caption("Standings Updated: Not yet updated")
+else:
+    st.caption(
+        "Standings Updated: "
+        + data["updated_time"].strftime("%m/%d/%Y %I:%M %p")
+    )
 
 standings = make_standings(data)
 power = make_power_rankings(data)
