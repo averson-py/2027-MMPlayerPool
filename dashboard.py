@@ -263,6 +263,24 @@ def load_data(file_path, updated_time=None):
 
     # Payout settings. Config!D2:G2 correspond to base payout,
     # last-place multiplier, third-place multiplier, and second-place multiplier.
+    # Historical average tournament games by seed.
+    # Config!I2:I17 correspond to seeds 1 through 16.
+    seed_average_games = {}
+    for seed_number, row_number in enumerate(range(2, 18), start=1):
+        value = config_ws[f"I{row_number}"].value
+        try:
+            seed_average_games[seed_number] = float(value)
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"Config!I{row_number} must contain a numeric historical average games value."
+            )
+
+    # Config!J2 is the tournament FPts weighting.
+    try:
+        tournament_fpts_weight = float(config_ws["J2"].value)
+    except (TypeError, ValueError):
+        raise ValueError("Config!J2 must contain a numeric tournament FPts weight.")
+
     payout_config = {}
     for cell in ("D2", "E2", "F2", "G2"):
         value = config_ws[cell].value
@@ -456,6 +474,9 @@ def load_data(file_path, updated_time=None):
 
     return {
         "fantasy_weights": fantasy_weights,
+        "seed_average_games": seed_average_games,
+        "tournament_fpts_weight": tournament_fpts_weight,
+
         "payout_config": payout_config,
         "drafters": drafters,
         "draft_rows": draft_rows,
@@ -655,10 +676,11 @@ def make_power_rankings(data):
             "Total FPts": None,
             "Active Players": 0,
             "Games Played": 0,
-            "Poss. Games Remaining": 0,
         })
+
         t = totals[key]
-        t["Total FPts"] = sum_existing_values([t["Total FPts"], player_total(row, data["fantasy_weights"])])
+        current_fpts = player_total(row, data["fantasy_weights"])
+        t["Total FPts"] = sum_existing_values([t["Total FPts"], current_fpts])
 
         stats = data["player_stats"].get(row["player_name"].casefold(), {})
         team = stats.get("Team")
@@ -666,41 +688,98 @@ def make_power_rankings(data):
             t["Active Players"] += 1
 
         t["Games Played"] += row.get("games_played") or 0
-        t["Poss. Games Remaining"] += row.get("possible_games_remaining") or 0
 
     result = []
-    for t in totals.values():
-        if t["Games Played"] > 0:
-            estimated = (
-                (t["Total FPts"] or 0) / t["Games Played"] * t["Poss. Games Remaining"]
-            )
-        else:
-            estimated = None
+    tournament_weight = data["tournament_fpts_weight"]
 
+    for key, t in totals.items():
+        team_projected_fpts = 0.0
+        expected_games_total = 0.0
+
+        for row in data["draft_rows"]:
+            if row["draftee"].casefold() != key:
+                continue
+
+            stats = data["player_stats"].get(row["player_name"].casefold(), {})
+            team = stats.get("Team")
+            team_is_active = (
+                team is not None
+                and str(team).strip().casefold() not in data["teams_out"]
+            )
+
+            current_player_fpts = float(player_total(row, data["fantasy_weights"]) or 0.0)
+            games_played = row.get("games_played") or 0
+
+            tourn_fpts_per_game = (
+                current_player_fpts / games_played
+                if games_played > 0 else 0.0
+            )
+
+            # "Tot. FPts" in player_stats is the season FPts per game
+            # calculated from the season PPG/RPG/APG fantasy components.
+            season_fpts_per_game = float(stats.get("Tot. FPts") or 0.0)
+
+            weighted_fpts_per_game = (
+                tournament_weight * tourn_fpts_per_game
+                + (1.0 - tournament_weight) * season_fpts_per_game
+            )
+
+            seed_value = stats.get("Seed")
+            try:
+                seed_number = int(float(seed_value))
+            except (TypeError, ValueError):
+                match = re.search(r"\d+", str(seed_value))
+                seed_number = int(match.group(0)) if match else None
+
+            historical_avg_games = (
+                data["seed_average_games"].get(seed_number)
+                if seed_number is not None else None
+            )
+
+            if not team_is_active:
+                expected_remaining_games = 0.0
+            elif historical_avg_games is None:
+                expected_remaining_games = 1.0
+            else:
+                expected_remaining_games = max(
+                    historical_avg_games - games_played,
+                    1.0,
+                )
+
+            expected_games_total += expected_remaining_games
+
+            team_projected_fpts += (
+                current_player_fpts
+                + weighted_fpts_per_game * expected_remaining_games
+            )
+
+        total_fpts = t["Total FPts"]
         fpg = (
-            t["Total FPts"] / t["Games Played"]
-            if t["Total FPts"] is not None and t["Games Played"] > 0
+            total_fpts / t["Games Played"]
+            if total_fpts is not None and t["Games Played"] > 0
             else None
         )
 
-        projected = None
-        if t["Total FPts"] is not None or estimated is not None:
-            projected = round((t["Total FPts"] or 0) + (estimated or 0), 1)
-
-        result.append({**t, "FPts per game": round(fpg, 1) if fpg is not None else None, "Projected Score": projected})
+        result.append({
+            **t,
+            "Projected Score": round(team_projected_fpts, 1),
+            "FPts per game": round(fpg, 1) if fpg is not None else None,
+            "Expected Games Remaining": round(expected_games_total, 1),
+        })
 
     result.sort(key=lambda x: (
         -(x["Projected Score"] if x["Projected Score"] is not None else 0),
         x["Draft Position"] if isinstance(x["Draft Position"], int) else 999999,
         x["Team Owner"].casefold(),
     ))
+
     for i, row in enumerate(result, start=1):
         row["Rank"] = i
 
     power_columns = [
         "Rank", "Draft Position", "Team Owner", "Projected Score",
         "Total FPts", "Active Players", "FPts per game",
-        "Games Played", "Poss. Games Remaining"
+        "Games Played", "Expected Games Remaining"
     ]
     if not result:
         return pd.DataFrame(columns=power_columns)
