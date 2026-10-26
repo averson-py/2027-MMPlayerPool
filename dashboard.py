@@ -425,7 +425,9 @@ def load_data(file_path, updated_time=None):
                 "Expected an Excel date/time value or a standard date/time string."
             )
 
-    if workbook_updated_time.tzinfo is not None:
+    # A blank D2 is valid for a pre-draft workbook, so only normalize
+    # timezone information when a timestamp was actually supplied.
+    if workbook_updated_time is not None and workbook_updated_time.tzinfo is not None:
         workbook_updated_time = workbook_updated_time.astimezone().replace(tzinfo=None)
 
     # Most recent game result
