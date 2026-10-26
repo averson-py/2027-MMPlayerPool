@@ -607,10 +607,17 @@ def make_standings(data):
     for i, row in enumerate(standings, start=1):
         row["Rank"] = i
 
-    return pd.DataFrame(standings)[[
+    # A pre-draft workbook can have no rows at all. Return an empty
+    # DataFrame with the expected schema so downstream page rendering
+    # does not raise a KeyError when selecting these columns.
+    standings_columns = [
         "Rank", "Draft Position", "Team Owner", "Total FPts",
         "Active Players", "Poss. Games Remaining", "MVP", "MVP FPts"
-    ]]
+    ]
+    if not standings:
+        return pd.DataFrame(columns=standings_columns)
+
+    return pd.DataFrame(standings)[standings_columns]
 
 
 def make_power_rankings(data):
