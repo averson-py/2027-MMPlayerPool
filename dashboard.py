@@ -261,24 +261,6 @@ def load_data(file_path, updated_time=None):
                 f"Config!{cell} must contain a numeric fantasy-point value."
             )
 
-    # Historical average tournament games by seed. Config!I2:I17
-    # correspond to seeds 1 through 16.
-    seed_average_games = {}
-    for seed_number, row_number in enumerate(range(2, 18), start=1):
-        value = config_ws[f"I{row_number}"].value
-        try:
-            seed_average_games[seed_number] = float(value)
-        except (TypeError, ValueError):
-            raise ValueError(
-                f"Config!I{row_number} must contain a numeric historical average games value."
-            )
-
-    # Tournament-vs-season FPts weighting. Config!J2 is the tournament weight.
-    try:
-        tournament_fpts_weight = float(config_ws["J2"].value)
-    except (TypeError, ValueError):
-        raise ValueError("Config!J2 must contain a numeric tournament FPts weight.")
-
     # Payout settings. Config!D2:G2 correspond to base payout,
     # last-place multiplier, third-place multiplier, and second-place multiplier.
     payout_config = {}
@@ -412,10 +394,11 @@ def load_data(file_path, updated_time=None):
 
     ws = workbook[GAME_RESULTS_SHEET]
     raw_updated_time = ws["D2"].value
+    # A brand-new/pre-draft workbook may not have a stats-updater timestamp yet.
+    # Treat a blank D2 as "not updated yet" instead of rejecting the workbook.
     if raw_updated_time is None or str(raw_updated_time).strip() == "":
-        raise ValueError("GameResults!D2 is empty. The stats updater must write the workbook update date/time to cell D2.")
-
-    if isinstance(raw_updated_time, datetime):
+        workbook_updated_time = None
+    elif isinstance(raw_updated_time, datetime):
         workbook_updated_time = raw_updated_time
     else:
         raw_updated_text = str(raw_updated_time).strip()
@@ -442,7 +425,9 @@ def load_data(file_path, updated_time=None):
                 "Expected an Excel date/time value or a standard date/time string."
             )
 
-    if workbook_updated_time.tzinfo is not None:
+    # A blank D2 is valid for a pre-draft workbook, so only normalize
+    # timezone information when a timestamp was actually supplied.
+    if workbook_updated_time is not None and workbook_updated_time.tzinfo is not None:
         workbook_updated_time = workbook_updated_time.astimezone().replace(tzinfo=None)
 
     # Most recent game result
@@ -471,8 +456,6 @@ def load_data(file_path, updated_time=None):
 
     return {
         "fantasy_weights": fantasy_weights,
-        "seed_average_games": seed_average_games,
-        "tournament_fpts_weight": tournament_fpts_weight,
         "payout_config": payout_config,
         "drafters": drafters,
         "draft_rows": draft_rows,
@@ -556,11 +539,31 @@ def make_standings_round_history(data):
             if round_total is not None:
                 round_totals.setdefault(owner, [0.0] * len(round_names))[i] += round_total
 
+    # Only include rounds that have at least one numeric stat recorded for
+    # at least one drafted player. This prevents future/unplayed rounds from
+    # appearing in the progression chart before any games have been played.
+    played_round_indexes = []
+    for i in range(len(round_names)):
+        has_numeric_value = False
+        for row in data["draft_rows"]:
+            for key in ("tourn_pts_rounds", "tourn_reb_rounds", "tourn_ast_rounds"):
+                values = row.get(key, [None] * len(round_names))
+                if i < len(values):
+                    value = values[i]
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        has_numeric_value = True
+                        break
+            if has_numeric_value:
+                break
+        if has_numeric_value:
+            played_round_indexes.append(i)
+
     # Convert round-by-round scoring into cumulative totals, then rank
-    # everyone after each round. Rank 1 is the best (highest) total.
+    # everyone after each played round. Rank 1 is the best (highest) total.
     result = []
     running_total = {owner: 0.0 for owner in round_totals}
-    for i, round_name in enumerate(round_names):
+    for i in played_round_indexes:
+        round_name = round_names[i]
         for owner, values in round_totals.items():
             running_total[owner] += values[i]
 
@@ -624,10 +627,17 @@ def make_standings(data):
     for i, row in enumerate(standings, start=1):
         row["Rank"] = i
 
-    return pd.DataFrame(standings)[[
+    # A pre-draft workbook can have no rows at all. Return an empty
+    # DataFrame with the expected schema so downstream page rendering
+    # does not raise a KeyError when selecting these columns.
+    standings_columns = [
         "Rank", "Draft Position", "Team Owner", "Total FPts",
         "Active Players", "Poss. Games Remaining", "MVP", "MVP FPts"
-    ]]
+    ]
+    if not standings:
+        return pd.DataFrame(columns=standings_columns)
+
+    return pd.DataFrame(standings)[standings_columns]
 
 
 def make_power_rankings(data):
@@ -645,81 +655,27 @@ def make_power_rankings(data):
             "Total FPts": None,
             "Active Players": 0,
             "Games Played": 0,
-            "Expected Games Remaining": 0.0,
+            "Poss. Games Remaining": 0,
         })
         t = totals[key]
-        current_fpts = player_total(row, data["fantasy_weights"])
-        t["Total FPts"] = sum_existing_values([t["Total FPts"], current_fpts])
+        t["Total FPts"] = sum_existing_values([t["Total FPts"], player_total(row, data["fantasy_weights"])])
 
         stats = data["player_stats"].get(row["player_name"].casefold(), {})
         team = stats.get("Team")
-        team_is_active = (
-            team is not None
-            and str(team).strip().casefold() not in data["teams_out"]
-        )
-
-        if team_is_active:
+        if team is not None and str(team).strip().casefold() not in data["teams_out"]:
             t["Active Players"] += 1
 
         t["Games Played"] += row.get("games_played") or 0
+        t["Poss. Games Remaining"] += row.get("possible_games_remaining") or 0
 
     result = []
-    tournament_weight = data["tournament_fpts_weight"]
-
-    for key, t in totals.items():
-        team_projected_fpts = 0.0
-
-        for row in data["draft_rows"]:
-            if row["draftee"].casefold() != key:
-                continue
-
-            stats = data["player_stats"].get(row["player_name"].casefold(), {})
-            team = stats.get("Team")
-            team_is_active = (
-                team is not None
-                and str(team).strip().casefold() not in data["teams_out"]
+    for t in totals.values():
+        if t["Games Played"] > 0:
+            estimated = (
+                (t["Total FPts"] or 0) / t["Games Played"] * t["Poss. Games Remaining"]
             )
-
-            current_player_fpts = float(player_total(row, data["fantasy_weights"]) or 0.0)
-            games_played = row.get("games_played") or 0
-
-            tournament_fpg = (
-                current_player_fpts / games_played
-                if games_played > 0 else 0.0
-            )
-
-            season_fpg = float(stats["Tot. FPts"]) if stats.get("Tot. FPts") is not None else 0.0
-            weighted_fpg = (
-                tournament_weight * tournament_fpg
-                + (1.0 - tournament_weight) * season_fpg
-            )
-
-            seed_value = stats.get("Seed")
-            try:
-                seed_number = int(float(seed_value))
-            except (TypeError, ValueError):
-                match = re.search(r"\d+", str(seed_value))
-                seed_number = int(match.group(0)) if match else None
-
-            historical_avg = (
-                data["seed_average_games"].get(seed_number)
-                if seed_number is not None else None
-            )
-
-            if not team_is_active:
-                expected_remaining = 0.0
-            elif historical_avg is None:
-                expected_remaining = 0.0
-            else:
-                expected_remaining = max(
-                    historical_avg - games_played,
-                    1.0,
-                )
-
-            team_projected_fpts += (
-                current_player_fpts
-                + weighted_fpg * expected_remaining
-            )
+        else:
+            estimated = None
 
         fpg = (
             t["Total FPts"] / t["Games Played"]
@@ -727,47 +683,11 @@ def make_power_rankings(data):
             else None
         )
 
-        result.append({
-            **t,
-            "Expected Games Remaining": round(
-                sum(
-                    (
-                        0.0
-                        if row_is_eliminated
-                        else max(
-                            historical_avg - games_played,
-                            1.0,
-                        )
-                    )
-                    for row_is_eliminated, historical_avg, games_played in []
-                ),
-                1,
-            ),
-            "FPts per game": round(fpg, 1) if fpg is not None else None,
-            "Projected Score": round(team_projected_fpts, 1),
-        })
+        projected = None
+        if t["Total FPts"] is not None or estimated is not None:
+            projected = round((t["Total FPts"] or 0) + (estimated or 0), 1)
 
-    # Recalculate the team-level expected-games display separately. The
-    # projected score above is the authoritative player-by-player calculation.
-    for result_row in result:
-        owner_key = result_row["Team Owner"].casefold()
-        expected_total = 0.0
-        for row in data["draft_rows"]:
-            if row["draftee"].casefold() != owner_key:
-                continue
-            stats = data["player_stats"].get(row["player_name"].casefold(), {})
-            team = stats.get("Team")
-            active = team is not None and str(team).strip().casefold() not in data["teams_out"]
-            seed_value = stats.get("Seed")
-            try:
-                seed_number = int(float(seed_value))
-            except (TypeError, ValueError):
-                match = re.search(r"\d+", str(seed_value))
-                seed_number = int(match.group(0)) if match else None
-            historical_avg = data["seed_average_games"].get(seed_number) if seed_number is not None else None
-            games_played = row.get("games_played") or 0
-            expected_total += 0.0 if not active or historical_avg is None else max(historical_avg - games_played, 1.0)
-        result_row["Expected Games Remaining"] = round(expected_total, 1)
+        result.append({**t, "FPts per game": round(fpg, 1) if fpg is not None else None, "Projected Score": projected})
 
     result.sort(key=lambda x: (
         -(x["Projected Score"] if x["Projected Score"] is not None else 0),
@@ -777,11 +697,15 @@ def make_power_rankings(data):
     for i, row in enumerate(result, start=1):
         row["Rank"] = i
 
-    return pd.DataFrame(result)[[
+    power_columns = [
         "Rank", "Draft Position", "Team Owner", "Projected Score",
         "Total FPts", "Active Players", "FPts per game",
-        "Games Played", "Expected Games Remaining"
-    ]]
+        "Games Played", "Poss. Games Remaining"
+    ]
+    if not result:
+        return pd.DataFrame(columns=power_columns)
+
+    return pd.DataFrame(result)[power_columns]
 
 
 def make_player_rankings(data):
@@ -811,11 +735,15 @@ def make_player_rankings(data):
     for i, row in enumerate(result, start=1):
         row["Rank"] = i
 
-    return pd.DataFrame(result)[[
+    player_columns = [
         "Rank", "Player Name", "Team", "Total FPts",
         "Team Owner", "Games Played", "Poss. Games Remaining",
         "_team_out",
-    ]], result
+    ]
+    if not result:
+        return pd.DataFrame(columns=player_columns), result
+
+    return pd.DataFrame(result)[player_columns], result
 
 
 def make_performers(data, positive=True):
@@ -863,11 +791,15 @@ def make_performers(data, positive=True):
     for i, row in enumerate(result, start=1):
         row["Rank"] = i
 
-    return pd.DataFrame(result)[[
+    performer_columns = [
         "Rank", "Player Name", "Team", "Avg. FPts/Tourn. Game",
         "Delta From Average", "Team Owner", "Games Played",
         "Poss. Games Remaining", "_team_out",
-    ]], result
+    ]
+    if not result:
+        return pd.DataFrame(columns=performer_columns), result
+
+    return pd.DataFrame(result)[performer_columns], result
 
 
 def make_draft_ratings(data):
@@ -925,9 +857,13 @@ def make_draft_ratings(data):
     for i, row in enumerate(result, start=1):
         row["Rank"] = i
 
-    return pd.DataFrame(result)[[
+    ratings_columns = [
         "Rank", "Draft Position", "Team Owner", "Projected FPts", "Regions"
-    ]]
+    ]
+    if not result:
+        return pd.DataFrame(columns=ratings_columns)
+
+    return pd.DataFrame(result)[ratings_columns]
 
 
 # ---------------------------------------------------------------------
@@ -1298,10 +1234,13 @@ except Exception as exc:
 
 latest = data["latest_game_result"]
 
-st.caption(
-    "Standings Updated: "
-    + data["updated_time"].strftime("%m/%d/%Y %I:%M %p")
-)
+if data["updated_time"] is None:
+    st.caption("Standings Updated: Not yet updated")
+else:
+    st.caption(
+        "Standings Updated: "
+        + data["updated_time"].strftime("%m/%d/%Y %I:%M %p")
+    )
 
 standings = make_standings(data)
 power = make_power_rankings(data)
@@ -1331,14 +1270,27 @@ with tab0:
 
     # Current leaders and headline stats. These are all derived from the
     # same standings/power-ranking data used elsewhere in the dashboard.
-    leader = standings.iloc[0] if not standings.empty else None
+    # After the draft, standings rows exist even before any game stats have
+    # been entered. In that state there is no meaningful leader/MVP/projected
+    # leader yet, so keep these cards blank rather than attempting to format
+    # None as a number.
+    leader = None
+    if not standings.empty and standings["Total FPts"].notna().any():
+        leader_candidates = standings[standings["Total FPts"].notna()]
+        if not leader_candidates.empty:
+            leader = leader_candidates.iloc[0]
+
     mvp_row = None
     if not standings.empty:
         mvp_candidates = standings.dropna(subset=["MVP FPts"])
         if not mvp_candidates.empty:
             mvp_row = mvp_candidates.loc[mvp_candidates["MVP FPts"].idxmax()]
 
-    projected_leader = power.iloc[0] if not power.empty else None
+    projected_leader = None
+    if not power.empty and power["Projected Score"].notna().any():
+        projected_candidates = power[power["Projected Score"].notna()]
+        if not projected_candidates.empty:
+            projected_leader = projected_candidates.iloc[0]
     active_total = int(standings["Active Players"].sum()) if not standings.empty else 0
 
     overview_history = make_standings_round_history(data)
@@ -1359,17 +1311,27 @@ with tab0:
             risers = [item for item in changes if item[0] > 0]
             fallers = [item for item in changes if item[0] < 0]
             if risers:
-                movement, owner = max(risers, key=lambda x: (x[0], x[1].casefold()))
-                biggest_riser_name = owner
-                biggest_riser_text = f"↑ {int(movement)} spot{'s' if movement != 1 else ''}"
+                movement = max(item[0] for item in risers)
+                tied_risers = [
+                    owner for change, owner in risers
+                    if change == movement
+                ]
+                tied_risers.sort(key=str.casefold)
+                biggest_riser_name = ", ".join(tied_risers)
+                biggest_riser_text = f"+{int(movement)} spot{'s' if movement != 1 else ''}"
             else:
                 biggest_riser_name = "No riser"
                 biggest_riser_text = "No one moved up"
             if fallers:
-                movement, owner = min(fallers, key=lambda x: (x[0], x[1].casefold()))
+                movement = min(item[0] for item in fallers)
                 movement_down = abs(movement)
-                biggest_faller_name = owner
-                biggest_faller_text = f"↓ {int(movement_down)} spot{'s' if movement_down != 1 else ''}"
+                tied_fallers = [
+                    owner for change, owner in fallers
+                    if change == movement
+                ]
+                tied_fallers.sort(key=str.casefold)
+                biggest_faller_name = ", ".join(tied_fallers)
+                biggest_faller_text = f"- {int(movement_down)} spot{'s' if movement_down != 1 else ''}"
             else:
                 biggest_faller_name = "No faller"
                 biggest_faller_text = "No one moved down"
@@ -1380,7 +1342,7 @@ with tab0:
     else:
         c1.metric("🏆 Current Leader", "—")
     if projected_leader is not None:
-        c2.metric("🔮 Projected Leader", str(projected_leader["Team Owner"]), f"{float(projected_leader['Projected Score']):.1f}")
+        c2.metric("🔮 Projected Leader", str(projected_leader["Team Owner"]), f"{float(projected_leader['Projected Score']):.1f} Proj. FPts")
     else:
         c2.metric("🔮 Projected Leader", "—")
     if mvp_row is not None:
@@ -1395,7 +1357,7 @@ with tab0:
         c4.metric(
             "🏀 Most Recent Game Input",
             latest["Winner"],
-            f"-- def. {latest['Loser']} [ {latest['Round']} ]",
+            f"-- def. {latest['Loser']} [ {latest['Round']} ] --",
         )
     else:
         c4.metric("🏀 Most Recent Game", "No game recorded")
@@ -1449,25 +1411,114 @@ with tab0:
             payout_rows.append({
                 "Rank": f"{rank_emojis.get(rank, rank)} {rank}",
                 "Payout": f"${payout_by_rank.get(rank, 0):,.0f}",
-                "Player": owner,
+                "Team Owner": owner,
                 "FPts": f"{float(fpts):.1f}" if pd.notna(fpts) else "",
                 "Change": change_text,
             })
 
         payout_display = pd.DataFrame(payout_rows)
         display_df(payout_display, height=210)
-
-    # Biggest riser / faller
-    c5, c6 = st.columns(2)
+    # Biggest riser / faller / highest team round / highest individual game
+    c5, c6, c7, c8 = st.columns(4)
     if biggest_riser_name != "—":
-        c5.metric("📈 Biggest Riser", biggest_riser_name, biggest_riser_text)
+        c5.metric("📈 Biggest Riser This Round", biggest_riser_name, biggest_riser_text)
     else:
-        c5.metric("📈 Biggest Riser", "—", biggest_riser_text)
+        c5.metric("📈 Biggest Riser This Round", "—", biggest_riser_text)
 
     if biggest_faller_name != "—":
-        c6.metric("📉 Biggest Faller", biggest_faller_name, biggest_faller_text)
+        c6.metric("📉 Biggest Faller This Round", biggest_faller_name, biggest_faller_text)
     else:
-        c6.metric("📉 Biggest Faller", "—", biggest_faller_text)
+        c6.metric("📉 Biggest Faller This Round", "—", biggest_faller_text)
+
+    # Highest single-round team score: sum the FPts from all five players
+    # on each draftee's team for every tournament round.
+    highest_round_name = "—"
+    highest_round_text = "No round scores recorded yet"
+    round_names = [
+        "First Round",
+        "Second Round",
+        "Sweet Sixteen",
+        "Elite Eight",
+        "Final Four",
+        "National Title",
+    ]
+
+    round_totals = {
+        owner: [0.0] * len(round_names)
+        for owner in data["drafters"]
+    }
+
+    for row in data["draft_rows"]:
+        owner = row["draftee"]
+        pts_rounds = row.get("tourn_pts_rounds", [None] * 6)
+        reb_rounds = row.get("tourn_reb_rounds", [None] * 6)
+        ast_rounds = row.get("tourn_ast_rounds", [None] * 6)
+
+        for i in range(len(round_names)):
+            round_fpts = weighted_fantasy_points(
+                pts_rounds[i],
+                reb_rounds[i],
+                ast_rounds[i],
+                data["fantasy_weights"],
+            )
+            if round_fpts is not None:
+                round_totals.setdefault(
+                    owner, [0.0] * len(round_names)
+                )[i] += float(round_fpts)
+
+    round_scores = [
+        (score, owner, round_names[i])
+        for owner, scores in round_totals.items()
+        for i, score in enumerate(scores)
+        if score > 0
+    ]
+
+    if round_scores:
+        highest_score, highest_owner, highest_round = max(
+            round_scores, key=lambda x: (x[0], x[1].casefold())
+        )
+        highest_round_name = highest_owner
+        highest_round_text = f"{highest_score:.1f} FPts [ {highest_round} ]"
+
+    c7.metric("🧨 Highest Single-Round Score", highest_round_name, highest_round_text)
+
+    # Highest single-game individual performance. Each player's tournament
+    # round stat line represents that player's performance in that round/game.
+    highest_game_player = "—"
+    highest_game_text = "No game scores recorded yet"
+    individual_game_scores = []
+
+    for row in data["draft_rows"]:
+        pts_rounds = row.get("tourn_pts_rounds", [None] * 6)
+        reb_rounds = row.get("tourn_reb_rounds", [None] * 6)
+        ast_rounds = row.get("tourn_ast_rounds", [None] * 6)
+
+        for i, round_name in enumerate(round_names):
+            game_fpts = weighted_fantasy_points(
+                pts_rounds[i],
+                reb_rounds[i],
+                ast_rounds[i],
+                data["fantasy_weights"],
+            )
+            if game_fpts is not None:
+                individual_game_scores.append(
+                    (float(game_fpts), row["player_name"], round_name)
+                )
+
+    if individual_game_scores:
+        highest_game_score, highest_game_player_name, highest_game_round = max(
+            individual_game_scores,
+            key=lambda x: (x[0], x[1].casefold())
+        )
+        highest_game_player = highest_game_player_name
+        highest_game_text = f"{highest_game_score:.1f} FPts [ {highest_game_round} ]"
+
+    c8.metric(
+        "🔥 Highest Single-Game Performance",
+        highest_game_player,
+        highest_game_text,
+    )
+
 
     st.subheader("🚀 Standings Progression")
     st.caption("League ranking after each tournament round.")
@@ -1657,7 +1708,7 @@ with tab2:
     display_df(players, height=400
     )
 
-    st.markdown("### <span style='color:#2E8B57; font-weight:800;'>↑</span> Top Overperformers 🌟", unsafe_allow_html=True)
+    st.markdown("### <span style='color:#2E8B57; font-weight:800;'>↑</span> Top Overperformers 🦄", unsafe_allow_html=True)
     over_display = over.rename(columns={"Delta From Average": "Delta From Season Avg."}).copy()
     under_display = under.rename(columns={"Delta From Average": "Delta From Season Avg."}).copy()
 
@@ -1676,7 +1727,7 @@ with tab2:
         performance_gradient="green",
     )
 
-    st.markdown("### <span style='color:#C62828; font-weight:800;'>↓</span> Top Underperformers 💩", unsafe_allow_html=True)
+    st.markdown("### <span style='color:#C62828; font-weight:800;'>↓</span> Top Underperformers 🪠", unsafe_allow_html=True)
     display_df(
         under_display,
         height=240,
