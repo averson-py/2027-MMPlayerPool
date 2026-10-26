@@ -1270,14 +1270,27 @@ with tab0:
 
     # Current leaders and headline stats. These are all derived from the
     # same standings/power-ranking data used elsewhere in the dashboard.
-    leader = standings.iloc[0] if not standings.empty else None
+    # After the draft, standings rows exist even before any game stats have
+    # been entered. In that state there is no meaningful leader/MVP/projected
+    # leader yet, so keep these cards blank rather than attempting to format
+    # None as a number.
+    leader = None
+    if not standings.empty and standings["Total FPts"].notna().any():
+        leader_candidates = standings[standings["Total FPts"].notna()]
+        if not leader_candidates.empty:
+            leader = leader_candidates.iloc[0]
+
     mvp_row = None
     if not standings.empty:
         mvp_candidates = standings.dropna(subset=["MVP FPts"])
         if not mvp_candidates.empty:
             mvp_row = mvp_candidates.loc[mvp_candidates["MVP FPts"].idxmax()]
 
-    projected_leader = power.iloc[0] if not power.empty else None
+    projected_leader = None
+    if not power.empty and power["Projected Score"].notna().any():
+        projected_candidates = power[power["Projected Score"].notna()]
+        if not projected_candidates.empty:
+            projected_leader = projected_candidates.iloc[0]
     active_total = int(standings["Active Players"].sum()) if not standings.empty else 0
 
     overview_history = make_standings_round_history(data)
