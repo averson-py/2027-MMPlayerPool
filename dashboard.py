@@ -677,11 +677,15 @@ def make_power_rankings(data):
     for i, row in enumerate(result, start=1):
         row["Rank"] = i
 
-    return pd.DataFrame(result)[[
+    power_columns = [
         "Rank", "Draft Position", "Team Owner", "Projected Score",
         "Total FPts", "Active Players", "FPts per game",
         "Games Played", "Poss. Games Remaining"
-    ]]
+    ]
+    if not result:
+        return pd.DataFrame(columns=power_columns)
+
+    return pd.DataFrame(result)[power_columns]
 
 
 def make_player_rankings(data):
@@ -711,11 +715,15 @@ def make_player_rankings(data):
     for i, row in enumerate(result, start=1):
         row["Rank"] = i
 
-    return pd.DataFrame(result)[[
+    player_columns = [
         "Rank", "Player Name", "Team", "Total FPts",
         "Team Owner", "Games Played", "Poss. Games Remaining",
         "_team_out",
-    ]], result
+    ]
+    if not result:
+        return pd.DataFrame(columns=player_columns), result
+
+    return pd.DataFrame(result)[player_columns], result
 
 
 def make_performers(data, positive=True):
@@ -763,11 +771,15 @@ def make_performers(data, positive=True):
     for i, row in enumerate(result, start=1):
         row["Rank"] = i
 
-    return pd.DataFrame(result)[[
+    performer_columns = [
         "Rank", "Player Name", "Team", "Avg. FPts/Tourn. Game",
         "Delta From Average", "Team Owner", "Games Played",
         "Poss. Games Remaining", "_team_out",
-    ]], result
+    ]
+    if not result:
+        return pd.DataFrame(columns=performer_columns), result
+
+    return pd.DataFrame(result)[performer_columns], result
 
 
 def make_draft_ratings(data):
@@ -825,9 +837,13 @@ def make_draft_ratings(data):
     for i, row in enumerate(result, start=1):
         row["Rank"] = i
 
-    return pd.DataFrame(result)[[
+    ratings_columns = [
         "Rank", "Draft Position", "Team Owner", "Projected FPts", "Regions"
-    ]]
+    ]
+    if not result:
+        return pd.DataFrame(columns=ratings_columns)
+
+    return pd.DataFrame(result)[ratings_columns]
 
 
 # ---------------------------------------------------------------------
