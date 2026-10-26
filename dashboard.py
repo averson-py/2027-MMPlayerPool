@@ -719,10 +719,16 @@ def make_power_rankings(data):
             # calculated from the season PPG/RPG/APG fantasy components.
             season_fpts_per_game = float(stats.get("Tot. FPts") or 0.0)
 
-            weighted_fpts_per_game = (
-                tournament_weight * tourn_fpts_per_game
-                + (1.0 - tournament_weight) * season_fpts_per_game
-            )
+            # If the player has not recorded any tournament games yet,
+            # use the season FPts/game by itself. There is no tournament
+            # sample to blend with the season rate.
+            if games_played == 0:
+                weighted_fpts_per_game = season_fpts_per_game
+            else:
+                weighted_fpts_per_game = (
+                    tournament_weight * tourn_fpts_per_game
+                    + (1.0 - tournament_weight) * season_fpts_per_game
+                )
 
             seed_value = stats.get("Seed")
             try:
