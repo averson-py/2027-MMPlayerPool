@@ -1418,7 +1418,7 @@ with tab0:
                 ]
                 tied_fallers.sort(key=str.casefold)
                 biggest_faller_name = ", ".join(tied_fallers)
-                biggest_faller_text = f"- {int(movement_down)} spot{'s' if movement_down != 1 else ''}"
+                biggest_faller_text = f"-{int(movement_down)} spot{'s' if movement_down != 1 else ''}"
             else:
                 biggest_faller_name = "No faller"
                 biggest_faller_text = "No one moved down"
