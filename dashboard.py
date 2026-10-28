@@ -1384,6 +1384,8 @@ with tab0:
     biggest_faller_name = "—"
     biggest_faller_text = "No completed rounds yet"
     if not overview_history.empty and len(overview_history) >= 2:
+        # Once a tournament round has been completed, compare the latest
+        # round's standings rank with the previous completed round.
         previous = overview_history.iloc[-2]
         current = overview_history.iloc[-1]
         changes = []
@@ -1420,6 +1422,53 @@ with tab0:
             else:
                 biggest_faller_name = "No faller"
                 biggest_faller_text = "No one moved down"
+    else:
+        # Before the first round is complete, use the pre-tournament Draft
+        # Ratings rank as the baseline and compare it with the current Power
+        # Rankings rank. Positive movement means a team is ranked higher now.
+        draft_rank_by_owner = {}
+        if not ratings.empty and {"Team Owner", "Rank"}.issubset(ratings.columns):
+            draft_rank_by_owner = {
+                str(row["Team Owner"]).casefold(): row["Rank"]
+                for _, row in ratings.iterrows()
+            }
+
+        changes = []
+        if not power.empty and {"Team Owner", "Rank"}.issubset(power.columns):
+            for _, row in power.iterrows():
+                owner = str(row["Team Owner"])
+                draft_rank = draft_rank_by_owner.get(owner.casefold())
+                current_rank = row["Rank"]
+                if pd.notna(draft_rank) and pd.notna(current_rank):
+                    changes.append((float(draft_rank) - float(current_rank), owner))
+
+        if changes:
+            risers = [item for item in changes if item[0] > 0]
+            fallers = [item for item in changes if item[0] < 0]
+            if risers:
+                movement = max(item[0] for item in risers)
+                tied_risers = sorted(
+                    [owner for change, owner in risers if change == movement],
+                    key=str.casefold,
+                )
+                biggest_riser_name = ", ".join(tied_risers)
+                biggest_riser_text = f"+{int(movement)} spot{'s' if movement != 1 else ''} vs. draft rating"
+            else:
+                biggest_riser_name = "No riser"
+                biggest_riser_text = "No one ranked higher than draft rating"
+
+            if fallers:
+                movement = min(item[0] for item in fallers)
+                movement_down = abs(movement)
+                tied_fallers = sorted(
+                    [owner for change, owner in fallers if change == movement],
+                    key=str.casefold,
+                )
+                biggest_faller_name = ", ".join(tied_fallers)
+                biggest_faller_text = f"- {int(movement_down)} spot{'s' if movement_down != 1 else ''} vs. draft rating"
+            else:
+                biggest_faller_name = "No faller"
+                biggest_faller_text = "No one ranked lower than draft rating"
 
     c1, c2, c3, c4 = st.columns(4)
     if leader is not None:
