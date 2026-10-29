@@ -1270,7 +1270,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("🏀 2027 March Madness Player Pool Dashboard")
+st.title("🏀 2028 March Madness Player Pool Dashboard")
 
 # Production mode: read the workbook directly from the public OneDrive
 # sharing link. Visitors do NOT need to sign in with Microsoft.
