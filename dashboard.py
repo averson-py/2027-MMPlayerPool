@@ -1169,10 +1169,14 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
 # ---------------------------------------------------------------------
 def get_onedrive_share_url():
     """Read the public OneDrive sharing URL from Streamlit Secrets."""
-    if "onedrive" in st.secrets:
-        url = st.secrets["onedrive"].get("share_url")
-    else:
-        url = st.secrets.get("ONEDRIVE_SHARE_URL")
+    try:
+        if "onedrive" in st.secrets:
+            url = st.secrets["onedrive"].get("share_url")
+        else:
+            url = st.secrets.get("ONEDRIVE_SHARE_URL")
+    except (KeyError, AttributeError, FileNotFoundError):
+        # No secrets file found - return None to use local mode
+        return None
 
     if not url:
         return None
@@ -1260,10 +1264,38 @@ st.markdown(
     }
 
     .block-container {padding-top: 1.2rem; padding-bottom: 2rem;}
+
+    /* Enhanced metric card styling with colored left border and background */
     div[data-testid="stMetric"] {
-        border: 1px solid #d9d9d9;
+        background-color: #f8f9fa;
+        border: 1px solid #e0e0e0;
+        border-left: 4px solid #4472C4;
         border-radius: 8px;
         padding: 10px;
+        box-shadow: 0 2px 4px rgba(68, 114, 196, 0.08);
+        transition: box-shadow 0.3s ease;
+    }
+
+    div[data-testid="stMetric"]:hover {
+        box-shadow: 0 4px 8px rgba(68, 114, 196, 0.15);
+    }
+
+    /* Enhanced title styling */
+    h1 {
+        color: #2E5C8A;
+        border-bottom: 3px solid #4472C4;
+        padding-bottom: 0.5rem;
+    }
+
+    /* Enhanced header styling with accent colors */
+    h2 {
+        color: #2E5C8A;
+        border-bottom: 2px solid #1B9E9A;
+        padding-bottom: 0.3rem;
+    }
+
+    h3 {
+        color: #2E5C8A;
     }
     </style>
     """,
