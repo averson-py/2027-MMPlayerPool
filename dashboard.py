@@ -1,4 +1,4 @@
-
+﻿
 import colorsys
 import os
 import re
@@ -11,6 +11,7 @@ import openpyxl
 import pandas as pd
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 
 
 # ---------------------------------------------------------------------
@@ -29,6 +30,7 @@ TEAM_DATA_SHEET = "TeamData"
 TEAMS_OUT_SHEET = "TeamsOut"
 GAME_RESULTS_SHEET = "GameResults"
 CONFIG_SHEET = "Config"
+TEAM_LIST_SHEET = "TeamList"
 
 DRAFTER_START_ROW = 2
 
@@ -235,6 +237,578 @@ def red_white_green_scale(value, minimum, maximum, reverse=False):
     return "#%02X%02X%02X" % rgb
 
 
+# Tournament bracket functions
+def build_tournament_bracket(bracket_teams, teams_out=None):
+    """
+    Build tournament bracket structure from teams dict.
+    bracket_teams: {seed: {region: [teams]}}
+    teams_out: {team_name_lower: round_lost} - teams that were eliminated
+
+    Supports First Four games when multiple teams share the same seed in a region.
+    Uses TeamsOut data to determine winners. If a team is in TeamsOut, it lost in that round.
+    Returns a list of rounds, where each round contains regions,
+    and each region contains matchups.
+    """
+    if teams_out is None:
+        teams_out = {}
+
+    regions = ["EAST", "WEST", "MIDWEST", "SOUTH"]
+    rounds = []
+
+    # Track which seeds have First Four games (multiple teams at same seed)
+    first_four_seeds = set()
+
+    # First detect First Four games (same seed, same region, multiple teams)
+    first_four = {}
+    for region in regions:
+        first_four[region] = []
+
+    for seed in bracket_teams:
+        for region in bracket_teams[seed]:
+            teams = bracket_teams[seed][region]
+            if len(teams) > 1:
+                # Multiple teams at same seed in same region = First Four game
+                first_four_seeds.add(seed)
+                # Pair consecutive teams for First Four
+                for i in range(0, len(teams), 2):
+                    if i + 1 < len(teams):
+                        team_a = teams[i]
+                        team_b = teams[i + 1]
+
+                        # Determine winner based on TeamsOut
+                        team_a_lost = team_a.casefold() in teams_out
+                        team_b_lost = team_b.casefold() in teams_out
+
+                        first_four[region].append({
+                            "team_a": team_a,
+                            "seed_a": seed,
+                            "team_b": team_b,
+                            "seed_b": seed,
+                            "round": "First Four",
+                            "winner": team_b if team_a_lost else (team_a if team_b_lost else None),
+                            "team_a_eliminated": team_a_lost,
+                            "team_b_eliminated": team_b_lost,
+                        })
+                    elif i < len(teams):
+                        # Odd team out gets a bye shown as TBD opponent
+                        team_a = teams[i]
+                        first_four[region].append({
+                            "team_a": team_a,
+                            "seed_a": seed,
+                            "team_b": f"({seed}) TBD (FF)",
+                            "seed_b": seed,
+                            "round": "First Four",
+                            "winner": team_a,
+                            "team_a_eliminated": False,
+                            "team_b_eliminated": False,
+                        })
+
+    # Add First Four round if it has any games
+    if any(first_four.values()):
+        rounds.append({"name": "First Four", "regions": first_four})
+
+    # Helper function to get team for a seed in a region, considering First Four winners
+    def get_team_for_seed(seed, region, round_num):
+        # Only show actual teams in Round of 64 (round_num == 0)
+        # For future rounds, check if the winning teams from previous rounds exist
+        if round_num > 0:
+            # Future round - always show TBD for now since we don't track winners
+            return f"({seed}) TBD"
+
+        # Round of 64 - show actual teams
+        if seed in bracket_teams and region in bracket_teams[seed]:
+            teams = bracket_teams[seed][region]
+            if not teams:
+                return f"({seed}) TBD"
+
+            if len(teams) == 1:
+                # Single team at this seed
+                team = teams[0]
+                # Check if this team lost in an earlier round
+                if team.casefold() in teams_out:
+                    return f"({seed}) TBD"
+                return team
+            else:
+                # Multiple teams (First Four) - determine winner
+                # Count how many teams are NOT in teams_out (still active)
+                active_teams = [t for t in teams if t.casefold() not in teams_out]
+
+                if len(active_teams) == 1:
+                    # One team won (other is eliminated)
+                    return active_teams[0]
+                else:
+                    # Either both teams are active (no games played yet)
+                    # or both are eliminated (shouldn't happen)
+                    # Return TBD since we can't determine a winner yet
+                    return f"({seed}) TBD"
+
+        return f"({seed}) TBD"
+
+    # Main bracket rounds
+    round_names = ["Round of 64", "Round of 32", "Sweet 16", "Elite Eight", "Final Four", "Championship"]
+    matchup_structure = [
+        [(1, 16), (8, 9), (5, 12), (4, 13), (6, 11), (3, 14), (7, 10), (2, 15)],  # Round 1
+        [(1, 8), (5, 4), (6, 3), (7, 2)],  # Round 2
+        [(1, 5), (6, 7)],  # Round 3
+        [(1, 6)],  # Round 4
+        [(1, 1), (1, 1)],  # Round 5 (semifinal structure, placeholder)
+        [(1, 1)],  # Round 6 (championship, placeholder)
+    ]
+
+    for round_num, matchups_seeds in enumerate(matchup_structure):
+        round_obj = {"name": round_names[round_num], "regions": {}}
+
+        for region in regions:
+            round_obj["regions"][region] = []
+            for seed_a, seed_b in matchups_seeds:
+                team_a = get_team_for_seed(seed_a, region, round_num)
+                team_b = get_team_for_seed(seed_b, region, round_num)
+
+                round_obj["regions"][region].append({
+                    "team_a": team_a,
+                    "seed_a": seed_a,
+                    "team_b": team_b,
+                    "seed_b": seed_b,
+                    "winner": None
+                })
+
+        rounds.append(round_obj)
+
+    return rounds
+
+
+def build_final_four_brackets(regional_winners, final_four_config, teams_out=None):
+    """
+    Build Final Four bracket with two semifinal games and one championship game.
+
+    regional_winners: dict mapping region name to winning team (or TBD/None)
+    final_four_config: dict with semifinal_1_region_1, semifinal_1_region_2, etc.
+    teams_out: dict mapping team name to round lost
+    """
+    teams_out = teams_out or {}
+
+    # Extract the configured region pairings
+    sf1_r1 = final_four_config.get("semifinal_1_region_1", "EAST").upper()
+    sf1_r2 = final_four_config.get("semifinal_1_region_2", "WEST").upper()
+    sf2_r1 = final_four_config.get("semifinal_2_region_1", "MIDWEST").upper()
+    sf2_r2 = final_four_config.get("semifinal_2_region_2", "SOUTH").upper()
+
+    # Get regional winners
+    team_sf1_r1 = regional_winners.get(sf1_r1, "TBD")
+    team_sf1_r2 = regional_winners.get(sf1_r2, "TBD")
+    team_sf2_r1 = regional_winners.get(sf2_r1, "TBD")
+    team_sf2_r2 = regional_winners.get(sf2_r2, "TBD")
+
+    # Ensure TBD is shown if None or empty
+    if not team_sf1_r1 or "TBD" in str(team_sf1_r1):
+        team_sf1_r1 = "TBD"
+    if not team_sf1_r2 or "TBD" in str(team_sf1_r2):
+        team_sf1_r2 = "TBD"
+    if not team_sf2_r1 or "TBD" in str(team_sf2_r1):
+        team_sf2_r1 = "TBD"
+    if not team_sf2_r2 or "TBD" in str(team_sf2_r2):
+        team_sf2_r2 = "TBD"
+
+    rounds = []
+
+    # Semifinal Round
+    semifinal_round = {
+        "name": "Final Four - Semifinals",
+        "regions": {
+            "FINAL_FOUR": [
+                {
+                    "team_a": team_sf1_r1,
+                    "seed_a": f"{sf1_r1[0]}",
+                    "team_b": team_sf1_r2,
+                    "seed_b": f"{sf1_r2[0]}",
+                    "winner": None
+                },
+                {
+                    "team_a": team_sf2_r1,
+                    "seed_a": f"{sf2_r1[0]}",
+                    "team_b": team_sf2_r2,
+                    "seed_b": f"{sf2_r2[0]}",
+                    "winner": None
+                }
+            ]
+        }
+    }
+    rounds.append(semifinal_round)
+
+    # Championship Round
+    championship_round = {
+        "name": "Championship",
+        "regions": {
+            "FINAL_FOUR": [
+                {
+                    "team_a": "TBD",
+                    "seed_a": "SF1",
+                    "team_b": "TBD",
+                    "seed_b": "SF2",
+                    "winner": None
+                }
+            ]
+        }
+    }
+    rounds.append(championship_round)
+
+    return rounds
+
+
+def render_bracket_html(rounds, region=None):
+    """
+    Render tournament bracket as an NCAA-style tree.
+    If region is specified, only render that region.
+    If region is None, render all regions.
+    """
+    regions_list = ["EAST", "WEST", "MIDWEST", "SOUTH", "FINAL_FOUR"]
+
+    html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+                margin: 0;
+                padding: 10px;
+                background: white;
+            }
+
+            .ncaa-bracket-wrapper {
+                overflow-x: auto;
+                background: white;
+                border-radius: 4px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            }
+
+            .ncaa-bracket {
+                display: flex;
+                gap: 1px;
+                padding: 10px;
+                min-width: max-content;
+            }
+
+            .bracket-column {
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                min-width: 180px;
+                padding: 0 15px;
+                border-right: 2px solid #e0e0e0;
+                position: relative;
+                flex: 1;
+                min-height: 500px;
+                gap: 15px;
+            }
+
+            .bracket-column:nth-child(2) {
+                gap: 100px;
+            }
+
+            .bracket-column:nth-child(3) {
+                gap: 200px;
+            }
+
+            .bracket-column:last-child {
+                border-right: none;
+            }
+
+            .bracket-column-title {
+                text-align: center;
+                font-size: 12px;
+                font-weight: 600;
+                color: #555;
+                margin-bottom: 20px;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                line-height: 1.4;
+            }
+
+            .matchup-container {
+                position: relative;
+                border: 1px solid #d0d0d0;
+                border-radius: 4px;
+                overflow: hidden;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+                flex-shrink: 0;
+                width: 100%;
+                min-width: 160px;
+            }
+
+            .team-box {
+                background: white;
+                padding: 10px 12px;
+                font-size: 13px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                border-bottom: 1px solid #e8e8e8;
+                transition: all 0.2s ease;
+                height: 32px;
+                min-height: 32px;
+            }
+
+            .team-box:last-child {
+                border-bottom: none;
+            }
+
+            .team-box:hover {
+                background: #f5f9ff;
+            }
+
+            .matchup-container:hover {
+                border-color: #4472C4;
+                box-shadow: 0 2px 6px rgba(68, 114, 196, 0.15);
+            }
+
+            .team-info {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                flex: 1;
+            }
+
+            .team-seed {
+                font-weight: 700;
+                color: #4472C4;
+                min-width: 20px;
+                font-size: 12px;
+            }
+
+            .team-name {
+                flex: 1;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                font-size: 13px;
+                color: #333;
+            }
+
+            .team-score {
+                font-weight: 600;
+                color: #666;
+                margin-left: 12px;
+                min-width: 30px;
+                text-align: right;
+            }
+
+            .team-box.tbd {
+                background: #f9f9f9;
+                color: #999;
+                font-style: italic;
+            }
+
+            .team-box.tbd .team-seed {
+                color: #ccc;
+            }
+
+            .team-box.tbd .team-name {
+                color: #999;
+            }
+
+            .team-box.tbd .team-score {
+                color: #ccc;
+            }
+
+            .connector-line {
+                position: absolute;
+                height: 2px;
+                background: #d0d0d0;
+                top: 50%;
+                transform: translateY(-50%);
+                pointer-events: none;
+            }
+
+            .vertical-connector {
+                position: absolute;
+                width: 2px;
+                background: #d0d0d0;
+                left: 100%;
+                pointer-events: none;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="ncaa-bracket-wrapper">
+            <svg class="bracket-connectors" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"></svg>
+            <div class="ncaa-bracket">
+    """
+
+    # If region specified, only render that region
+    regions_to_render = [region] if region else regions_list
+
+    # Flatten all matchups by round across specified regions
+    for round_idx, round_data in enumerate(rounds):
+        round_name = round_data['name']
+
+        html += f"""
+                <div class="bracket-column">
+                    <div class="bracket-column-title">{round_name}</div>
+        """
+
+        # Get all matchups for this round across specified regions
+        all_matchups = []
+        for r in regions_to_render:
+            if r in round_data['regions']:
+                all_matchups.extend(round_data['regions'][r])
+
+        # Display matchups
+        for matchup_idx, matchup in enumerate(all_matchups):
+            team_a = matchup['team_a']
+            team_b = matchup['team_b']
+            seed_a = matchup['seed_a']
+            seed_b = matchup['seed_b']
+
+            is_tbd_a = "TBD" in str(team_a)
+            is_tbd_b = "TBD" in str(team_b)
+
+            tbd_class_a = "tbd" if is_tbd_a else ""
+            tbd_class_b = "tbd" if is_tbd_b else ""
+
+            html += f"""
+                    <div class="matchup-container">
+                        <div class="team-box {tbd_class_a}">
+                            <div class="team-info">
+                                <span class="team-seed">{seed_a}</span>
+                                <span class="team-name">{str(team_a)[:28]}</span>
+                            </div>
+                            <span class="team-score"></span>
+                        </div>
+                        <div class="team-box {tbd_class_b}">
+                            <div class="team-info">
+                                <span class="team-seed">{seed_b}</span>
+                                <span class="team-name">{str(team_b)[:28]}</span>
+                            </div>
+                            <span class="team-score"></span>
+                        </div>
+                    </div>
+            """
+
+
+        html += """
+                </div>
+        """
+
+    html += """
+            </div>
+        </div>
+        <script>
+            function drawConnectors() {
+                const svg = document.querySelector('.bracket-connectors');
+                const wrapper = document.querySelector('.ncaa-bracket-wrapper');
+                const columns = document.querySelectorAll('.bracket-column');
+
+                if (columns.length < 2 || !wrapper) return;
+
+                // Clear existing lines
+                svg.innerHTML = '';
+
+                // Set SVG size to match wrapper
+                svg.setAttribute('width', wrapper.offsetWidth);
+                svg.setAttribute('height', wrapper.offsetHeight);
+
+                // Function to draw connector lines between two columns
+                function connectColumns(colA, colB) {
+                    const matchupsA = colA.querySelectorAll('.matchup-container');
+                    const matchupsB = colB.querySelectorAll('.matchup-container');
+
+                    // Connect pairs of matchups
+                    for (let i = 0; i < matchupsB.length && i * 2 + 1 < matchupsA.length; i++) {
+                        const mAa = matchupsA[i * 2];
+                        const mAb = matchupsA[i * 2 + 1];
+                        const mB = matchupsB[i];
+
+                        if (mAa && mAb && mB) {
+                            // Get positions relative to wrapper
+                            const rectAa = mAa.getBoundingClientRect();
+                            const rectAb = mAb.getBoundingClientRect();
+                            const rectB = mB.getBoundingClientRect();
+                            const wrapperRect = wrapper.getBoundingClientRect();
+
+                            const yAa = rectAa.top - wrapperRect.top + rectAa.height / 2;
+                            const yAb = rectAb.top - wrapperRect.top + rectAb.height / 2;
+                            const yB = rectB.top - wrapperRect.top + rectB.height / 2;
+                            const xA = rectAa.right - wrapperRect.left;
+                            const xB = rectB.left - wrapperRect.left;
+
+                            // Midpoint x coordinate
+                            const xMid = xA + (xB - xA) * 0.5;
+
+                            // Line from first game right edge to midpoint
+                            const line1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                            line1.setAttribute('x1', xA);
+                            line1.setAttribute('y1', yAa);
+                            line1.setAttribute('x2', xMid);
+                            line1.setAttribute('y2', yAa);
+                            line1.setAttribute('stroke', '#d0d0d0');
+                            line1.setAttribute('stroke-width', '2');
+                            svg.appendChild(line1);
+
+                            // Line from second game right edge to midpoint
+                            const line2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                            line2.setAttribute('x1', xA);
+                            line2.setAttribute('y1', yAb);
+                            line2.setAttribute('x2', xMid);
+                            line2.setAttribute('y2', yAb);
+                            line2.setAttribute('stroke', '#d0d0d0');
+                            line2.setAttribute('stroke-width', '2');
+                            svg.appendChild(line2);
+
+                            // Vertical line from first game to winner position
+                            const line3 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                            line3.setAttribute('x1', xMid);
+                            line3.setAttribute('y1', yAa);
+                            line3.setAttribute('x2', xMid);
+                            line3.setAttribute('y2', yB);
+                            line3.setAttribute('stroke', '#d0d0d0');
+                            line3.setAttribute('stroke-width', '2');
+                            svg.appendChild(line3);
+
+                            // Line from midpoint to winner box
+                            const line4 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                            line4.setAttribute('x1', xMid);
+                            line4.setAttribute('y1', yB);
+                            line4.setAttribute('x2', xB);
+                            line4.setAttribute('y2', yB);
+                            line4.setAttribute('stroke', '#d0d0d0');
+                            line4.setAttribute('stroke-width', '2');
+                            svg.appendChild(line4);
+                        }
+                    }
+                }
+
+                // Connect Round of 64 to Round of 32
+                if (columns.length > 1) {
+                    connectColumns(columns[0], columns[1]);
+                }
+
+                // Connect Round of 32 to Sweet 16
+                if (columns.length > 2) {
+                    connectColumns(columns[1], columns[2]);
+                }
+
+                // Connect Sweet 16 to Elite 8
+                if (columns.length > 3) {
+                    connectColumns(columns[2], columns[3]);
+                }
+            }
+
+            // Draw connectors when page loads and on resize
+            window.addEventListener('load', () => {
+                setTimeout(drawConnectors, 100);
+            });
+            window.addEventListener('resize', drawConnectors);
+        </script>
+    </body>
+    </html>
+    """
+
+    return html
+
+
 def load_data(file_path, updated_time=None):
     workbook = openpyxl.load_workbook(
         file_path,
@@ -289,7 +863,23 @@ def load_data(file_path, updated_time=None):
         except (TypeError, ValueError):
             raise ValueError(f"Config!{cell} must contain a numeric payout value.")
 
-    # Draft order
+    # Final Four bracket configuration
+    final_four_config = {}
+    try:
+        # Semifinal 1: M2 vs M3
+        final_four_config["semifinal_1_region_1"] = str(config_ws["M2"].value).strip().upper() if config_ws["M2"].value else "EAST"
+        final_four_config["semifinal_1_region_2"] = str(config_ws["M3"].value).strip().upper() if config_ws["M3"].value else "WEST"
+        # Semifinal 2: N2 vs N3
+        final_four_config["semifinal_2_region_1"] = str(config_ws["N2"].value).strip().upper() if config_ws["N2"].value else "MIDWEST"
+        final_four_config["semifinal_2_region_2"] = str(config_ws["N3"].value).strip().upper() if config_ws["N3"].value else "SOUTH"
+    except (TypeError, AttributeError):
+        # Default configuration if not found
+        final_four_config = {
+            "semifinal_1_region_1": "EAST",
+            "semifinal_1_region_2": "WEST",
+            "semifinal_2_region_1": "MIDWEST",
+            "semifinal_2_region_2": "SOUTH",
+        }
     drafters = []
     seen = set()
     ws = workbook[DRAFT_ORDER_SHEET]
@@ -395,13 +985,16 @@ def load_data(file_path, updated_time=None):
     player_names.sort(key=str.casefold)
 
     # Eliminated teams
-    teams_out = set()
+    teams_out = {}  # {team_name_lower: round_lost}
     if TEAMS_OUT_SHEET in workbook.sheetnames:
         ws = workbook[TEAMS_OUT_SHEET]
-        for values in ws.iter_rows(min_row=2, min_col=1, max_col=1, values_only=True):
+        for values in ws.iter_rows(min_row=2, min_col=1, max_col=2, values_only=True):
             team_name = values[0]
+            round_lost = values[1] if len(values) > 1 else None
             if team_name is not None and str(team_name).strip():
-                teams_out.add(str(team_name).strip().casefold())
+                team_lower = str(team_name).strip().casefold()
+                round_text = str(round_lost).strip() if round_lost else None
+                teams_out[team_lower] = round_text
 
     # Workbook last-edited timestamp is maintained by the local stats updater
     # in GameResults!D2. This is the authoritative timestamp displayed by
@@ -472,12 +1065,42 @@ def load_data(file_path, updated_time=None):
                     }
                     break
 
+    # Tournament bracket teams (from TeamList sheet if available)
+    bracket_teams = {}  # {seed: {region: [teams]}}
+    if TEAM_LIST_SHEET in workbook.sheetnames:
+        ws = workbook[TEAM_LIST_SHEET]
+        header_values = next(
+            ws.iter_rows(min_row=1, max_row=1, values_only=True), ()
+        )
+        headers3 = {
+            str(value).strip(): index
+            for index, value in enumerate(header_values)
+            if value is not None
+        }
+
+        if "Seed" in headers3 and "Region" in headers3 and "Team" in headers3:
+            for values in ws.iter_rows(min_row=2, max_col=max(headers3.values()) + 1, values_only=True):
+                try:
+                    seed = int(float(values[headers3["Seed"]])) if values[headers3["Seed"]] else None
+                    region = str(values[headers3["Region"]]).strip().upper() if values[headers3["Region"]] else None
+                    team = str(values[headers3["Team"]]).strip() if values[headers3["Team"]] else None
+
+                    if seed and region and team and 1 <= seed <= 16:
+                        if seed not in bracket_teams:
+                            bracket_teams[seed] = {}
+                        if region not in bracket_teams[seed]:
+                            bracket_teams[seed][region] = []
+                        bracket_teams[seed][region].append(team)
+                except (TypeError, ValueError, IndexError):
+                    continue
+
     return {
         "fantasy_weights": fantasy_weights,
         "seed_average_games": seed_average_games,
         "tournament_fpts_weight": tournament_fpts_weight,
 
         "payout_config": payout_config,
+        "final_four_config": final_four_config,
         "drafters": drafters,
         "draft_rows": draft_rows,
         "player_stats": player_stats,
@@ -485,6 +1108,7 @@ def load_data(file_path, updated_time=None):
         "teams_out": teams_out,
         "latest_game_result": latest_game_result,
         "updated_time": workbook_updated_time,
+        "bracket_teams": bracket_teams,
     }
 
 
@@ -1373,12 +1997,13 @@ c2.metric("Drafted Players", len(data["draft_rows"]))
 c3.metric("Players Active", int(standings["Active Players"].sum()) if not standings.empty else 0)
 c4.metric("Teams Eliminated", len(data["teams_out"]))
 
-tab0, tab1, tab2, tab3, tab4 = st.tabs([
+tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🏠 Pool Overview",
     "🏆 Standings",
     "📊 Player Statistics",
     "👥 Team View",
     "🎯 Draft Ratings",
+    "⛹️‍♂️ Tournament Bracket",
 ])
 
 with tab0:
@@ -2019,8 +2644,102 @@ with tab4:
         reverse_columns={"Draft Position": True},
     )
 
+with tab5:
+    st.subheader("Tournament Bracket")
+    st.caption("March Madness tournament bracket based on teams entered in the TeamList sheet.")
+
+    if data["bracket_teams"]:
+        try:
+            # Build the bracket with teams_out data to determine winners
+            rounds = build_tournament_bracket(data["bracket_teams"], data["teams_out"])
+
+            # Create subtabs for regions and final four
+            region_tabs = st.tabs(["🔵 EAST", "🟤 WEST", "🟢 MIDWEST", "🟡 SOUTH", "🏆 FINAL FOUR"])
+
+            # Show each region's bracket (exclude Final Four and Championship)
+            regions = ["EAST", "WEST", "MIDWEST", "SOUTH"]
+            regional_rounds = rounds[:-2]  # All rounds except Final Four and Championship
+
+            for tab_idx, (region_tab, region) in enumerate(zip(region_tabs[:4], regions)):
+                with region_tab:
+                    # Show Elite Eight winner box at the top
+                    elite_eight_matchups = regional_rounds[-1]["regions"][region]
+                    if elite_eight_matchups:
+                        matchup = elite_eight_matchups[0]
+                        team_a = matchup["team_a"]
+                        team_b = matchup["team_b"]
+
+                        # Determine winner
+                        team_a_lost = team_a.casefold() in data["teams_out"]
+                        team_b_lost = team_b.casefold() in data["teams_out"]
+
+                        winner = None
+                        if team_a_lost and not team_b_lost:
+                            winner = team_b
+                        elif team_b_lost and not team_a_lost:
+                            winner = team_a
+                        elif not team_a_lost and not team_b_lost:
+                            winner = None  # Game not played yet
+
+                        # Display winner box at the top
+                        col1, col2, col3 = st.columns([1, 2, 1])
+                        with col2:
+                            if winner and "TBD" not in winner:
+                                st.success(f"🏆 **{region} Regional Winner**\n\n# {winner}")
+                            else:
+                                st.info(f"⏳ **{region} Regional Winner**\n\nGame not yet played")
+
+                    st.markdown("---")
+
+                    # Show bracket
+                    bracket_html = render_bracket_html(regional_rounds, region=region)
+                    components.html(bracket_html, height=1200, scrolling=True)
+
+            # Final Four tab - show only Final Four and Championship
+            with region_tabs[4]:
+                # Compute regional winners
+                regional_winners = {}
+                for region in regions:
+                    elite_eight_matchups = regional_rounds[-1]["regions"][region]
+                    if elite_eight_matchups:
+                        matchup = elite_eight_matchups[0]
+                        team_a = matchup["team_a"]
+                        team_b = matchup["team_b"]
+
+                        # Determine winner
+                        team_a_lost = team_a.casefold() in data["teams_out"]
+                        team_b_lost = team_b.casefold() in data["teams_out"]
+
+                        winner = None
+                        if team_a_lost and not team_b_lost:
+                            winner = team_b
+                        elif team_b_lost and not team_a_lost:
+                            winner = team_a
+                        # else: winner is None (TBD)
+
+                        regional_winners[region] = winner if winner else "TBD"
+
+                # Build Final Four bracket with configured region pairings
+                final_four_rounds = build_final_four_brackets(
+                    regional_winners, 
+                    data["final_four_config"], 
+                    data["teams_out"]
+                )
+                bracket_html = render_bracket_html(final_four_rounds)
+                components.html(bracket_html, height=550, scrolling=False)
+
+        except Exception as e:
+            st.error(f"Error rendering bracket: {str(e)}")
+            st.write(f"Details: {e}")
+    else:
+        st.warning("No teams found in the TeamList sheet.")
+        st.info("Make sure your Excel file has a 'TeamList' sheet with columns:\n- **Region** (EAST, WEST, MIDWEST, SOUTH)\n- **Seed** (1-16)\n- **Team** (team name)")
+
 st.divider()
 st.caption(
     "The dashboard reads the Excel workbook from OneDrive. "
     "No workbook changes are made by the app."
 )
+
+
+
