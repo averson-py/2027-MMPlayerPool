@@ -238,6 +238,13 @@ def red_white_green_scale(value, minimum, maximum, reverse=False):
 
 
 # Tournament bracket functions
+TEAM_SEEDS = {}
+
+
+def lookup_seed(team, default):
+    return TEAM_SEEDS.get(str(team).casefold(), default)
+
+
 def build_tournament_bracket(bracket_teams, teams_out=None):
     """
     Build tournament bracket structure from teams dict.
@@ -262,6 +269,7 @@ def build_tournament_bracket(bracket_teams, teams_out=None):
         for region in bracket_teams[seed]:
             for team in bracket_teams[seed][region]:
                 team_to_seed_region[team.casefold()] = (seed, region)
+                TEAM_SEEDS[team.casefold()] = seed
 
     # Track winners at each round to use in future rounds
     # round_winners[round_num][region] = {matchup_idx: winner_team_name}
@@ -427,6 +435,9 @@ def build_tournament_bracket(bracket_teams, teams_out=None):
                     if team_b is None:
                         team_b = f"({seed_b}) TBD"
 
+                    seed_a = lookup_seed(team_a, seed_a)
+                    seed_b = lookup_seed(team_b, seed_b)
+
                 # Determine winner of this matchup
                 winner = get_winner(team_a, team_b)
                 round_winners[round_num][region][matchup_idx] = winner
@@ -490,16 +501,16 @@ def build_final_four_brackets(regional_winners, final_four_config, teams_out=Non
             "FINAL_FOUR": [
                 {
                     "team_a": team_sf1_r1,
-                    "seed_a": f"{sf1_r1[0]}",
+                    "seed_a": lookup_seed(team_sf1_r1, f"{sf1_r1[0]}"),
                     "team_b": team_sf1_r2,
-                    "seed_b": f"{sf1_r2[0]}",
+                    "seed_b": lookup_seed(team_sf1_r2, f"{sf1_r2[0]}"),
                     "winner": None
                 },
                 {
                     "team_a": team_sf2_r1,
-                    "seed_a": f"{sf2_r1[0]}",
+                    "seed_a": lookup_seed(team_sf2_r1, f"{sf2_r1[0]}"),
                     "team_b": team_sf2_r2,
-                    "seed_b": f"{sf2_r2[0]}",
+                    "seed_b": lookup_seed(team_sf2_r2, f"{sf2_r2[0]}"),
                     "winner": None
                 }
             ]
@@ -508,15 +519,29 @@ def build_final_four_brackets(regional_winners, final_four_config, teams_out=Non
     rounds.append(semifinal_round)
 
     # Championship Round
+    def semi_winner(a, b):
+        if "TBD" in str(a) or "TBD" in str(b):
+            return None
+        a_lost = str(a).casefold() in teams_out
+        b_lost = str(b).casefold() in teams_out
+        if a_lost and not b_lost:
+            return b
+        if b_lost and not a_lost:
+            return a
+        return None
+
+    champ_a = semi_winner(team_sf1_r1, team_sf1_r2) or "TBD"
+    champ_b = semi_winner(team_sf2_r1, team_sf2_r2) or "TBD"
+
     championship_round = {
         "name": "Championship",
         "regions": {
             "FINAL_FOUR": [
                 {
-                    "team_a": "TBD",
-                    "seed_a": "SF1",
-                    "team_b": "TBD",
-                    "seed_b": "SF2",
+                    "team_a": champ_a,
+                    "seed_a": lookup_seed(champ_a, "SF1"),
+                    "team_b": champ_b,
+                    "seed_b": lookup_seed(champ_b, "SF2"),
                     "winner": None
                 }
             ]
@@ -787,7 +812,7 @@ def render_bracket_html(rounds, region=None):
 
             game_num = game_counter
             game_counter += 1
-            feeds_to = matchup_idx // 2 if len(all_matchups) > 1 else -1
+            feeds_to = matchup_idx // 2 if len(all_matchups) > 1 and round_name != "First Four" else -1
 
             html += f"""
                     <div class="matchup-container" data-round="{round_idx}" data-index="{matchup_idx}" data-feeds-to="{feeds_to}">
