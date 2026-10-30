@@ -1728,7 +1728,7 @@ def make_power_rankings(data):
                 if seed_number is not None else None
             )
 
-            if not team_is_active:
+            if not team_is_active or games_played >= 6:
                 expected_remaining_games = 0.0
             elif historical_avg_games is None:
                 expected_remaining_games = 1.0
