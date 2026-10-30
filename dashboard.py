@@ -655,6 +655,82 @@ def build_final_four_brackets(regional_winners, final_four_config, teams_out=Non
     return rounds
 
 
+def render_regional_winner_card_html(region, winner):
+    """Render a regional winner card styled like the bracket game cards."""
+    known = bool(winner) and "TBD" not in str(winner)
+    seed = lookup_seed(winner, "") if known else ""
+    name = str(winner) if known else "TBD"
+    logo = _logo_img(winner) if known else '<span class="team-logo placeholder"></span>'
+    tbd_class = "" if known else "tbd"
+    winner_class = "winner" if known else ""
+
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body {{
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+                margin: 0;
+                padding: 0 4px;
+                height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                box-sizing: border-box;
+                background: white;
+            }}
+            .matchup-container {{
+                width: 100%;
+                border: 1px solid #d0d0d0;
+                border-radius: 4px;
+                overflow: hidden;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+                background-color: #f8f9fa;
+            }}
+            .game-label {{
+                font-size: 10px;
+                color: #888;
+                background: #eef0f3;
+                padding: 1px 6px;
+                letter-spacing: 0.5px;
+            }}
+            .team-box {{
+                background: #f8f9fa;
+                padding: 10px 14px;
+                font-size: 18px;
+                display: flex;
+                align-items: center;
+                height: 52px;
+                min-height: 52px;
+            }}
+            .team-info {{ display: flex; align-items: center; gap: 10px; flex: 1; }}
+            .team-seed {{ font-weight: 700; color: #4472C4; min-width: 24px; font-size: 18px; }}
+            .team-logo {{ width: 38px; height: 38px; object-fit: contain; flex-shrink: 0; }}
+            .team-logo.placeholder {{ display: inline-block; }}
+            .team-name {{ flex: 1; font-size: 18px; color: #333; }}
+            .team-box.tbd {{ color: #999; font-style: italic; }}
+            .team-box.tbd .team-seed, .team-box.tbd .team-name {{ color: #999; }}
+            .team-box.winner .team-name {{ font-weight: 700; }}
+        </style>
+    </head>
+    <body>
+        <div class="matchup-container">
+            <div class="game-label">{region} REGIONAL WINNER</div>
+            <div class="team-box {tbd_class} {winner_class}">
+                <div class="team-info">
+                    <span class="team-seed">{seed}</span>
+                    {logo}
+                    <span class="team-name">{name}</span>
+                </div>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+
 def render_bracket_html(rounds, region=None):
     """
     Render tournament bracket as an NCAA-style tree.
@@ -2967,12 +3043,12 @@ with tab5:
                             winner = None  # Game not played yet
 
                         # Display winner box at the top
-                        col1, col2, col3 = st.columns([1, 2, 1])
+                        col1, col2, col3 = st.columns([1.3, 1, 1.3])
                         with col2:
-                            if winner and "TBD" not in winner:
-                                st.success(f"🏆 **{region} Regional Winner**\n\n# {winner}")
-                            else:
-                                st.info(f"⏳ **{region} Regional Winner**\n\nGame not yet played")
+                            components.html(
+                                render_regional_winner_card_html(region, winner),
+                                height=90,
+                            )
 
                     st.markdown("---")
 
