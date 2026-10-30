@@ -655,8 +655,9 @@ def build_final_four_brackets(regional_winners, final_four_config, teams_out=Non
     return rounds
 
 
-def render_regional_winner_card_html(region, winner):
-    """Render a regional winner card styled like the bracket game cards."""
+def render_regional_winner_card_html(region, winner, label=None):
+    """Render a winner card styled like the bracket game cards."""
+    label = label or f"{region} REGIONAL WINNER"
     known = bool(winner) and "TBD" not in str(winner)
     seed = lookup_seed(winner, "") if known else ""
     name = str(winner) if known else "TBD"
@@ -717,7 +718,7 @@ def render_regional_winner_card_html(region, winner):
     </head>
     <body>
         <div class="matchup-container">
-            <div class="game-label">{region} REGIONAL WINNER</div>
+            <div class="game-label">{label}</div>
             <div class="team-box {tbd_class} {winner_class}">
                 <div class="team-info">
                     <span class="team-seed">{seed}</span>
@@ -3086,6 +3087,18 @@ with tab5:
                     data["final_four_config"], 
                     data["teams_out"]
                 )
+                champion = final_four_rounds[-1]["regions"]["FINAL_FOUR"][0].get("winner")
+                col1, col2, col3 = st.columns([1.3, 1, 1.3])
+                with col2:
+                    components.html(
+                        render_regional_winner_card_html(
+                            "", champion, label="NATIONAL CHAMPION"
+                        ),
+                        height=90,
+                    )
+
+                st.markdown("---")
+
                 bracket_html = render_bracket_html(final_four_rounds)
                 components.html(bracket_html, height=550, scrolling=False)
 
