@@ -760,7 +760,7 @@ def render_bracket_html(rounds, region=None):
     </head>
     <body>
         <div class="ncaa-bracket-wrapper">
-            <svg class="bracket-connectors" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"></svg>
+            <svg class="bracket-connectors" style="position: absolute; top: 0; left: 0; pointer-events: none;"></svg>
             <div class="ncaa-bracket">
     """
 
@@ -855,8 +855,12 @@ def render_bracket_html(rounds, region=None):
                 svg.innerHTML = '';
 
                 // Set SVG size to match wrapper
-                svg.setAttribute('width', wrapper.offsetWidth);
-                svg.setAttribute('height', wrapper.offsetHeight);
+                svg.style.width = '0px';
+                svg.style.height = '0px';
+                svg.style.width = wrapper.scrollWidth + 'px';
+                svg.style.height = wrapper.scrollHeight + 'px';
+                svg.setAttribute('width', wrapper.scrollWidth);
+                svg.setAttribute('height', wrapper.scrollHeight);
 
                 // Function to draw connector lines between two columns
                 function connectColumns(colA, colB) {
@@ -877,11 +881,14 @@ def render_bracket_html(rounds, region=None):
                             const rectB = mB.getBoundingClientRect();
                             const wrapperRect = wrapper.getBoundingClientRect();
 
-                            const yAa = rectAa.top - wrapperRect.top + rectAa.height / 2;
-                            const yAb = rectAb.top - wrapperRect.top + rectAb.height / 2;
-                            const yB = rectB.top - wrapperRect.top + rectB.height / 2;
-                            const xA = rectAa.right - wrapperRect.left;
-                            const xB = rectB.left - wrapperRect.left;
+                            const offX = wrapper.scrollLeft - wrapperRect.left;
+                            const offY = wrapper.scrollTop - wrapperRect.top;
+
+                            const yAa = rectAa.top + offY + rectAa.height / 2;
+                            const yAb = rectAb.top + offY + rectAb.height / 2;
+                            const yB = rectB.top + offY + rectB.height / 2;
+                            const xA = rectAa.right + offX;
+                            const xB = rectB.left + offX;
 
                             // Midpoint x coordinate
                             const xMid = xA + (xB - xA) * 0.5;
@@ -939,6 +946,9 @@ def render_bracket_html(rounds, region=None):
                 setTimeout(drawConnectors, 100);
             });
             window.addEventListener('resize', drawConnectors);
+            if (window.ResizeObserver) {
+                new ResizeObserver(() => drawConnectors()).observe(document.body);
+            }
         </script>
     </body>
     </html>
