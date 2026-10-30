@@ -240,6 +240,57 @@ def red_white_green_scale(value, minimum, maximum, reverse=False):
 # Tournament bracket functions
 TEAM_SEEDS = {}
 
+ESPN_TEAMS_URL = (
+    "https://site.api.espn.com/apis/site/v2/sports/basketball/"
+    "mens-college-basketball/teams?limit=500"
+)
+ESPN_LOGO_URL = "https://a.espncdn.com/i/teamlogos/ncaa/500/{}.png"
+
+
+def _norm_team_name(name):
+    name = str(name).casefold().replace("saint", "st")
+    return re.sub(r"[^a-z0-9]", "", name)
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def get_espn_team_ids():
+    """Return {normalized team name: ESPN team id} from ESPN's teams API."""
+    ids = {}
+    try:
+        resp = requests.get(ESPN_TEAMS_URL, timeout=10)
+        resp.raise_for_status()
+        teams = resp.json()["sports"][0]["leagues"][0]["teams"]
+    except Exception:
+        return ids
+
+    for entry in teams:
+        team = entry.get("team", {})
+        team_id = team.get("id")
+        if not team_id:
+            continue
+        for key in ("location", "shortDisplayName", "displayName", "name"):
+            value = team.get(key)
+            if value:
+                ids.setdefault(_norm_team_name(value), team_id)
+    return ids
+
+
+def get_logo_url(team):
+    if not team or "TBD" in str(team):
+        return None
+    team_id = get_espn_team_ids().get(_norm_team_name(team))
+    return ESPN_LOGO_URL.format(team_id) if team_id else None
+
+
+def _logo_img(team):
+    url = get_logo_url(team)
+    if not url:
+        return '<span class="team-logo placeholder"></span>'
+    return (
+        f'<img class="team-logo" src="{url}" alt="" loading="lazy" '
+        f'onerror="this.style.visibility=\'hidden\'">'
+    )
+
 
 def lookup_seed(team, default):
     return TEAM_SEEDS.get(str(team).casefold(), default)
@@ -687,6 +738,17 @@ def render_bracket_html(rounds, region=None):
                 font-size: 12px;
             }
 
+            .team-logo {
+                width: 22px;
+                height: 22px;
+                object-fit: contain;
+                flex-shrink: 0;
+            }
+
+            .team-logo.placeholder {
+                display: inline-block;
+            }
+
             .team-name {
                 flex: 1;
                 overflow: hidden;
@@ -820,6 +882,7 @@ def render_bracket_html(rounds, region=None):
                         <div class="team-box {classes_a}">
                             <div class="team-info">
                                 <span class="team-seed">{seed_a}</span>
+                                {_logo_img(team_a)}
                                 <span class="team-name">{str(team_a)[:28]}</span>
                             </div>
                             <span class="team-score"></span>
@@ -827,6 +890,7 @@ def render_bracket_html(rounds, region=None):
                         <div class="team-box {classes_b}">
                             <div class="team-info">
                                 <span class="team-seed">{seed_b}</span>
+                                {_logo_img(team_b)}
                                 <span class="team-name">{str(team_b)[:28]}</span>
                             </div>
                             <span class="team-score"></span>
