@@ -612,10 +612,11 @@ def render_bracket_html(rounds, region=None):
                 flex-shrink: 0;
                 width: 100%;
                 min-width: 160px;
+                background-color: #f8f9fa;
             }
 
             .team-box {
-                background: white;
+                background: #f8f9fa;
                 padding: 10px 12px;
                 font-size: 13px;
                 display: flex;
@@ -632,11 +633,11 @@ def render_bracket_html(rounds, region=None):
             }
 
             .team-box:hover {
-                background: #f5f9ff;
+                background: #eef2f7;
             }
 
             .matchup-container:hover {
-                border-color: #4472C4;
+                border-color: #d0d0d0;
                 box-shadow: 0 2px 6px rgba(68, 114, 196, 0.15);
             }
 
