@@ -332,9 +332,18 @@ def build_tournament_bracket(bracket_teams, teams_out=None):
                     # Single team at this seed - show it
                     return teams[0]
                 else:
-                    # Multiple teams (First Four) - return first one for now
-                    # (actual winner will be determined from previous round)
-                    return teams[0]
+                    # Multiple teams (First Four) - check which team is NOT eliminated (the First Four winner)
+                    active_teams = [t for t in teams if t.casefold() not in teams_out]
+
+                    if len(active_teams) == 1:
+                        # One team won (other is eliminated)
+                        return active_teams[0]
+                    elif len(active_teams) == 0:
+                        # Both eliminated (shouldn't happen) - return first
+                        return teams[0]
+                    else:
+                        # Both still active (First Four game not yet played)
+                        return teams[0]
 
             return f"({seed}) TBD"
 
@@ -568,10 +577,14 @@ def render_bracket_html(rounds, region=None):
             }
 
             .bracket-column:nth-child(2) {
-                gap: 100px;
+                gap: 15px;
             }
 
             .bracket-column:nth-child(3) {
+                gap: 100px;
+            }
+
+            .bracket-column:nth-child(4) {
                 gap: 200px;
             }
 
@@ -1174,7 +1187,17 @@ def load_data(file_path, updated_time=None):
         if "Seed" in headers3 and "Region" in headers3 and "Team" in headers3:
             for values in ws.iter_rows(min_row=2, max_col=max(headers3.values()) + 1, values_only=True):
                 try:
-                    seed = int(float(values[headers3["Seed"]])) if values[headers3["Seed"]] else None
+                    seed_value = values[headers3["Seed"]]
+                    if seed_value is None:
+                        continue
+
+                    # Handle seed values like "11 - FF" or "16 - FF" by extracting the number
+                    seed_str = str(seed_value).strip()
+                    # Extract just the numeric part before any " - " or other suffix
+                    if " - " in seed_str:
+                        seed_str = seed_str.split(" - ")[0].strip()
+
+                    seed = int(float(seed_str))
                     region = str(values[headers3["Region"]]).strip().upper() if values[headers3["Region"]] else None
                     team = str(values[headers3["Team"]]).strip() if values[headers3["Team"]] else None
 
