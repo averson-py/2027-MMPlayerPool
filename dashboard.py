@@ -549,6 +549,7 @@ def render_bracket_html(rounds, region=None):
             }
 
             .ncaa-bracket-wrapper {
+                position: relative;
                 overflow-x: auto;
                 background: white;
                 border-radius: 4px;
@@ -565,27 +566,33 @@ def render_bracket_html(rounds, region=None):
             .bracket-column {
                 display: flex;
                 flex-direction: column;
-                justify-content: center;
                 align-items: center;
                 min-width: 180px;
                 padding: 0 15px;
-                border-right: 2px solid #e0e0e0;
                 position: relative;
                 flex: 1;
                 min-height: 500px;
-                gap: 15px;
             }
 
-            .bracket-column:nth-child(2) {
-                gap: 15px;
+            .column-matchups {
+                flex: 1;
+                width: 100%;
+                display: flex;
+                flex-direction: column;
+                justify-content: space-around;
+                align-items: center;
             }
 
-            .bracket-column:nth-child(3) {
-                gap: 100px;
+            .column-matchups .matchup-container {
+                margin: 6px 0;
             }
 
-            .bracket-column:nth-child(4) {
-                gap: 200px;
+            .game-label {
+                font-size: 10px;
+                color: #888;
+                background: #eef0f3;
+                padding: 1px 6px;
+                letter-spacing: 0.5px;
             }
 
             .bracket-column:last-child {
@@ -735,6 +742,8 @@ def render_bracket_html(rounds, region=None):
     # If region specified, only render that region
     regions_to_render = [region] if region else regions_list
 
+    game_counter = 1
+
     # Flatten all matchups by round across specified regions
     for round_idx, round_data in enumerate(rounds):
         round_name = round_data['name']
@@ -742,6 +751,7 @@ def render_bracket_html(rounds, region=None):
         html += f"""
                 <div class="bracket-column">
                     <div class="bracket-column-title">{round_name}</div>
+                    <div class="column-matchups">
         """
 
         # Get all matchups for this round across specified regions
@@ -775,8 +785,13 @@ def render_bracket_html(rounds, region=None):
             winner_class_b = "winner" if is_winner_b else ""
             classes_b = f"{tbd_class_b} {eliminated_class_b} {winner_class_b}".strip()
 
+            game_num = game_counter
+            game_counter += 1
+            feeds_to = matchup_idx // 2 if len(all_matchups) > 1 else -1
+
             html += f"""
-                    <div class="matchup-container">
+                    <div class="matchup-container" data-round="{round_idx}" data-index="{matchup_idx}" data-feeds-to="{feeds_to}">
+                        <div class="game-label">G{game_num}</div>
                         <div class="team-box {classes_a}">
                             <div class="team-info">
                                 <span class="team-seed">{seed_a}</span>
@@ -796,6 +811,7 @@ def render_bracket_html(rounds, region=None):
 
 
         html += """
+                    </div>
                 </div>
         """
 
@@ -822,10 +838,11 @@ def render_bracket_html(rounds, region=None):
                     const matchupsA = colA.querySelectorAll('.matchup-container');
                     const matchupsB = colB.querySelectorAll('.matchup-container');
 
-                    // Connect pairs of matchups
-                    for (let i = 0; i < matchupsB.length && i * 2 + 1 < matchupsA.length; i++) {
-                        const mAa = matchupsA[i * 2];
-                        const mAb = matchupsA[i * 2 + 1];
+                    // Connect each pair of feeder games to the game they feed (by data-feeds-to)
+                    for (let i = 0; i < matchupsB.length; i++) {
+                        const feeders = Array.from(matchupsA).filter(m => m.dataset.feedsTo === String(i));
+                        const mAa = feeders[0];
+                        const mAb = feeders[1];
                         const mB = matchupsB[i];
 
                         if (mAa && mAb && mB) {
@@ -869,7 +886,7 @@ def render_bracket_html(rounds, region=None):
                             line3.setAttribute('x1', xMid);
                             line3.setAttribute('y1', yAa);
                             line3.setAttribute('x2', xMid);
-                            line3.setAttribute('y2', yB);
+                            line3.setAttribute('y2', yAb);
                             line3.setAttribute('stroke', '#d0d0d0');
                             line3.setAttribute('stroke-width', '2');
                             svg.appendChild(line3);
@@ -887,23 +904,12 @@ def render_bracket_html(rounds, region=None):
                     }
                 }
 
-                // Connect Round of 64 to Round of 32
-                if (columns.length > 1) {
-                    connectColumns(columns[0], columns[1]);
-                }
-
-                // Connect Round of 32 to Sweet 16
-                if (columns.length > 2) {
-                    connectColumns(columns[1], columns[2]);
-                }
-
-                // Connect Sweet 16 to Elite 8
-                if (columns.length > 3) {
-                    connectColumns(columns[2], columns[3]);
+                // Connect every pair of adjacent rounds (handles First Four and later rounds)
+                for (let c = 0; c < columns.length - 1; c++) {
+                    connectColumns(columns[c], columns[c + 1]);
                 }
             }
 
-            // Draw connectors when page loads and on resize
             window.addEventListener('load', () => {
                 setTimeout(drawConnectors, 100);
             });
