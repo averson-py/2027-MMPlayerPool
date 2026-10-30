@@ -45,9 +45,9 @@ ROUND_OPTIONS = [
 
 STAT_COLUMN_MAP = {
     round_name: {
-        "PTS": 4 + index,
-        "REB": 10 + index,
-        "AST": 16 + index,
+        "PTS": 4 + max(index - 1, 0),
+        "REB": 10 + max(index - 1, 0),
+        "AST": 16 + max(index - 1, 0),
     }
     for index, round_name in enumerate(ROUND_OPTIONS)
 }
