@@ -240,6 +240,42 @@ def red_white_green_scale(value, minimum, maximum, reverse=False):
 # Tournament bracket functions
 TEAM_SEEDS = {}
 
+ROUND_LOST_INDEX = [
+    ("first four", -1),
+    ("first round", 0),
+    ("round of 64", 0),
+    ("second round", 1),
+    ("round of 32", 1),
+    ("sweet", 2),
+    ("elite", 3),
+    ("final four", 4),
+    ("semi", 4),
+    ("title", 5),
+    ("champ", 5),
+]
+
+
+def round_lost_index(round_text):
+    """Map a TeamsOut round label to a bracket round index (-1 = First Four)."""
+    text = str(round_text or "").strip().casefold()
+    for key, idx in ROUND_LOST_INDEX:
+        if key in text:
+            return idx
+    return None
+
+
+def lost_in_round(team, round_idx, teams_out):
+    """True only if the team was eliminated in this specific round."""
+    if team is None or "TBD" in str(team):
+        return False
+    key = str(team).casefold()
+    if key not in teams_out:
+        return False
+    lost_idx = round_lost_index(teams_out[key])
+    if lost_idx is None:
+        return True
+    return lost_idx == round_idx
+
 ESPN_TEAMS_URL = (
     "https://site.api.espn.com/apis/site/v2/sports/basketball/"
     "mens-college-basketball/teams?limit=500"
@@ -347,8 +383,8 @@ def build_tournament_bracket(bracket_teams, teams_out=None):
                         team_b = teams[i + 1]
 
                         # Determine winner based on TeamsOut
-                        team_a_lost = team_a.casefold() in teams_out
-                        team_b_lost = team_b.casefold() in teams_out
+                        team_a_lost = lost_in_round(team_a, -1, teams_out)
+                        team_b_lost = lost_in_round(team_b, -1, teams_out)
 
                         first_four[region].append({
                             "team_a": team_a,
@@ -392,7 +428,7 @@ def build_tournament_bracket(bracket_teams, teams_out=None):
                     return teams[0]
                 else:
                     # Multiple teams (First Four) - check which team is NOT eliminated (the First Four winner)
-                    active_teams = [t for t in teams if t.casefold() not in teams_out]
+                    active_teams = [t for t in teams if not lost_in_round(t, -1, teams_out)]
 
                     if len(active_teams) == 1:
                         # One team won (other is eliminated)
@@ -417,30 +453,24 @@ def build_tournament_bracket(bracket_teams, teams_out=None):
         return f"({seed}) TBD"
 
     # Helper to determine winner of a matchup
-    def get_winner(team_a, team_b):
+    def get_winner(team_a, team_b, round_num):
         # If either team is TBD or None, we can't determine a winner
         if team_a is None or "TBD" in str(team_a) or team_b is None or "TBD" in str(team_b):
             return None
 
-        # Both teams exist - check if one is eliminated
-        team_a_loss = team_a.casefold() in teams_out
-        team_b_loss = team_b.casefold() in teams_out
+        team_a_loss = lost_in_round(team_a, round_num, teams_out)
+        team_b_loss = lost_in_round(team_b, round_num, teams_out)
 
         if team_a_loss and not team_b_loss:
             return team_b
         if team_b_loss and not team_a_loss:
             return team_a
-        if not team_a_loss and not team_b_loss:
-            # Both active - can't determine winner yet
-            return None
-        # Both eliminated - return the one that lost later or first one
-        return team_a
+        # Neither (or both) lost in this round - can't determine a winner yet
+        return None
 
-    # Helper to check if team is eliminated
-    def is_eliminated(team_name):
-        if team_name is None or "TBD" in str(team_name):
-            return False
-        return team_name.casefold() in teams_out
+    # Helper to check if team lost in this round
+    def is_eliminated(team_name, round_num):
+        return lost_in_round(team_name, round_num, teams_out)
 
     # Main bracket rounds
     round_names = ["Round of 64", "Round of 32", "Sweet 16", "Elite Eight", "Final Four", "Championship"]
@@ -490,7 +520,7 @@ def build_tournament_bracket(bracket_teams, teams_out=None):
                     seed_b = lookup_seed(team_b, seed_b)
 
                 # Determine winner of this matchup
-                winner = get_winner(team_a, team_b)
+                winner = get_winner(team_a, team_b, round_num)
                 round_winners[round_num][region][matchup_idx] = winner
 
                 # Store matchup with elimination flags
@@ -500,8 +530,8 @@ def build_tournament_bracket(bracket_teams, teams_out=None):
                     "team_b": team_b,
                     "seed_b": seed_b,
                     "winner": winner,
-                    "team_a_eliminated": is_eliminated(team_a),
-                    "team_b_eliminated": is_eliminated(team_b),
+                    "team_a_eliminated": is_eliminated(team_a, round_num),
+                    "team_b_eliminated": is_eliminated(team_b, round_num),
                 }
 
                 round_obj["regions"][region].append(matchup_obj)
@@ -545,6 +575,17 @@ def build_final_four_brackets(regional_winners, final_four_config, teams_out=Non
 
     rounds = []
 
+    def game_winner(a, b, round_idx):
+        if "TBD" in str(a) or "TBD" in str(b):
+            return None
+        a_lost = lost_in_round(a, round_idx, teams_out)
+        b_lost = lost_in_round(b, round_idx, teams_out)
+        if a_lost and not b_lost:
+            return b
+        if b_lost and not a_lost:
+            return a
+        return None
+
     # Semifinal Round
     semifinal_round = {
         "name": "Final Four - Semifinals",
@@ -555,14 +596,18 @@ def build_final_four_brackets(regional_winners, final_four_config, teams_out=Non
                     "seed_a": lookup_seed(team_sf1_r1, f"{sf1_r1[0]}"),
                     "team_b": team_sf1_r2,
                     "seed_b": lookup_seed(team_sf1_r2, f"{sf1_r2[0]}"),
-                    "winner": None
+                    "winner": game_winner(team_sf1_r1, team_sf1_r2, 4),
+                    "team_a_eliminated": lost_in_round(team_sf1_r1, 4, teams_out),
+                    "team_b_eliminated": lost_in_round(team_sf1_r2, 4, teams_out),
                 },
                 {
                     "team_a": team_sf2_r1,
                     "seed_a": lookup_seed(team_sf2_r1, f"{sf2_r1[0]}"),
                     "team_b": team_sf2_r2,
                     "seed_b": lookup_seed(team_sf2_r2, f"{sf2_r2[0]}"),
-                    "winner": None
+                    "winner": game_winner(team_sf2_r1, team_sf2_r2, 4),
+                    "team_a_eliminated": lost_in_round(team_sf2_r1, 4, teams_out),
+                    "team_b_eliminated": lost_in_round(team_sf2_r2, 4, teams_out),
                 }
             ]
         }
@@ -570,19 +615,8 @@ def build_final_four_brackets(regional_winners, final_four_config, teams_out=Non
     rounds.append(semifinal_round)
 
     # Championship Round
-    def semi_winner(a, b):
-        if "TBD" in str(a) or "TBD" in str(b):
-            return None
-        a_lost = str(a).casefold() in teams_out
-        b_lost = str(b).casefold() in teams_out
-        if a_lost and not b_lost:
-            return b
-        if b_lost and not a_lost:
-            return a
-        return None
-
-    champ_a = semi_winner(team_sf1_r1, team_sf1_r2) or "TBD"
-    champ_b = semi_winner(team_sf2_r1, team_sf2_r2) or "TBD"
+    champ_a = game_winner(team_sf1_r1, team_sf1_r2, 4) or "TBD"
+    champ_b = game_winner(team_sf2_r1, team_sf2_r2, 4) or "TBD"
 
     championship_round = {
         "name": "Championship",
@@ -593,7 +627,9 @@ def build_final_four_brackets(regional_winners, final_four_config, teams_out=Non
                     "seed_a": lookup_seed(champ_a, "SF1"),
                     "team_b": champ_b,
                     "seed_b": lookup_seed(champ_b, "SF2"),
-                    "winner": None
+                    "winner": game_winner(champ_a, champ_b, 5),
+                    "team_a_eliminated": lost_in_round(champ_a, 5, teams_out),
+                    "team_b_eliminated": lost_in_round(champ_b, 5, teams_out),
                 }
             ]
         }
@@ -2897,8 +2933,8 @@ with tab5:
                         team_b = matchup["team_b"]
 
                         # Determine winner
-                        team_a_lost = team_a.casefold() in data["teams_out"]
-                        team_b_lost = team_b.casefold() in data["teams_out"]
+                        team_a_lost = lost_in_round(team_a, 3, data["teams_out"])
+                        team_b_lost = lost_in_round(team_b, 3, data["teams_out"])
 
                         winner = None
                         if team_a_lost and not team_b_lost:
@@ -2934,8 +2970,8 @@ with tab5:
                         team_b = matchup["team_b"]
 
                         # Determine winner
-                        team_a_lost = team_a.casefold() in data["teams_out"]
-                        team_b_lost = team_b.casefold() in data["teams_out"]
+                        team_a_lost = lost_in_round(team_a, 3, data["teams_out"])
+                        team_b_lost = lost_in_round(team_b, 3, data["teams_out"])
 
                         winner = None
                         if team_a_lost and not team_b_lost:
