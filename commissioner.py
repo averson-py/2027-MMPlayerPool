@@ -34,6 +34,7 @@ SEED_GAMES_SEED_COLUMN = "H"
 SEED_GAMES_AVERAGE_COLUMN = "I"
 
 ROUND_OPTIONS = [
+    "First Four",
     "First Round",
     "Second Round",
     "Sweet Sixteen",
