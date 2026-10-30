@@ -255,6 +255,18 @@ def build_tournament_bracket(bracket_teams, teams_out=None):
     regions = ["EAST", "WEST", "MIDWEST", "SOUTH"]
     rounds = []
 
+    # Create a reverse mapping: team name -> (seed, region) for quick lookup
+    # This helps us find which seed a team belongs to when it's in teams_out
+    team_to_seed_region = {}
+    for seed in bracket_teams:
+        for region in bracket_teams[seed]:
+            for team in bracket_teams[seed][region]:
+                team_to_seed_region[team.casefold()] = (seed, region)
+
+    # Track winners at each round to use in future rounds
+    # round_winners[round_num][region] = {matchup_idx: winner_team_name}
+    round_winners = {}
+
     # Track which seeds have First Four games (multiple teams at same seed)
     first_four_seeds = set()
 
@@ -309,40 +321,58 @@ def build_tournament_bracket(bracket_teams, teams_out=None):
 
     # Helper function to get team for a seed in a region, considering First Four winners
     def get_team_for_seed(seed, region, round_num):
-        # Only show actual teams in Round of 64 (round_num == 0)
-        # For future rounds, check if the winning teams from previous rounds exist
-        if round_num > 0:
-            # Future round - always show TBD for now since we don't track winners
+        # Round of 64 - show actual teams from bracket
+        if round_num == 0:
+            if seed in bracket_teams and region in bracket_teams[seed]:
+                teams = bracket_teams[seed][region]
+                if not teams:
+                    return f"({seed}) TBD"
+
+                if len(teams) == 1:
+                    # Single team at this seed - show it
+                    return teams[0]
+                else:
+                    # Multiple teams (First Four) - return first one for now
+                    # (actual winner will be determined from previous round)
+                    return teams[0]
+
             return f"({seed}) TBD"
 
-        # Round of 64 - show actual teams
-        if seed in bracket_teams and region in bracket_teams[seed]:
-            teams = bracket_teams[seed][region]
-            if not teams:
-                return f"({seed}) TBD"
-
-            if len(teams) == 1:
-                # Single team at this seed
-                team = teams[0]
-                # Check if this team lost in an earlier round
-                if team.casefold() in teams_out:
-                    return f"({seed}) TBD"
-                return team
-            else:
-                # Multiple teams (First Four) - determine winner
-                # Count how many teams are NOT in teams_out (still active)
-                active_teams = [t for t in teams if t.casefold() not in teams_out]
-
-                if len(active_teams) == 1:
-                    # One team won (other is eliminated)
-                    return active_teams[0]
-                else:
-                    # Either both teams are active (no games played yet)
-                    # or both are eliminated (shouldn't happen)
-                    # Return TBD since we can't determine a winner yet
-                    return f"({seed}) TBD"
+        # Future rounds - look up winners from previous round
+        if round_num - 1 in round_winners:
+            prev_round_winners = round_winners[round_num - 1]
+            if region in prev_round_winners:
+                # Calculate which matchup index this seed came from
+                # This is complex, so we'll use a different approach below
+                pass
 
         return f"({seed}) TBD"
+
+    # Helper to determine winner of a matchup
+    def get_winner(team_a, team_b):
+        # If either team is TBD or None, we can't determine a winner
+        if team_a is None or "TBD" in str(team_a) or team_b is None or "TBD" in str(team_b):
+            return None
+
+        # Both teams exist - check if one is eliminated
+        team_a_loss = team_a.casefold() in teams_out
+        team_b_loss = team_b.casefold() in teams_out
+
+        if team_a_loss and not team_b_loss:
+            return team_b
+        if team_b_loss and not team_a_loss:
+            return team_a
+        if not team_a_loss and not team_b_loss:
+            # Both active - can't determine winner yet
+            return None
+        # Both eliminated - return the one that lost later or first one
+        return team_a
+
+    # Helper to check if team is eliminated
+    def is_eliminated(team_name):
+        if team_name is None or "TBD" in str(team_name):
+            return False
+        return team_name.casefold() in teams_out
 
     # Main bracket rounds
     round_names = ["Round of 64", "Round of 32", "Sweet 16", "Elite Eight", "Final Four", "Championship"]
@@ -357,20 +387,53 @@ def build_tournament_bracket(bracket_teams, teams_out=None):
 
     for round_num, matchups_seeds in enumerate(matchup_structure):
         round_obj = {"name": round_names[round_num], "regions": {}}
+        round_winners[round_num] = {}
 
         for region in regions:
             round_obj["regions"][region] = []
-            for seed_a, seed_b in matchups_seeds:
-                team_a = get_team_for_seed(seed_a, region, round_num)
-                team_b = get_team_for_seed(seed_b, region, round_num)
+            round_winners[round_num][region] = {}
 
-                round_obj["regions"][region].append({
+            for matchup_idx, (seed_a, seed_b) in enumerate(matchups_seeds):
+                team_a = None
+                team_b = None
+
+                # Round of 64 - get from bracket_teams
+                if round_num == 0:
+                    team_a = get_team_for_seed(seed_a, region, round_num)
+                    team_b = get_team_for_seed(seed_b, region, round_num)
+                else:
+                    # Future rounds - get from previous round's winners
+                    # The winner from matchup (matchup_idx * 2) plays winner from (matchup_idx * 2 + 1)
+                    prev_matchup_a = matchup_idx * 2
+                    prev_matchup_b = matchup_idx * 2 + 1
+
+                    if region in round_winners[round_num - 1]:
+                        prev_winners = round_winners[round_num - 1][region]
+                        team_a = prev_winners.get(prev_matchup_a)
+                        team_b = prev_winners.get(prev_matchup_b)
+
+                    # If no winner found, show TBD
+                    if team_a is None:
+                        team_a = f"({seed_a}) TBD"
+                    if team_b is None:
+                        team_b = f"({seed_b}) TBD"
+
+                # Determine winner of this matchup
+                winner = get_winner(team_a, team_b)
+                round_winners[round_num][region][matchup_idx] = winner
+
+                # Store matchup with elimination flags
+                matchup_obj = {
                     "team_a": team_a,
                     "seed_a": seed_a,
                     "team_b": team_b,
                     "seed_b": seed_b,
-                    "winner": None
-                })
+                    "winner": winner,
+                    "team_a_eliminated": is_eliminated(team_a),
+                    "team_b_eliminated": is_eliminated(team_b),
+                }
+
+                round_obj["regions"][region].append(matchup_obj)
 
         rounds.append(round_obj)
 
@@ -613,6 +676,24 @@ def render_bracket_html(rounds, region=None):
                 color: #ccc;
             }
 
+            .team-box.eliminated .team-name {
+                color: #999;
+                font-weight: 400;
+            }
+
+            .team-box.eliminated .team-seed {
+                color: #999;
+                font-weight: 700;
+            }
+
+            .team-box.winner .team-name {
+                font-weight: 700;
+            }
+
+            .team-box.winner .team-seed {
+                font-weight: 700;
+            }
+
             .connector-line {
                 position: absolute;
                 height: 2px;
@@ -661,23 +742,35 @@ def render_bracket_html(rounds, region=None):
             team_b = matchup['team_b']
             seed_a = matchup['seed_a']
             seed_b = matchup['seed_b']
+            winner = matchup.get('winner')
 
             is_tbd_a = "TBD" in str(team_a)
             is_tbd_b = "TBD" in str(team_b)
+            is_eliminated_a = matchup.get('team_a_eliminated', False)
+            is_eliminated_b = matchup.get('team_b_eliminated', False)
+            is_winner_a = winner == team_a
+            is_winner_b = winner == team_b
 
             tbd_class_a = "tbd" if is_tbd_a else ""
+            eliminated_class_a = "eliminated" if is_eliminated_a else ""
+            winner_class_a = "winner" if is_winner_a else ""
+            classes_a = f"{tbd_class_a} {eliminated_class_a} {winner_class_a}".strip()
+
             tbd_class_b = "tbd" if is_tbd_b else ""
+            eliminated_class_b = "eliminated" if is_eliminated_b else ""
+            winner_class_b = "winner" if is_winner_b else ""
+            classes_b = f"{tbd_class_b} {eliminated_class_b} {winner_class_b}".strip()
 
             html += f"""
                     <div class="matchup-container">
-                        <div class="team-box {tbd_class_a}">
+                        <div class="team-box {classes_a}">
                             <div class="team-info">
                                 <span class="team-seed">{seed_a}</span>
                                 <span class="team-name">{str(team_a)[:28]}</span>
                             </div>
                             <span class="team-score"></span>
                         </div>
-                        <div class="team-box {tbd_class_b}">
+                        <div class="team-box {classes_b}">
                             <div class="team-info">
                                 <span class="team-seed">{seed_b}</span>
                                 <span class="team-name">{str(team_b)[:28]}</span>
