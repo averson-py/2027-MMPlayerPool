@@ -361,6 +361,7 @@ def build_tournament_bracket(bracket_teams, teams_out=None):
     # Track winners at each round to use in future rounds
     # round_winners[round_num][region] = {matchup_idx: winner_team_name}
     round_winners = {}
+    round_seeds = {}
 
     # Track which seeds have First Four games (multiple teams at same seed)
     first_four_seeds = set()
@@ -486,10 +487,12 @@ def build_tournament_bracket(bracket_teams, teams_out=None):
     for round_num, matchups_seeds in enumerate(matchup_structure):
         round_obj = {"name": round_names[round_num], "regions": {}}
         round_winners[round_num] = {}
+        round_seeds[round_num] = {}
 
         for region in regions:
             round_obj["regions"][region] = []
             round_winners[round_num][region] = {}
+            round_seeds[round_num][region] = {}
 
             for matchup_idx, (seed_a, seed_b) in enumerate(matchups_seeds):
                 team_a = None
@@ -510,18 +513,31 @@ def build_tournament_bracket(bracket_teams, teams_out=None):
                         team_a = prev_winners.get(prev_matchup_a)
                         team_b = prev_winners.get(prev_matchup_b)
 
-                    # If no winner found, show TBD
+                    # If no winner found, show TBD with the best (lowest) seed that could advance
+                    prev_seeds = round_seeds[round_num - 1].get(region, {})
                     if team_a is None:
+                        seed_a = prev_seeds.get(prev_matchup_a, seed_a)
                         team_a = f"({seed_a}) TBD"
+                    else:
+                        seed_a = lookup_seed(team_a, seed_a)
                     if team_b is None:
+                        seed_b = prev_seeds.get(prev_matchup_b, seed_b)
                         team_b = f"({seed_b}) TBD"
-
-                    seed_a = lookup_seed(team_a, seed_a)
-                    seed_b = lookup_seed(team_b, seed_b)
+                    else:
+                        seed_b = lookup_seed(team_b, seed_b)
 
                 # Determine winner of this matchup
                 winner = get_winner(team_a, team_b, round_num)
                 round_winners[round_num][region][matchup_idx] = winner
+
+                # Seed that advances from this game (best possible seed if undecided)
+                if winner:
+                    round_seeds[round_num][region][matchup_idx] = seed_a if winner == team_a else seed_b
+                else:
+                    try:
+                        round_seeds[round_num][region][matchup_idx] = min(int(seed_a), int(seed_b))
+                    except (TypeError, ValueError):
+                        round_seeds[round_num][region][matchup_idx] = seed_a
 
                 # Store matchup with elimination flags
                 matchup_obj = {
