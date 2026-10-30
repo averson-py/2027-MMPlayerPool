@@ -4765,21 +4765,25 @@ class DraftApp:
         return completed_picks >= required_picks
 
 def hide_own_console_window():
-    """Hide the console only if it was created solely for this process."""
+    """Hide the console window when running as a GUI application."""
     try:
         import ctypes
+        import sys
 
-        kernel32 = ctypes.windll.kernel32
-        console_window = kernel32.GetConsoleWindow()
+        # Get the current console window handle
+        hwnd = ctypes.windll.kernel32.GetConsoleWindow()
 
-        if not console_window:
-            return
+        if hwnd:
+            # Hide the console window (0 = SW_HIDE)
+            ctypes.windll.user32.ShowWindow(hwnd, 0)
 
-        process_ids = (ctypes.c_uint * 2)()
-
-        if kernel32.GetConsoleProcessList(process_ids, 2) == 1:
-            ctypes.windll.user32.ShowWindow(console_window, 0)
+            # Optionally, free the console so it doesn't show up
+            try:
+                ctypes.windll.kernel32.FreeConsole()
+            except:
+                pass
     except Exception:
+        # Silently fail if we can't hide the console
         pass
 
 
