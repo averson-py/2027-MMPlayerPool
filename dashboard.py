@@ -749,6 +749,11 @@ def render_bracket_html(rounds, region=None):
                 display: inline-block;
             }
 
+            .team-box.eliminated .team-logo {
+                filter: grayscale(100%);
+                opacity: 0.5;
+            }
+
             .team-name {
                 flex: 1;
                 overflow: hidden;
