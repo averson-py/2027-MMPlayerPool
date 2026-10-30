@@ -876,17 +876,23 @@ def render_bracket_html(rounds, region=None):
     for round_idx, round_data in enumerate(rounds):
         round_name = round_data['name']
 
-        html += f"""
-                <div class="bracket-column">
-                    <div class="bracket-column-title">{round_name}</div>
-                    <div class="column-matchups">
-        """
-
         # Get all matchups for this round across specified regions
         all_matchups = []
         for r in regions_to_render:
             if r in round_data['regions']:
                 all_matchups.extend(round_data['regions'][r])
+
+        # Hide the First Four column when the region has no First Four games
+        if round_name == "First Four" and not all_matchups:
+            continue
+
+        display_name = "Opening Round" if round_name == "First Four" else round_name
+
+        html += f"""
+                <div class="bracket-column">
+                    <div class="bracket-column-title">{display_name}</div>
+                    <div class="column-matchups">
+        """
 
         # Display matchups
         for matchup_idx, matchup in enumerate(all_matchups):
