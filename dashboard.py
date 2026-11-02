@@ -2359,13 +2359,13 @@ c2.metric("Drafted Players", len(data["draft_rows"]))
 c3.metric("Players Active", int(standings["Active Players"].sum()) if not standings.empty else 0)
 c4.metric("Teams Eliminated", len(data["teams_out"]))
 
-tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab0, tab1, tab2, tab5, tab3, tab4 = st.tabs([
     "🏠 Pool Overview",
     "🏆 Standings",
     "📊 Player Statistics",
+    "⛹️‍♂️ Tournament Bracket",
     "👥 Team View",
     "🎯 Draft Ratings",
-    "⛹️‍♂️ Tournament Bracket",
 ])
 
 with tab0:
