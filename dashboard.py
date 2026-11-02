@@ -2890,6 +2890,14 @@ c3.metric("Players Active", int(standings["Active Players"].sum()) if not standi
 c4.metric("Teams Eliminated", len(data["teams_out"]))
 
 first_run_of_session = "_my_team_prev" not in st.session_state
+if first_run_of_session and not st.session_state.get("my_team"):
+    try:
+        from urllib.parse import unquote as _unquote
+        saved_owner = _unquote(st.context.cookies.get("mmpool_my_team", ""))
+        if saved_owner in data["drafters"]:
+            st.session_state["my_team"] = saved_owner
+    except Exception:
+        pass
 pick_col, _pick_spacer = st.columns([1, 2])
 with pick_col:
     my_team_choice = st.selectbox(
@@ -2908,20 +2916,13 @@ components.html(
     const KEY = 'mmpool_my_team';
     const current = """ + json.dumps(my_team_choice or "") + """;
     const cleared = """ + json.dumps(my_team_cleared) + """;
-    const firstRun = """ + json.dumps(first_run_of_session) + """;
     try {
-        const p = window.parent;
+        const doc = window.parent.document;
         if (current) {
-            p.localStorage.setItem(KEY, current);
+            doc.cookie = KEY + '=' + encodeURIComponent(current) +
+                '; max-age=31536000; path=/; SameSite=Lax';
         } else if (cleared) {
-            p.localStorage.removeItem(KEY);
-        } else if (firstRun) {
-            const saved = p.localStorage.getItem(KEY);
-            if (saved) {
-                const url = new URL(p.location.href);
-                url.searchParams.set('my_team', saved);
-                p.location.replace(url.toString());
-            }
+            doc.cookie = KEY + '=; max-age=0; path=/; SameSite=Lax';
         }
     } catch (e) {}
     </script>""",
