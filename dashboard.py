@@ -2924,7 +2924,7 @@ c4.metric("Teams Eliminated", len(data["teams_out"]))
 pick_col, _pick_spacer = st.columns([1, 2])
 with pick_col:
     my_team_choice = st.selectbox(
-        "👤 Choose your team (highlights team in tables)",
+        "👤 Choose your team (highlights team in tables, should only have to select once)",
         [""] + data["drafters"],
         index=0,
         key="my_team",
