@@ -1,4 +1,4 @@
-﻿
+
 import colorsys
 import os
 import re
@@ -2771,6 +2771,16 @@ st.markdown(
         .mvp-photo-float, .logo-float {display: none;}
     }
 
+    /* Zero-height script frames: take them out of the layout flow so they
+       do not add blank gaps between elements. */
+    div[data-testid="stElementContainer"]:has(> iframe[height="0"]),
+    div[data-testid="stElementContainer"]:has(iframe[height="0"]) {
+        position: absolute !important;
+        height: 0 !important;
+        margin: 0 !important;
+        overflow: hidden !important;
+    }
+
     /* Team owner dropdown: tap to choose only, no typing/keyboard */
     input[aria-label="Select a team owner"],
     input[aria-label^="👤 Choose your team"] {
@@ -2870,12 +2880,19 @@ except Exception as exc:
 latest = data["latest_game_result"]
 
 if data["updated_time"] is None:
-    st.caption("Standings Updated: Not yet updated")
+    updated_text = "Standings Updated: Not yet updated"
 else:
-    st.caption(
+    updated_text = (
         "Standings Updated: "
         + data["updated_time"].strftime("%m/%d/%Y %I:%M %p")
     )
+
+updated_col, refresh_col = st.columns([4, 1], vertical_alignment="center")
+updated_col.caption(updated_text)
+refresh_col.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
+if refresh_col.button("🔄 Refresh Standings", key="refresh_data", use_container_width=True):
+    get_espn_tournament_games.clear()
+    st.rerun()
 
 standings = make_standings(data)
 power = make_power_rankings(data)
@@ -2900,45 +2917,6 @@ with pick_col:
         key="my_team",
         bind="query-params",
     )
-
-components.html(
-    """<script>
-    const fixMyTeam = () => {
-        window.parent.document.querySelectorAll('input[aria-label^="👤 Choose your team"]').forEach(el => {
-            el.setAttribute('inputmode', 'none');
-            el.setAttribute('readonly', 'readonly');
-        });
-    };
-    fixMyTeam();
-    new MutationObserver(fixMyTeam).observe(window.parent.document.body, {childList: true, subtree: true});
-    </script>""",
-    height=0,
-)
-
-components.html(
-    """<script>
-    const KEY = 'mmpool_my_team';
-    const current = """ + json.dumps(my_team_choice or "") + """;
-    try {
-        const p = window.parent;
-        if (current) {
-            p.localStorage.setItem(KEY, current);
-            p.sessionStorage.setItem('mmpool_restored', '1');
-        } else if (!p.sessionStorage.getItem('mmpool_restored')) {
-            p.sessionStorage.setItem('mmpool_restored', '1');
-            const saved = p.localStorage.getItem(KEY);
-            if (saved) {
-                const url = new URL(p.location.href);
-                url.searchParams.set('my_team', saved);
-                p.location.replace(url.toString());
-            }
-        } else {
-            p.localStorage.removeItem(KEY);
-        }
-    } catch (e) {}
-    </script>""",
-    height=0,
-)
 
 tab0, tab1, tab2, tab5, tab3, tab4 = st.tabs([
     "🏠 Pool Overview",
@@ -3880,5 +3858,41 @@ st.caption(
     "No workbook changes are made by the app."
 )
 
+components.html(
+    """<script>
+    const fixMyTeam = () => {
+        window.parent.document.querySelectorAll('input[aria-label^="👤 Choose your team"]').forEach(el => {
+            el.setAttribute('inputmode', 'none');
+            el.setAttribute('readonly', 'readonly');
+        });
+    };
+    fixMyTeam();
+    new MutationObserver(fixMyTeam).observe(window.parent.document.body, {childList: true, subtree: true});
+    </script>""",
+    height=0,
+)
 
-
+components.html(
+    """<script>
+    const KEY = 'mmpool_my_team';
+    const current = """ + json.dumps(my_team_choice or "") + """;
+    try {
+        const p = window.parent;
+        if (current) {
+            p.localStorage.setItem(KEY, current);
+            p.sessionStorage.setItem('mmpool_restored', '1');
+        } else if (!p.sessionStorage.getItem('mmpool_restored')) {
+            p.sessionStorage.setItem('mmpool_restored', '1');
+            const saved = p.localStorage.getItem(KEY);
+            if (saved) {
+                const url = new URL(p.location.href);
+                url.searchParams.set('my_team', saved);
+                p.location.replace(url.toString());
+            }
+        } else {
+            p.localStorage.removeItem(KEY);
+        }
+    } catch (e) {}
+    </script>""",
+    height=0,
+)
