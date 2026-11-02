@@ -855,11 +855,6 @@ def build_team_players(data):
 
 def render_bracket_html(rounds, region=None, team_players=None):
     team_players = team_players or {}
-    """
-    Render tournament bracket as an NCAA-style tree.
-    If region is specified, only render that region.
-    If region is None, render all regions.
-    """
     regions_list = ["EAST", "WEST", "MIDWEST", "SOUTH", "FINAL_FOUR"]
 
     html = """
