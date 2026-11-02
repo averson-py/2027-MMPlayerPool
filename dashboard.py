@@ -840,6 +840,15 @@ def build_team_players(data):
                 list(row.get(key) or [None] * 6)
                 for key in ("tourn_pts_rounds", "tourn_reb_rounds", "tourn_ast_rounds")
             ],
+            "f": [
+                weighted_fantasy_points(
+                    (row.get("tourn_pts_rounds") or [None] * 6)[i],
+                    (row.get("tourn_reb_rounds") or [None] * 6)[i],
+                    (row.get("tourn_ast_rounds") or [None] * 6)[i],
+                    data["fantasy_weights"],
+                )
+                for i in range(6)
+            ],
         })
     return result
 
@@ -1341,10 +1350,11 @@ def render_bracket_html(rounds, region=None, team_players=None):
                         const logo = t.logo ? '<img src="' + esc(t.logo) + '" style="width:20px;height:20px;object-fit:contain;vertical-align:middle;margin-right:6px" onerror="this.remove()">' : '';
                         h += '<h4>' + logo + esc(t.team) + '</h4>';
                         if (!t.players.length) h += '<div class="none">No drafted players</div>';
-                        t.players.forEach(p => {
+                        const fp = p => (info.ri >= 0 && p.f && typeof p.f[info.ri] === 'number') ? p.f[info.ri] : -1;
+                        t.players.slice().sort((a, b) => fp(b) - fp(a)).forEach(p => {
                             const val = k => (info.ri >= 0 && p.s[k][info.ri] !== null && p.s[k][info.ri] !== undefined && p.s[k][info.ri] !== '') ? p.s[k][info.ri] : '-';
                             h += '<div class="row">' + esc(p.n) + ' <span class="owner">&mdash; ' + esc(p.o) + '</span>'
-                              + '<div class="stats">PTS ' + esc(val(0)) + ' &middot; REB ' + esc(val(1)) + ' &middot; AST ' + esc(val(2)) + '</div></div>';
+                              + '<div class="stats"><b>FPts ' + (fp(p) >= 0 ? fp(p).toFixed(1) : '-') + '</b> &middot; PTS ' + esc(val(0)) + ' &middot; REB ' + esc(val(1)) + ' &middot; AST ' + esc(val(2)) + '</div></div>';
                         });
                     });
                     modalBox.innerHTML = h;
