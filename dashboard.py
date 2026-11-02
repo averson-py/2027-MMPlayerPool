@@ -1294,7 +1294,8 @@ def load_data(file_path, updated_time=None):
     if missing:
         raise ValueError("Missing TeamData header(s): " + ", ".join(missing))
 
-    max_column = max(headers.values()) + 1
+    status_index = 16  # TeamData column Q
+    max_column = max(max(headers.values()) + 1, status_index + 1)
     player_stats = {}
     player_names = []
 
@@ -1332,6 +1333,11 @@ def load_data(file_path, updated_time=None):
             "PPG": ppg,
             "RPG": rpg,
             "APG": apg,
+            "Status": (
+                str(values[status_index]).strip()
+                if status_index < len(values) and values[status_index] is not None
+                else ""
+            ),
         }
 
     player_names.sort(key=str.casefold)
@@ -1483,6 +1489,17 @@ def player_total(row, fantasy_weights):
     )
 
 
+def player_label(name, stats):
+    status = str(stats.get("Status") or "").strip().casefold()
+    marker = {
+        "q": "🟣",
+        "questionable": "🟣",
+        "o": "🔴",
+        "out": "🔴",
+    }.get(status)
+    return f"{marker} {name}" if marker else name
+
+
 def make_team_rows(data, selected_draftee):
     rows = [
         row for row in data["draft_rows"]
@@ -1495,7 +1512,7 @@ def make_team_rows(data, selected_draftee):
         stats = data["player_stats"].get(row["player_name"].casefold(), {})
         result.append({
             "Draft Position": row["draft_position"],
-            "Player Name": row["player_name"],
+            "Player Name": player_label(row["player_name"], stats),
             "Team": stats.get("Team"),
             "Seed": stats.get("Seed"),
             "FPts": stats.get("Tot. FPts"),
@@ -1506,6 +1523,7 @@ def make_team_rows(data, selected_draftee):
             "Tourn. PTS": row.get("tourn_pts"),
             "Tourn. REB": row.get("tourn_reb"),
             "Tourn. AST": row.get("tourn_ast"),
+            "Expected Games Remaining": round(player_expected_games_remaining(row, data), 1),
             "_team_out": (
                 stats.get("Team") is not None
                 and str(stats.get("Team")).strip().casefold() in data["teams_out"]
@@ -1716,27 +1734,7 @@ def make_power_rankings(data):
                     + (1.0 - tournament_weight) * season_fpts_per_game
                 )
 
-            seed_value = stats.get("Seed")
-            try:
-                seed_number = int(float(seed_value))
-            except (TypeError, ValueError):
-                match = re.search(r"\d+", str(seed_value))
-                seed_number = int(match.group(0)) if match else None
-
-            historical_avg_games = (
-                data["seed_average_games"].get(seed_number)
-                if seed_number is not None else None
-            )
-
-            if not team_is_active or games_played >= 6:
-                expected_remaining_games = 0.0
-            elif historical_avg_games is None:
-                expected_remaining_games = 1.0
-            else:
-                expected_remaining_games = max(
-                    historical_avg_games - games_played,
-                    1.0,
-                )
+            expected_remaining_games = player_expected_games_remaining(row, data)
 
             expected_games_total += expected_remaining_games
 
@@ -1779,18 +1777,48 @@ def make_power_rankings(data):
     return pd.DataFrame(result)[power_columns]
 
 
+def player_expected_games_remaining(row, data):
+    """Expected remaining games for one drafted player (0 if eliminated or at 6 games)."""
+    stats = data["player_stats"].get(row["player_name"].casefold(), {})
+    team = stats.get("Team")
+    team_is_active = (
+        team is not None
+        and str(team).strip().casefold() not in data["teams_out"]
+    )
+    games_played = row.get("games_played") or 0
+
+    seed_value = stats.get("Seed")
+    try:
+        seed_number = int(float(seed_value))
+    except (TypeError, ValueError):
+        match = re.search(r"\d+", str(seed_value))
+        seed_number = int(match.group(0)) if match else None
+
+    historical_avg_games = (
+        data["seed_average_games"].get(seed_number)
+        if seed_number is not None else None
+    )
+
+    if not team_is_active or games_played >= 6:
+        return 0.0
+    if historical_avg_games is None:
+        return 1.0
+    return max(historical_avg_games - games_played, 1.0)
+
+
 def make_player_rankings(data):
     result = []
     for row in data["draft_rows"]:
         stats = data["player_stats"].get(row["player_name"].casefold(), {})
         team = stats.get("Team")
         result.append({
-            "Player Name": row["player_name"],
+            "Player Name": player_label(row["player_name"], stats),
             "Team": team,
             "Total FPts": player_total(row, data["fantasy_weights"]),
             "Team Owner": row["draftee"],
             "Games Played": row.get("games_played", 0),
             "Poss. Games Remaining": row.get("possible_games_remaining", 0),
+            "Expected Games Remaining": round(player_expected_games_remaining(row, data), 1),
             "_team_out": (
                 team is not None
                 and str(team).strip().casefold() in data["teams_out"]
@@ -1809,7 +1837,7 @@ def make_player_rankings(data):
     player_columns = [
         "Rank", "Player Name", "Team", "Total FPts",
         "Team Owner", "Games Played", "Poss. Games Remaining",
-        "_team_out",
+        "Expected Games Remaining", "_team_out",
     ]
     if not result:
         return pd.DataFrame(columns=player_columns), result
@@ -1840,13 +1868,14 @@ def make_performers(data, positive=True):
 
         team = stats.get("Team")
         result.append({
-            "Player Name": row["player_name"],
+            "Player Name": player_label(row["player_name"], stats),
             "Team": team,
             "Avg. FPts/Tourn. Game": round(tournament_avg, 1),
             "Delta From Average": round(delta, 1),
             "Team Owner": row["draftee"],
             "Games Played": games,
             "Poss. Games Remaining": row.get("possible_games_remaining", 0),
+            "Expected Games Remaining": round(player_expected_games_remaining(row, data), 1),
             "_team_out": (
                 team is not None
                 and str(team).strip().casefold() in data["teams_out"]
@@ -1865,7 +1894,7 @@ def make_performers(data, positive=True):
     performer_columns = [
         "Rank", "Player Name", "Team", "Avg. FPts/Tourn. Game",
         "Delta From Average", "Team Owner", "Games Played",
-        "Poss. Games Remaining", "_team_out",
+        "Poss. Games Remaining", "Expected Games Remaining", "_team_out",
     ]
     if not result:
         return pd.DataFrame(columns=performer_columns), result
@@ -2075,6 +2104,7 @@ def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, p
         "Projected Score",
         "Total FPts",
         "MVP FPts",
+        "Expected Games Remaining",
     }
     format_map = {}
     for col in df.columns:
@@ -2083,17 +2113,17 @@ def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, p
         elif pd.api.types.is_float_dtype(df[col]):
             format_map[col] = lambda value: "" if pd.isna(value) else f"{float(value):g}"
 
+    # Display positive performer deltas with an explicit "+" sign. This is
+    # merged into format_map because a second styled.format(dict) call resets
+    # the formatting of every column it does not list.
+    if "Delta From Season Avg." in df.columns:
+        format_map["Delta From Season Avg."] = lambda x: (
+            f"+{x:.1f}" if pd.notna(x) and x > 0
+            else (f"{x:.1f}" if pd.notna(x) else "")
+        )
+
     if format_map:
         styled = styled.format(format_map)
-
-    # Display positive performer deltas with an explicit "+" sign.
-    if "Delta From Season Avg." in df.columns:
-        styled = styled.format({
-            "Delta From Season Avg.": lambda x: (
-                f"+{x:.1f}" if pd.notna(x) and x > 0
-                else (f"{x:.1f}" if pd.notna(x) else "")
-            )
-        })
 
     # Center all table headers and cell contents while preserving the
     # existing conditional formatting/background colors.
@@ -2851,6 +2881,16 @@ with tab1:
                 power["Active Players"].min(),
                 power["Active Players"].max(),
             ),
+            **{
+                col: (power[col].min(), power[col].max())
+                for col in [
+                    "Projected Score",
+                    "FPts per game",
+                    "Games Played",
+                    "Expected Games Remaining",
+                ]
+                if col in power.columns
+            },
         },
         reverse_columns={"Draft Position": True},
     )
@@ -2858,6 +2898,7 @@ with tab1:
 
 with tab2:
     st.subheader("Player Rankings — Top 10")
+    st.caption("🔴 Out · 🟣 Questionable")
     display_df(players, height=400
     )
 
@@ -2916,6 +2957,7 @@ with tab2:
                 "Tourn. PTS": row.get("tourn_pts"),
                 "Tourn. REB": row.get("tourn_reb"),
                 "Tourn. AST": row.get("tourn_ast"),
+                "Expected Games Remaining": round(player_expected_games_remaining(row, data), 1),
                 "_team_out": (
                     stats.get("Team") is not None
                     and str(stats.get("Team")).strip().casefold() in data["teams_out"]
@@ -2967,7 +3009,8 @@ with tab3:
             st.info("No drafted players found for this team owner.")
         else:
             st.caption(
-                f"Showing {len(team_df)} player(s) drafted by {selected_draftee}."
+                f"Showing {len(team_df)} player(s) drafted by {selected_draftee}.  "
+                "🔴 Out · 🟣 Questionable"
             )
             display_df(
                 team_df,
