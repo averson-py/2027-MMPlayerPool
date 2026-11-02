@@ -2889,6 +2889,7 @@ c2.metric("Drafted Players", len(data["draft_rows"]))
 c3.metric("Players Active", int(standings["Active Players"].sum()) if not standings.empty else 0)
 c4.metric("Teams Eliminated", len(data["teams_out"]))
 
+first_run_of_session = "_my_team_prev" not in st.session_state
 pick_col, _pick_spacer = st.columns([1, 2])
 with pick_col:
     my_team_choice = st.selectbox(
@@ -2899,25 +2900,28 @@ with pick_col:
         bind="query-params",
     )
 
+my_team_cleared = bool(st.session_state.get("_my_team_prev")) and not my_team_choice
+st.session_state["_my_team_prev"] = my_team_choice or ""
+
 components.html(
     """<script>
     const KEY = 'mmpool_my_team';
     const current = """ + json.dumps(my_team_choice or "") + """;
+    const cleared = """ + json.dumps(my_team_cleared) + """;
+    const firstRun = """ + json.dumps(first_run_of_session) + """;
     try {
         const p = window.parent;
         if (current) {
             p.localStorage.setItem(KEY, current);
-            p.sessionStorage.setItem('mmpool_restored', '1');
-        } else if (!p.sessionStorage.getItem('mmpool_restored')) {
-            p.sessionStorage.setItem('mmpool_restored', '1');
+        } else if (cleared) {
+            p.localStorage.removeItem(KEY);
+        } else if (firstRun) {
             const saved = p.localStorage.getItem(KEY);
             if (saved) {
                 const url = new URL(p.location.href);
                 url.searchParams.set('my_team', saved);
                 p.location.replace(url.toString());
             }
-        } else {
-            p.localStorage.removeItem(KEY);
         }
     } catch (e) {}
     </script>""",
