@@ -2628,6 +2628,7 @@ st.markdown(
     div[data-testid="stColumn"]:has(.mvp-photo-float),
     div[data-testid="column"]:has(.mvp-photo-float) {
         position: relative;
+        container-type: inline-size;
     }
     div[data-testid="stElementContainer"]:has(.mvp-photo-float),
     div.element-container:has(.mvp-photo-float) {
@@ -2639,8 +2640,11 @@ st.markdown(
         pointer-events: none;
     }
     .mvp-photo-float {height: 72px; width: auto; max-width: 90px; object-fit: contain; display: block;}
+    @container (max-width: 340px) {
+        .mvp-photo-float {display: none;}
+    }
 
-    /* Team owner dropdown
+    /* Team owner dropdown: tap to choose only, no typing/keyboard */
     input[aria-label="Select a team owner"] {
         pointer-events: none !important;
         caret-color: transparent !important;
