@@ -2624,6 +2624,22 @@ st.markdown(
 
     .block-container {padding-top: 1.2rem; padding-bottom: 2rem;}
 
+    /* Pool MVP photo floats over the right side of the native metric card */
+    div[data-testid="stColumn"]:has(.mvp-photo-float),
+    div[data-testid="column"]:has(.mvp-photo-float) {
+        position: relative;
+    }
+    div[data-testid="stElementContainer"]:has(.mvp-photo-float),
+    div.element-container:has(.mvp-photo-float) {
+        position: absolute;
+        right: 14px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: auto !important;
+        pointer-events: none;
+    }
+    .mvp-photo-float {height: 72px; width: auto; max-width: 90px; object-fit: contain; display: block;}
+
     /* Team owner dropdown
     input[aria-label="Select a team owner"] {
         pointer-events: none !important;
@@ -2883,6 +2899,14 @@ with tab0:
         c2.metric("🔮 Projected Leader", "—")
     if mvp_row is not None:
         c3.metric("⭐ Pool MVP", str(mvp_row["MVP"]), f"{float(mvp_row['MVP FPts']):.1f} FPts")
+        mvp_stats = data["player_stats"].get(str(mvp_row["MVP"]).casefold(), {})
+        mvp_photo = get_player_photo_url(mvp_row["MVP"], mvp_stats.get("Team"))
+        if mvp_photo:
+            c3.markdown(
+                f'<img class="mvp-photo-float" src="{html_lib.escape(mvp_photo)}" '
+                'referrerpolicy="no-referrer" alt="">',
+                unsafe_allow_html=True,
+            )
     else:
         c3.metric("⭐ Pool MVP", "—")
     if latest["Winner"] and latest["Loser"]:
