@@ -2660,6 +2660,7 @@ def get_onedrive_share_url():
     return url or None
 
 
+@st.cache_data(ttl=60, show_spinner=False)
 def download_onedrive_workbook_from_share(share_url):
     """Download an anonymously shared OneDrive workbook.
 
@@ -2872,7 +2873,17 @@ else:
         st.stop()
 
 try:
-    data = load_data(workbook_path, updated_time=cloud_updated_time)
+    _stamp_path = Path(workbook_path)
+    _stamp_stat = _stamp_path.stat()
+    _data_stamp = (
+        str(_stamp_path), _stamp_stat.st_mtime_ns, _stamp_stat.st_size, cloud_updated_time,
+    )
+    _cached_data = st.session_state.get("_data_cache")
+    if _cached_data is not None and _cached_data[0] == _data_stamp:
+        data = _cached_data[1]
+    else:
+        data = load_data(workbook_path, updated_time=cloud_updated_time)
+        st.session_state["_data_cache"] = (_data_stamp, data)
 except Exception as exc:
     st.error(f"Could not load the workbook: {exc}")
     st.stop()
@@ -2892,6 +2903,8 @@ updated_col.caption(updated_text)
 refresh_col.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
 if refresh_col.button("🔄 Refresh Standings", key="refresh_data", use_container_width=True):
     get_espn_tournament_games.clear()
+    download_onedrive_workbook_from_share.clear()
+    st.session_state.pop("_data_cache", None)
     st.rerun()
 
 standings = make_standings(data)
