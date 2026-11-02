@@ -2624,14 +2624,18 @@ st.markdown(
 
     .block-container {padding-top: 1.2rem; padding-bottom: 2rem;}
 
-    /* Pool MVP photo floats over the right side of the native metric card */
+    /* Pool MVP photo and Most Recent Game logo float over the right side of the native metric card */
     div[data-testid="stColumn"]:has(.mvp-photo-float),
-    div[data-testid="column"]:has(.mvp-photo-float) {
+    div[data-testid="column"]:has(.mvp-photo-float),
+    div[data-testid="stColumn"]:has(.logo-float),
+    div[data-testid="column"]:has(.logo-float) {
         position: relative;
         container-type: inline-size;
     }
     div[data-testid="stElementContainer"]:has(.mvp-photo-float),
-    div.element-container:has(.mvp-photo-float) {
+    div.element-container:has(.mvp-photo-float),
+    div[data-testid="stElementContainer"]:has(.logo-float),
+    div.element-container:has(.logo-float) {
         position: absolute;
         right: 14px;
         top: 50%;
@@ -2640,8 +2644,9 @@ st.markdown(
         pointer-events: none;
     }
     .mvp-photo-float {height: 72px; width: auto; max-width: 90px; object-fit: contain; display: block;}
+    .logo-float {height: 80px; width: 80px; object-fit: contain; display: block; margin-right: 12px;}
     @container (max-width: 340px) {
-        .mvp-photo-float {display: none;}
+        .mvp-photo-float, .logo-float {display: none;}
     }
 
     /* Team owner dropdown: tap to choose only, no typing/keyboard */
@@ -2923,6 +2928,13 @@ with tab0:
             latest["Winner"],
             f"-- def. {latest['Loser']} [ {latest['Round']} ] --",
         )
+        game_logo = get_logo_url(latest["Winner"])
+        if game_logo:
+            c4.markdown(
+                f'<img class="logo-float" src="{html_lib.escape(game_logo)}" '
+                'referrerpolicy="no-referrer" alt="">',
+                unsafe_allow_html=True,
+            )
     else:
         c4.metric("🏀 Most Recent Game", "No game recorded")
 
