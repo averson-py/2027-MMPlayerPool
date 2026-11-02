@@ -2503,6 +2503,19 @@ def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, p
                     **{"background-color": bg}
                 )
 
+    my_team = st.session_state.get("my_team")
+    if my_team and "Team Owner" in df.columns:
+        def highlight_my_row(row):
+            is_mine = str(row["Team Owner"]).casefold() == str(my_team).casefold()
+            styles = [""] * len(row)
+            if is_mine:
+                styles = ["border-top: 2px solid #F28C28; border-bottom: 2px solid #F28C28"] * len(row)
+                owner_idx = row.index.get_loc("Team Owner")
+                styles[owner_idx] += "; background-color: #FFE0B2; font-weight: 800"
+            return styles
+
+        styled = styled.apply(highlight_my_row, axis=1)
+
     return styled
 
 
@@ -2875,6 +2888,41 @@ c1.metric("Pool Members", len(data["drafters"]))
 c2.metric("Drafted Players", len(data["draft_rows"]))
 c3.metric("Players Active", int(standings["Active Players"].sum()) if not standings.empty else 0)
 c4.metric("Teams Eliminated", len(data["teams_out"]))
+
+pick_col, _pick_spacer = st.columns([1, 2])
+with pick_col:
+    my_team_choice = st.selectbox(
+        "👤 I'm (highlights your team in tables)",
+        [""] + data["drafters"],
+        index=0,
+        key="my_team",
+        bind="query-params",
+    )
+
+components.html(
+    """<script>
+    const KEY = 'mmpool_my_team';
+    const current = """ + json.dumps(my_team_choice or "") + """;
+    try {
+        const p = window.parent;
+        if (current) {
+            p.localStorage.setItem(KEY, current);
+            p.sessionStorage.setItem('mmpool_restored', '1');
+        } else if (!p.sessionStorage.getItem('mmpool_restored')) {
+            p.sessionStorage.setItem('mmpool_restored', '1');
+            const saved = p.localStorage.getItem(KEY);
+            if (saved) {
+                const url = new URL(p.location.href);
+                url.searchParams.set('my_team', saved);
+                p.location.replace(url.toString());
+            }
+        } else {
+            p.localStorage.removeItem(KEY);
+        }
+    } catch (e) {}
+    </script>""",
+    height=0,
+)
 
 tab0, tab1, tab2, tab5, tab3, tab4 = st.tabs([
     "🏠 Pool Overview",
