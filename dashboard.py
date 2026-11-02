@@ -3431,6 +3431,68 @@ with tab3:
                 },
             )
 
+            chart_rounds = [
+                "First Round", "Second Round", "Sweet Sixteen",
+                "Elite Eight", "Final Four", "National Title",
+            ]
+            chart_rows = []
+            for draft_row in data["draft_rows"]:
+                if draft_row["draftee"].casefold() != selected_draftee.casefold():
+                    continue
+                pts = draft_row.get("tourn_pts_rounds") or [None] * 6
+                reb = draft_row.get("tourn_reb_rounds") or [None] * 6
+                ast = draft_row.get("tourn_ast_rounds") or [None] * 6
+                for i, round_name in enumerate(chart_rounds):
+                    fpts = weighted_fantasy_points(pts[i], reb[i], ast[i], data["fantasy_weights"])
+                    if fpts is not None:
+                        chart_rows.append({
+                            "Round": round_name,
+                            "Player": draft_row["player_name"],
+                            "FPts": float(fpts),
+                        })
+
+            st.subheader("FPts by Round")
+            if chart_rows:
+                round_chart_df = pd.DataFrame(chart_rows)
+                try:
+                    import altair as alt
+
+                    round_chart_df = round_chart_df.sort_values(["Round", "Player"])
+                    round_chart_df["End"] = round_chart_df.groupby("Round")["FPts"].cumsum()
+                    round_chart_df["Start"] = round_chart_df["End"] - round_chart_df["FPts"]
+                    round_chart_df["Mid"] = (round_chart_df["Start"] + round_chart_df["End"]) / 2
+                    round_chart = alt.Chart(round_chart_df).mark_bar().encode(
+                        x=alt.X("Round:N", sort=chart_rounds, title=None),
+                        y=alt.Y("Start:Q", title="FPts"),
+                        y2="End:Q",
+                        color=alt.Color("Player:N", legend=alt.Legend(orient="bottom", title=None, columns=2, labelLimit=140, symbolLimit=0)),
+                        tooltip=["Round:N", "Player:N", alt.Tooltip("FPts:Q", format=".1f")],
+                    )
+                    round_labels = alt.Chart(round_chart_df).mark_text(
+                        dy=-8, fontWeight="bold"
+                    ).encode(
+                        x=alt.X("Round:N", sort=chart_rounds),
+                        y=alt.Y("sum(FPts):Q"),
+                        text=alt.Text("sum(FPts):Q", format=".1f"),
+                    )
+                    segment_labels = alt.Chart(
+                        round_chart_df[round_chart_df["FPts"] >= 3]
+                    ).mark_text(color="white", fontSize=11).encode(
+                        x=alt.X("Round:N", sort=chart_rounds),
+                        y=alt.Y("Mid:Q"),
+                        text=alt.Text("FPts:Q", format=".1f"),
+                    )
+                    st.altair_chart(
+                        (round_chart + segment_labels + round_labels).properties(height=350),
+                        use_container_width=True,
+                    )
+                except ImportError:
+                    st.bar_chart(
+                        round_chart_df.groupby("Round")["FPts"].sum().reindex(chart_rounds).dropna()
+                    )
+            else:
+                st.info("No tournament FPts recorded for this team yet.")
+
 with tab4:
     st.subheader("Draft Ratings")
     st.caption(
