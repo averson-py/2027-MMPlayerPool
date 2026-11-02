@@ -901,6 +901,7 @@ def build_team_players(data):
             continue
         result.setdefault(_norm_team_name(team), []).append({
             "n": player_label(row["player_name"], stats),
+            "i": get_player_photo_url(row["player_name"], team),
             "o": row["draftee"],
             "s": [
                 list(row.get(key) or [None] * 6)
@@ -1155,7 +1156,9 @@ def render_bracket_html(rounds, region=None, team_players=None):
                 box-shadow: 0 8px 24px rgba(0,0,0,0.25); font-family: sans-serif; font-size: 13px; }
             #player-modal h3 { margin: 0 0 8px; font-size: 15px; }
             #player-modal h4 { margin: 12px 0 4px; font-size: 13px; color: #4472C4; }
-            #player-modal .row { padding: 3px 0; border-bottom: 1px solid #eee; }
+            #player-modal .row { padding: 3px 0; border-bottom: 1px solid #eee; display: flex; align-items: center; gap: 8px; }
+            #player-modal .pp { width: 48px; height: 48px; object-fit: contain; flex-shrink: 0; display: inline-block; }
+            #player-modal .info { flex: 1; min-width: 0; }
             #player-modal .owner { color: #888; }
             #player-modal .none { color: #999; font-style: italic; }
             #player-modal .stats { color: #555; font-size: 12px; }
@@ -1414,11 +1417,13 @@ def render_bracket_html(rounds, region=None, team_players=None):
                         const fp = p => (info.ri >= 0 && p.f && typeof p.f[info.ri] === 'number') ? p.f[info.ri] : -1;
                         t.players.slice().sort((a, b) => fp(b) - fp(a)).forEach(p => {
                             const val = k => (info.ri >= 0 && p.s[k][info.ri] !== null && p.s[k][info.ri] !== undefined && p.s[k][info.ri] !== '') ? p.s[k][info.ri] : '-';
-                            h += '<div class="row">' + esc(p.n) + ' <span class="owner">&mdash; ' + esc(p.o) + '</span>'
-                              + '<div class="stats"><b>FPts ' + (fp(p) >= 0 ? fp(p).toFixed(1) : '-') + '</b> &middot; PTS ' + esc(val(0)) + ' &middot; REB ' + esc(val(1)) + ' &middot; AST ' + esc(val(2)) + '</div></div>';
+                            const photo = p.i ? '<img class="pp" src="' + esc(p.i) + '" referrerpolicy="no-referrer">' : '<span class="pp"></span>';
+                            h += '<div class="row">' + photo + '<div class="info">' + esc(p.n) + ' <span class="owner">&mdash; ' + esc(p.o) + '</span>'
+                              + '<div class="stats"><b>FPts ' + (fp(p) >= 0 ? fp(p).toFixed(1) : '-') + '</b> &middot; PTS ' + esc(val(0)) + ' &middot; REB ' + esc(val(1)) + ' &middot; AST ' + esc(val(2)) + '</div></div></div>';
                         });
                     });
                     modalBox.innerHTML = h;
+                    modalBox.querySelectorAll('img.pp').forEach(im => im.addEventListener('error', () => { im.style.visibility = 'hidden'; }));
                     modal.style.display = 'flex';
                 });
             });
@@ -2619,7 +2624,7 @@ st.markdown(
 
     .block-container {padding-top: 1.2rem; padding-bottom: 2rem;}
 
-    /* Team owner dropdown: tap to choose only, no typing/keyboard */
+    /* Team owner dropdown
     input[aria-label="Select a team owner"] {
         pointer-events: none !important;
         caret-color: transparent !important;
