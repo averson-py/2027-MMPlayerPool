@@ -2432,7 +2432,29 @@ def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, p
     return styled
 
 
-def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None, column_colors=None):
+TEAM_VIEW_TAB = "👥 Team View"
+
+
+def _standings_cell_clicked(select_key="standings_select"):
+    event = st.session_state.get(select_key)
+    cells = []
+    try:
+        cells = list(event["selection"]["cells"])
+    except (KeyError, TypeError):
+        pass
+    for cell in cells:
+        if isinstance(cell, dict):
+            row_pos, col_name = cell.get("row"), cell.get("column")
+        else:
+            row_pos, col_name = cell[0], cell[1]
+        if col_name == "Team Owner" and row_pos is not None:
+            owner = st.session_state.get("_owners_" + select_key, [])[int(row_pos)]
+            st.session_state["team_owner"] = owner
+            st.session_state["main_tabs"] = TEAM_VIEW_TAB
+            return
+
+
+def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None, column_colors=None, selectable=False):
     if df.empty:
         st.info("No data available yet.")
         return
@@ -2508,6 +2530,19 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
     # scrollbar. The height argument is retained only as a safety cap for
     # unusually large tables.
     actual_height = compact_height if compact_height <= height else height
+
+    if selectable:
+        select_key = selectable if isinstance(selectable, str) else "standings_select"
+        st.session_state["_owners_" + select_key] = df["Team Owner"].tolist()
+        return st.dataframe(
+            styled,
+            use_container_width=True,
+            hide_index=hide_index,
+            height=actual_height,
+            on_select=lambda k=select_key: _standings_cell_clicked(k),
+            selection_mode="single-cell",
+            key=select_key,
+        )
 
     st.dataframe(
         styled,
@@ -2772,9 +2807,9 @@ tab0, tab1, tab2, tab5, tab3, tab4 = st.tabs([
     "🏆 Standings",
     "📊 Player Statistics",
     "⛹️‍♂️ Tournament Bracket",
-    "👥 Team View",
+    TEAM_VIEW_TAB,
     "🎯 Draft Ratings",
-])
+], key="main_tabs", on_change="rerun")
 
 with tab0:
     st.subheader("Pool Overview")
@@ -3239,10 +3274,11 @@ with tab0:
 
 with tab1:
     st.subheader("Tournament Standings")
-    display_df(
+    standings_event = display_df(
         standings,
         height=520,
         pink_last=True,
+        selectable=True,
         scale_columns={
             "Draft Position": (
                 standings["Draft Position"].min(),
@@ -3268,12 +3304,14 @@ with tab1:
         reverse_columns={"Draft Position": True},
     )
 
-
+    st.caption("Click a team owner's name to open their Team View.")
+    st.session_state.pop("jump_to_team_view", None)
     st.subheader("Power Rankings")
     display_df(
         power,
         height=520,
         rank_rwg=True,
+        selectable="power_select",
         scale_columns={
             "Draft Position": (
                 power["Draft Position"].min(),
@@ -3395,6 +3433,7 @@ with tab3:
         "Select a team owner",
         [""] + data["drafters"],
         index=0,
+        key="team_owner",
     )
     components.html(
         """<script>
