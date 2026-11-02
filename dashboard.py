@@ -1888,6 +1888,80 @@ def make_standings_round_history(data):
     return pd.DataFrame(result)
 
 
+def make_team_round_changes(data, owner):
+    """Return changes for one owner between the last two played rounds."""
+    weights = data["fantasy_weights"]
+    keys = ("tourn_pts_rounds", "tourn_reb_rounds", "tourn_ast_rounds")
+    rows = data["draft_rows"]
+
+    def has_value(i):
+        for row in rows:
+            for key in keys:
+                values = row.get(key) or []
+                if i < len(values) and isinstance(values[i], (int, float)) and not isinstance(values[i], bool):
+                    return True
+        return False
+
+    played = [i for i in range(6) if has_value(i)]
+    result = {"fpts_delta": None, "rank_change": None, "active_change": None, "round_name": None}
+    if not played:
+        return result
+    last = played[-1]
+    result["round_name"] = [
+        "First Round", "Second Round", "Sweet Sixteen",
+        "Elite Eight", "Final Four", "National Title",
+    ][played[-2]] if len(played) >= 2 else "start"
+
+    round_totals = {name: [0.0] * 6 for name in data["drafters"]}
+    for row in rows:
+        pts = row.get("tourn_pts_rounds") or [None] * 6
+        reb = row.get("tourn_reb_rounds") or [None] * 6
+        ast = row.get("tourn_ast_rounds") or [None] * 6
+        for i in range(6):
+            value = weighted_fantasy_points(pts[i], reb[i], ast[i], weights)
+            if value is not None and row["draftee"] in round_totals:
+                round_totals[row["draftee"]][i] += value
+
+    def ranks_through(round_index):
+        totals = {
+            name: sum(values[: round_index + 1])
+            for name, values in round_totals.items()
+        }
+        ordered = sorted(totals, key=lambda name: (-totals[name], name.casefold()))
+        return {name: rank for rank, name in enumerate(ordered, start=1)}
+
+    owner_key = next((n for n in round_totals if n.casefold() == owner.casefold()), None)
+    if owner_key is None:
+        return result
+
+    result["fpts_delta"] = round_totals[owner_key][last]
+    if len(played) >= 2:
+        previous = played[-2]
+        result["rank_change"] = ranks_through(previous)[owner_key] - ranks_through(last)[owner_key]
+
+    current_active = 0
+    previous_active = 0
+    for row in rows:
+        if row["draftee"].casefold() != owner.casefold():
+            continue
+        stats = data["player_stats"].get(row["player_name"].casefold(), {})
+        team = stats.get("Team")
+        if team is None:
+            continue
+        team_key = str(team).strip().casefold()
+        if team_key not in data["teams_out"]:
+            current_active += 1
+            previous_active += 1
+            continue
+        lost_idx = round_lost_index(data["teams_out"][team_key])
+        if lost_idx is None:
+            lost_idx = last
+        if lost_idx >= last:
+            previous_active += 1
+    result["active_change"] = current_active - previous_active
+    return result
+
+
 def make_standings(data):
     positions = {
         draftee.casefold(): position
@@ -3465,6 +3539,63 @@ with tab3:
         if team_df.empty:
             st.info("No drafted players found for this team owner.")
         else:
+            owner_standing = standings[
+                standings["Team Owner"].astype(str).str.casefold() == selected_draftee.casefold()
+            ]
+            if not owner_standing.empty:
+                standing_row = owner_standing.iloc[0]
+                total_fpts = standing_row["Total FPts"]
+                owner_rank = standing_row["Rank"]
+            else:
+                total_fpts, owner_rank = None, None
+
+            scored_players = [
+                r for r in team_rows
+                if r.get("Tourn. FPts") is not None and not pd.isna(r.get("Tourn. FPts"))
+            ]
+            best_player = max(scored_players, key=lambda r: float(r["Tourn. FPts"]), default=None)
+            alive_count = sum(1 for r in team_rows if not r["_team_out"])
+
+            st.markdown(
+                "<style>.st-key-team_summary div[data-testid='stMetric'] "
+                "{min-height: 130px; box-sizing: border-box;}</style>",
+                unsafe_allow_html=True,
+            )
+            changes = make_team_round_changes(data, selected_draftee)
+            fpts_delta = changes["fpts_delta"]
+            rank_change = changes["rank_change"]
+            active_change = changes["active_change"]
+            with st.container(key="team_summary"):
+                sc1, sc2, sc3, sc4 = st.columns(4)
+                sc1.metric(
+                    "Total FPts",
+                    f"{float(total_fpts):.1f}" if total_fpts is not None and pd.notna(total_fpts) else "—",
+                    f"{fpts_delta:+.1f} from {changes['round_name']}" if fpts_delta is not None else None,
+                )
+                sc2.metric(
+                    "Pool Rank",
+                    f"{int(owner_rank)} of {len(standings)}" if owner_rank is not None and pd.notna(owner_rank) else "—",
+                    (f"{'-' if rank_change < 0 else ''}{abs(rank_change)} spot{'s' if abs(rank_change) != 1 else ''} from {changes['round_name']}"
+                     if rank_change else "no change")
+                    if rank_change is not None else None,
+                    delta_color="normal" if rank_change else "off",
+                )
+                if best_player is not None:
+                    sc3.metric(
+                        "Best Player",
+                        str(best_player["Player Name"]),
+                        f"{float(best_player['Tourn. FPts']):.1f} FPts",
+                    )
+                else:
+                    sc3.metric("Best Player", "—")
+                sc4.metric(
+                    "Players Active",
+                    f"{alive_count} of {len(team_rows)}",
+                    (f"{active_change:+d} from {changes['round_name']}" if active_change else "no change")
+                    if active_change is not None else None,
+                    delta_color="normal" if active_change else "off",
+                )
+
             st.caption(
                 f"Showing {len(team_df)} player(s) drafted by {selected_draftee}.  "
                 "⛔ Out · ⚠️ Questionable"
