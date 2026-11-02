@@ -2889,15 +2889,6 @@ c2.metric("Drafted Players", len(data["draft_rows"]))
 c3.metric("Players Active", int(standings["Active Players"].sum()) if not standings.empty else 0)
 c4.metric("Teams Eliminated", len(data["teams_out"]))
 
-first_run_of_session = "_my_team_prev" not in st.session_state
-if first_run_of_session and not st.session_state.get("my_team"):
-    try:
-        from urllib.parse import unquote as _unquote
-        saved_owner = _unquote(st.context.cookies.get("mmpool_my_team", ""))
-        if saved_owner in data["drafters"]:
-            st.session_state["my_team"] = saved_owner
-    except Exception:
-        pass
 pick_col, _pick_spacer = st.columns([1, 2])
 with pick_col:
     my_team_choice = st.selectbox(
@@ -2908,21 +2899,25 @@ with pick_col:
         bind="query-params",
     )
 
-my_team_cleared = bool(st.session_state.get("_my_team_prev")) and not my_team_choice
-st.session_state["_my_team_prev"] = my_team_choice or ""
-
 components.html(
     """<script>
     const KEY = 'mmpool_my_team';
     const current = """ + json.dumps(my_team_choice or "") + """;
-    const cleared = """ + json.dumps(my_team_cleared) + """;
     try {
-        const doc = window.parent.document;
+        const p = window.parent;
         if (current) {
-            doc.cookie = KEY + '=' + encodeURIComponent(current) +
-                '; max-age=31536000; path=/; SameSite=None; Secure; Partitioned';
-        } else if (cleared) {
-            doc.cookie = KEY + '=; max-age=0; path=/; SameSite=None; Secure; Partitioned';
+            p.localStorage.setItem(KEY, current);
+            p.sessionStorage.setItem('mmpool_restored', '1');
+        } else if (!p.sessionStorage.getItem('mmpool_restored')) {
+            p.sessionStorage.setItem('mmpool_restored', '1');
+            const saved = p.localStorage.getItem(KEY);
+            if (saved) {
+                const url = new URL(p.location.href);
+                url.searchParams.set('my_team', saved);
+                p.location.replace(url.toString());
+            }
+        } else {
+            p.localStorage.removeItem(KEY);
         }
     } catch (e) {}
     </script>""",
