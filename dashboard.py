@@ -4,6 +4,7 @@ import os
 import re
 import secrets
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 
@@ -281,6 +282,10 @@ ESPN_TEAMS_URL = (
     "mens-college-basketball/teams?limit=500"
 )
 ESPN_LOGO_URL = "https://a.espncdn.com/i/teamlogos/ncaa/500/{}.png"
+ESPN_SCOREBOARD_URL = (
+    "https://site.api.espn.com/apis/site/v2/sports/basketball/"
+    "mens-college-basketball/scoreboard"
+)
 
 
 def _norm_team_name(name):
@@ -330,6 +335,88 @@ def _logo_img(team):
 
 def lookup_seed(team, default):
     return TEAM_SEEDS.get(str(team).casefold(), default)
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def get_espn_tournament_games():
+    """Return NCAA tournament games from ESPN's scoreboard (cached 60s).
+
+    Each game: {"teams": [aliases_a, aliases_b], "scores": [a, b], "state": pre/in/post}
+    """
+    now = datetime.now()
+    upcoming = now.year + 1 if now.month >= 10 else now.year
+
+    def fetch_day(day):
+        try:
+            resp = requests.get(
+                ESPN_SCOREBOARD_URL,
+                params={"dates": day.strftime("%Y%m%d"), "groups": 100, "limit": 500},
+                timeout=5,
+            )
+            resp.raise_for_status()
+            return resp.json().get("events", [])
+        except Exception:
+            return []
+
+    events = []
+    for year in (upcoming, upcoming - 1):
+        days = [
+            d for d in pd.date_range(f"{year}-03-14", f"{year}-04-10")
+            if d <= pd.Timestamp(now)
+        ]
+        if not days:
+            continue
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            events = [e for day_events in pool.map(fetch_day, days) for e in day_events]
+        if events:
+            break
+
+    games = []
+    for event in events:
+        try:
+            comp = event["competitions"][0]
+            state = event["status"]["type"]["state"]
+            teams, scores = [], []
+            for c in comp["competitors"][:2]:
+                team = c.get("team", {})
+                teams.append({
+                    _norm_team_name(team[key])
+                    for key in ("location", "shortDisplayName", "displayName", "name")
+                    if team.get(key)
+                })
+                scores.append(int(float(c.get("score", 0) or 0)))
+            if len(teams) == 2:
+                games.append({"teams": teams, "scores": scores, "state": state})
+        except Exception:
+            continue
+    return games
+
+
+def find_game_scores(team_a, team_b):
+    """Return (score_a, score_b, state) for the game between two teams, else None."""
+    if "TBD" in str(team_a) or "TBD" in str(team_b):
+        return None
+    na, nb = _norm_team_name(team_a), _norm_team_name(team_b)
+    for game in get_espn_tournament_games():
+        if game["state"] == "pre":
+            continue
+        t0, t1 = game["teams"]
+        if na in t0 and nb in t1:
+            return game["scores"][0], game["scores"][1], game["state"]
+        if na in t1 and nb in t0:
+            return game["scores"][1], game["scores"][0], game["state"]
+    return None
+
+
+def _score_html(score, other, state):
+    if score is None:
+        return '<span class="team-score"></span>'
+    cls = "team-score"
+    if state == "post":
+        cls += " score-win" if score > other else " score-loss"
+    elif state == "in":
+        cls += " score-live"
+    return f'<span class="{cls}">{score}</span>'
 
 
 def build_tournament_bracket(bracket_teams, teams_out=None):
@@ -906,6 +993,10 @@ def render_bracket_html(rounds, region=None):
                 font-style: italic;
             }
 
+            .team-score.score-win { font-weight: 800; color: #222; }
+            .team-score.score-loss { color: #aaa; font-weight: 500; }
+            .team-score.score-live { color: #C62828; font-weight: 700; }
+
             .team-box.tbd .team-seed {
                 color: #ccc;
             }
@@ -1014,6 +1105,12 @@ def render_bracket_html(rounds, region=None):
 
             game_num = game_counter
             game_counter += 1
+            game_scores = find_game_scores(team_a, team_b)
+            if game_scores:
+                score_html_a = _score_html(game_scores[0], game_scores[1], game_scores[2])
+                score_html_b = _score_html(game_scores[1], game_scores[0], game_scores[2])
+            else:
+                score_html_a = score_html_b = _score_html(None, None, None)
             feeds_to = matchup_idx // 2 if len(all_matchups) > 1 and round_name != "First Four" else -1
 
             html += f"""
@@ -1025,7 +1122,7 @@ def render_bracket_html(rounds, region=None):
                                 {_logo_img(team_a)}
                                 <span class="team-name">{str(team_a)[:28]}</span>
                             </div>
-                            <span class="team-score"></span>
+                            {score_html_a}
                         </div>
                         <div class="team-box {classes_b}">
                             <div class="team-info">
@@ -1033,7 +1130,7 @@ def render_bracket_html(rounds, region=None):
                                 {_logo_img(team_b)}
                                 <span class="team-name">{str(team_b)[:28]}</span>
                             </div>
-                            <span class="team-score"></span>
+                            {score_html_b}
                         </div>
                     </div>
             """
