@@ -2920,9 +2920,9 @@ components.html(
         const doc = window.parent.document;
         if (current) {
             doc.cookie = KEY + '=' + encodeURIComponent(current) +
-                '; max-age=31536000; path=/; SameSite=Lax';
+                '; max-age=31536000; path=/; SameSite=None; Secure; Partitioned';
         } else if (cleared) {
-            doc.cookie = KEY + '=; max-age=0; path=/; SameSite=Lax';
+            doc.cookie = KEY + '=; max-age=0; path=/; SameSite=None; Secure; Partitioned';
         }
     } catch (e) {}
     </script>""",
