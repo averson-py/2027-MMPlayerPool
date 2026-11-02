@@ -3028,7 +3028,8 @@ with tab0:
             })
 
         payout_display = pd.DataFrame(payout_rows)
-        display_df(payout_display, height=210)
+        st.caption("Click a team owner's name to open their Team View.")
+        display_df(payout_display, height=210, selectable="payout_select")
     # Biggest riser / faller / highest team round / highest individual game
     c5, c6, c7, c8 = st.columns(4)
     if biggest_riser_name != "—":
