@@ -4,6 +4,8 @@ import os
 import re
 import secrets
 from datetime import datetime
+import html as html_lib
+import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -819,7 +821,27 @@ def render_regional_winner_card_html(region, winner, label=None):
     """
 
 
-def render_bracket_html(rounds, region=None):
+def build_team_players(data):
+    """Return {normalized team name: [{n: player, o: owner}]} for drafted players only."""
+    result = {}
+    for row in data["draft_rows"]:
+        stats = data["player_stats"].get(row["player_name"].casefold(), {})
+        team = stats.get("Team")
+        if not team:
+            continue
+        result.setdefault(_norm_team_name(team), []).append({
+            "n": player_label(row["player_name"], stats),
+            "o": row["draftee"],
+            "s": [
+                list(row.get(key) or [None] * 6)
+                for key in ("tourn_pts_rounds", "tourn_reb_rounds", "tourn_ast_rounds")
+            ],
+        })
+    return result
+
+
+def render_bracket_html(rounds, region=None, team_players=None):
+    team_players = team_players or {}
     """
     Render tournament bracket as an NCAA-style tree.
     If region is specified, only render that region.
@@ -1046,6 +1068,22 @@ def render_bracket_html(rounds, region=None):
         </style>
     </head>
     <body>
+        <style>
+            .matchup-container { cursor: pointer; }
+            #player-modal { display: none; position: fixed; inset: 0; z-index: 1000;
+                background: rgba(0,0,0,0.35); align-items: center; justify-content: center; }
+            #player-modal .box { background: #fff; border-radius: 10px; padding: 16px 20px;
+                min-width: 260px; max-width: 90%; max-height: 80%; overflow-y: auto;
+                box-shadow: 0 8px 24px rgba(0,0,0,0.25); font-family: sans-serif; font-size: 13px; }
+            #player-modal h3 { margin: 0 0 8px; font-size: 15px; }
+            #player-modal h4 { margin: 12px 0 4px; font-size: 13px; color: #4472C4; }
+            #player-modal .row { padding: 3px 0; border-bottom: 1px solid #eee; }
+            #player-modal .owner { color: #888; }
+            #player-modal .none { color: #999; font-style: italic; }
+            #player-modal .stats { color: #555; font-size: 12px; }
+            #player-modal .close { float: right; cursor: pointer; font-size: 18px; color: #888; }
+        </style>
+        <div id="player-modal"><div class="box"></div></div>
         <div class="ncaa-bracket-wrapper">
             <svg class="bracket-connectors" style="position: absolute; top: 0; left: 0; pointer-events: none;"></svg>
             <div class="ncaa-bracket">
@@ -1113,8 +1151,24 @@ def render_bracket_html(rounds, region=None):
                 score_html_a = score_html_b = _score_html(None, None, None)
             feeds_to = matchup_idx // 2 if len(all_matchups) > 1 and round_name != "First Four" else -1
 
+            players_attr = html_lib.escape(json.dumps({
+                "title": f"G{game_num}",
+                "ri": {
+                    "Round of 64": 0, "Round of 32": 1, "Sweet 16": 2,
+                    "Elite Eight": 3, "Final Four - Semifinals": 4, "Championship": 5,
+                }.get(round_name, -1),
+                "teams": [
+                    {
+                        "team": str(t),
+                        "logo": get_logo_url(t),
+                        "players": team_players.get(_norm_team_name(t), []),
+                    }
+                    for t in (team_a, team_b) if "TBD" not in str(t)
+                ],
+            }), quote=True)
+
             html += f"""
-                    <div class="matchup-container" data-round="{round_idx}" data-index="{matchup_idx}" data-feeds-to="{feeds_to}">
+                    <div class="matchup-container" data-round="{round_idx}" data-index="{matchup_idx}" data-feeds-to="{feeds_to}" data-players="{players_attr}">
                         <div class="game-label">G{game_num}</div>
                         <div class="team-box {classes_a}">
                             <div class="team-info">
@@ -1245,6 +1299,33 @@ def render_bracket_html(rounds, region=None):
 
             window.addEventListener('load', () => {
                 setTimeout(drawConnectors, 100);
+            });
+
+            const modal = document.getElementById('player-modal');
+            const modalBox = modal.querySelector('.box');
+            const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+            document.querySelectorAll('.matchup-container').forEach(el => {
+                el.addEventListener('click', () => {
+                    let info;
+                    try { info = JSON.parse(el.dataset.players); } catch (e) { return; }
+                    if (!info.teams.length) return;
+                    let h = '<span class="close" id="modal-close">&times;</span><h3>Drafted players in ' + esc(info.title) + '</h3>';
+                    info.teams.forEach(t => {
+                        const logo = t.logo ? '<img src="' + esc(t.logo) + '" style="width:20px;height:20px;object-fit:contain;vertical-align:middle;margin-right:6px" onerror="this.remove()">' : '';
+                        h += '<h4>' + logo + esc(t.team) + '</h4>';
+                        if (!t.players.length) h += '<div class="none">No drafted players</div>';
+                        t.players.forEach(p => {
+                            const val = k => (info.ri >= 0 && p.s[k][info.ri] !== null && p.s[k][info.ri] !== undefined && p.s[k][info.ri] !== '') ? p.s[k][info.ri] : '-';
+                            h += '<div class="row">' + esc(p.n) + ' <span class="owner">&mdash; ' + esc(p.o) + '</span>'
+                              + '<div class="stats">PTS ' + esc(val(0)) + ' &middot; REB ' + esc(val(1)) + ' &middot; AST ' + esc(val(2)) + '</div></div>';
+                        });
+                    });
+                    modalBox.innerHTML = h;
+                    modal.style.display = 'flex';
+                });
+            });
+            modal.addEventListener('click', e => {
+                if (e.target === modal || e.target.id === 'modal-close') modal.style.display = 'none';
             });
             window.addEventListener('resize', drawConnectors);
             if (window.ResizeObserver) {
@@ -3194,7 +3275,7 @@ with tab5:
                     st.markdown("---")
 
                     # Show bracket
-                    bracket_html = render_bracket_html(regional_rounds, region=region)
+                    bracket_html = render_bracket_html(regional_rounds, region=region, team_players=build_team_players(data))
                     components.html(bracket_html, height=1200, scrolling=True)
 
             # Final Four tab - show only Final Four and Championship
@@ -3239,7 +3320,7 @@ with tab5:
 
                 st.markdown("---")
 
-                bracket_html = render_bracket_html(final_four_rounds)
+                bracket_html = render_bracket_html(final_four_rounds, team_players=build_team_players(data))
                 components.html(bracket_html, height=550, scrolling=False)
 
         except Exception as e:
