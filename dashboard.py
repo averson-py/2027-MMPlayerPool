@@ -325,14 +325,18 @@ def get_logo_url(team):
     return ESPN_LOGO_URL.format(team_id) if team_id else None
 
 
+LOGO_ONERROR = (
+    "if(!this.dataset.r){this.dataset.r=1;var i=this,s=this.src;"
+    "setTimeout(function(){i.src=s+'?r=1'},1500)}"
+    "else{this.style.visibility='hidden'}"
+)
+
+
 def _logo_img(team):
     url = get_logo_url(team)
     if not url:
         return '<span class="team-logo placeholder"></span>'
-    return (
-        f'<img class="team-logo" src="{url}" alt="" loading="lazy" '
-        f'onerror="this.style.visibility=\'hidden\'">'
-    )
+    return f'<img class="team-logo" src="{url}" alt="" onerror="{LOGO_ONERROR}">'
 
 
 def lookup_seed(team, default):
@@ -967,6 +971,7 @@ def render_bracket_html(rounds, region=None, team_players=None):
                 align-items: center;
                 gap: 8px;
                 flex: 1;
+                min-width: 0;
             }
 
             .team-seed {
@@ -981,6 +986,7 @@ def render_bracket_html(rounds, region=None, team_players=None):
                 height: 22px;
                 object-fit: contain;
                 flex-shrink: 0;
+                transform: translateZ(0);
             }
 
             .team-logo.placeholder {
@@ -994,6 +1000,7 @@ def render_bracket_html(rounds, region=None, team_players=None):
 
             .team-name {
                 flex: 1;
+                min-width: 0;
                 overflow: hidden;
                 text-overflow: ellipsis;
                 white-space: nowrap;
@@ -1004,8 +1011,9 @@ def render_bracket_html(rounds, region=None, team_players=None):
             .team-score {
                 font-weight: 600;
                 color: #666;
-                margin-left: 12px;
+                margin-left: 8px;
                 min-width: 30px;
+                flex-shrink: 0;
                 text-align: right;
             }
 
@@ -1300,6 +1308,25 @@ def render_bracket_html(rounds, region=None, team_players=None):
             window.addEventListener('load', () => {
                 setTimeout(drawConnectors, 100);
             });
+
+            function refreshLogos() {
+                document.querySelectorAll('img.team-logo').forEach(img => {
+                    const tries = Number(img.dataset.t || 0);
+                    if ((!img.complete || img.naturalWidth === 0) && tries < 3) {
+                        img.dataset.t = tries + 1;
+                        const base = img.src.split('?')[0];
+                        img.src = base + '?t=' + Date.now();
+                    }
+                });
+            }
+            let logoTimer = null;
+            function queueLogoRefresh() {
+                clearTimeout(logoTimer);
+                logoTimer = setTimeout(refreshLogos, 200);
+            }
+            window.addEventListener('load', () => setTimeout(refreshLogos, 1500));
+            window.addEventListener('scroll', queueLogoRefresh, true);
+            window.addEventListener('touchend', queueLogoRefresh, true);
 
             const modal = document.getElementById('player-modal');
             const modalBox = modal.querySelector('.box');
