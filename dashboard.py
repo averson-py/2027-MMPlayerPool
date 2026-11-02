@@ -339,6 +339,72 @@ def _logo_img(team):
     return f'<img class="team-logo" src="{url}" alt="" onerror="{LOGO_ONERROR}">'
 
 
+ESPN_ROSTER_URL = (
+    "https://site.api.espn.com/apis/site/v2/sports/basketball/"
+    "mens-college-basketball/teams/{}/roster"
+)
+
+
+def _norm_person_name(name):
+    return re.sub(r"[^a-z0-9]", "", str(name).casefold())
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def get_espn_roster_photos(team_id):
+    """Return {normalized player name: headshot URL} for one ESPN team."""
+    photos = {}
+    try:
+        resp = requests.get(ESPN_ROSTER_URL.format(team_id), timeout=10)
+        resp.raise_for_status()
+        athletes = resp.json().get("athletes", [])
+    except Exception:
+        return photos
+
+    flat = []
+    for entry in athletes:
+        if isinstance(entry, dict) and "items" in entry:
+            flat.extend(entry["items"])
+        else:
+            flat.append(entry)
+
+    for athlete in flat:
+        if not isinstance(athlete, dict):
+            continue
+        url = (athlete.get("headshot") or {}).get("href")
+        if not url and athlete.get("id"):
+            url = (
+                "https://a.espncdn.com/i/headshots/mens-college-basketball/"
+                f"players/full/{athlete['id']}.png"
+            )
+        if not url:
+            continue
+        for key in ("fullName", "displayName"):
+            if athlete.get(key):
+                photos.setdefault(_norm_person_name(athlete[key]), url)
+    return photos
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def photo_url_works(url):
+    try:
+        resp = requests.get(url, timeout=6, stream=True)
+        ok = resp.status_code == 200 and "image" in resp.headers.get("content-type", "")
+        resp.close()
+        return ok
+    except Exception:
+        return False
+
+
+def get_player_photo_url(player_name, team):
+    if not team or not player_name:
+        return None
+    team_id = get_espn_team_ids().get(_norm_team_name(team))
+    if not team_id:
+        return None
+    url = get_espn_roster_photos(team_id).get(_norm_person_name(player_name))
+    return url if url and photo_url_works(url) else None
+
+
 def lookup_seed(team, default):
     return TEAM_SEEDS.get(str(team).casefold(), default)
 
@@ -1723,6 +1789,7 @@ def make_team_rows(data, selected_draftee):
         result.append({
             "Draft Position": row["draft_position"],
             "Player Name": player_label(row["player_name"], stats),
+            "_photo": get_player_photo_url(row["player_name"], stats.get("Team")),
             "Team": stats.get("Team"),
             "Seed": stats.get("Seed"),
             "FPts": stats.get("Tot. FPts"),
@@ -2023,6 +2090,7 @@ def make_player_rankings(data):
         team = stats.get("Team")
         result.append({
             "Player Name": player_label(row["player_name"], stats),
+            "_photo": get_player_photo_url(row["player_name"], team),
             "Team": team,
             "Total FPts": player_total(row, data["fantasy_weights"]),
             "Team Owner": row["draftee"],
@@ -2047,7 +2115,7 @@ def make_player_rankings(data):
     player_columns = [
         "Rank", "Player Name", "Team", "Total FPts",
         "Team Owner", "Games Played", "Poss. Games Remaining",
-        "Expected Games Remaining", "_team_out",
+        "Expected Games Remaining", "_team_out", "_photo",
     ]
     if not result:
         return pd.DataFrame(columns=player_columns), result
@@ -2079,6 +2147,7 @@ def make_performers(data, positive=True):
         team = stats.get("Team")
         result.append({
             "Player Name": player_label(row["player_name"], stats),
+            "_photo": get_player_photo_url(row["player_name"], team),
             "Team": team,
             "Avg. FPts/Tourn. Game": round(tournament_avg, 1),
             "Delta From Average": round(delta, 1),
@@ -2104,7 +2173,7 @@ def make_performers(data, positive=True):
     performer_columns = [
         "Rank", "Player Name", "Team", "Avg. FPts/Tourn. Game",
         "Delta From Average", "Team Owner", "Games Played",
-        "Poss. Games Remaining", "Expected Games Remaining", "_team_out",
+        "Poss. Games Remaining", "Expected Games Remaining", "_team_out", "_photo",
     ]
     if not result:
         return pd.DataFrame(columns=performer_columns), result
@@ -2363,6 +2432,11 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
         st.info("No data available yet.")
         return
 
+    photo_map = None
+    if "_photo" in df.columns and "Player Name" in df.columns:
+        photo_map = dict(zip(df["Player Name"], df["_photo"]))
+        df = df.drop(columns=["_photo"])
+
     styled = style_table(
         df,
         scale_columns=scale_columns,
@@ -2372,6 +2446,52 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
         performance_gradient=performance_gradient,
         column_colors=column_colors,
     )
+
+    if photo_map is not None:
+        def player_cell(value):
+            url = photo_map.get(value)
+            img = (
+                f'<img src="{html_lib.escape(str(url))}" class="player-photo" '
+                'referrerpolicy="no-referrer" loading="lazy" '
+                'onerror="this.style.visibility=\'hidden\'">'
+                if url else '<span class="player-photo"></span>'
+            )
+            return (
+                '<div class="player-cell">' + img
+                + '<span>' + html_lib.escape(str(value)) + '</span></div>'
+            )
+
+        styled = styled.format(player_cell, subset=["Player Name"], escape=None)
+        try:
+            styled = styled.hide(axis="index")
+        except AttributeError:
+            styled = styled.hide_index()
+
+        st.markdown(
+            """
+            <style>
+            .photo-table-wrap {overflow-x: auto;}
+            .photo-table-wrap table {border-collapse: collapse; width: 100%; font-size: 14px;}
+            .photo-table-wrap th, .photo-table-wrap td {
+                border: 1px solid #e0e0e0; padding: 4px 8px; white-space: nowrap;
+            }
+            .photo-table-wrap th {background: #FFFFFF; color: #000000;}
+            .player-cell {display: flex; align-items: center; gap: 8px; text-align: left; min-width: 200px;}
+            .player-cell span {white-space: normal; min-width: 0; overflow-wrap: anywhere;}
+            .player-photo {
+                width: 56px; height: 56px; object-fit: contain;
+                background: transparent; flex-shrink: 0; display: inline-block;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+        table_html = styled.to_html().replace("\n", "")
+        st.markdown(
+            f'<div class="photo-table-wrap">{table_html}</div>',
+            unsafe_allow_html=True,
+        )
+        return
 
     # Size the table to its actual row count so short tables do not
     # show a large block of blank cells underneath the data.
@@ -2498,6 +2618,16 @@ st.markdown(
     }
 
     .block-container {padding-top: 1.2rem; padding-bottom: 2rem;}
+
+    /* Team owner dropdown: tap to choose only, no typing/keyboard */
+    input[aria-label="Select a team owner"] {
+        pointer-events: none !important;
+        caret-color: transparent !important;
+        user-select: none !important;
+    }
+    div[data-baseweb="select"]:has(input[aria-label="Select a team owner"]) {
+        cursor: pointer;
+    }
 
     /* Enhanced metric card styling with colored left border and background */
     div[data-testid="stMetric"] {
@@ -3163,6 +3293,8 @@ with tab2:
             row = matching[0]
             stats = data["player_stats"].get(selected_player.casefold(), {})
             result = pd.DataFrame([{
+                "Player Name": player_label(selected_player, stats),
+                "_photo": get_player_photo_url(selected_player, stats.get("Team")),
                 "Draft Position": row["draft_position"],
                 "Draftee": row["draftee"],
                 "Team": stats.get("Team"),
