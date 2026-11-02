@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 from pathlib import Path
 from datetime import datetime, timedelta
 import difflib
@@ -483,8 +483,18 @@ def match_espn_team_id(espn_teams, team_name):
     return best_id
 
 
-def fetch_espn_team_top_players(team_id, count=TEAM_STATS_PLAYERS_PER_TEAM):
-    data = espn_get_json(f"teams/{team_id}/athletes/statistics")
+def current_espn_season():
+    now = datetime.now()
+    return now.year + 1 if now.month >= 10 else now.year
+
+
+def fetch_espn_team_top_players(
+    team_id, count=TEAM_STATS_PLAYERS_PER_TEAM, season=None
+):
+    data = espn_get_json(
+        f"teams/{team_id}/athletes/statistics",
+        {"season": season or current_espn_season()}
+    )
     results = data.get("results") or []
 
     if not results:
@@ -3944,10 +3954,40 @@ class DraftApp:
             )
             return
 
+        default_season = current_espn_season()
+
+        while True:
+            season_text = simpledialog.askstring(
+                "Pull Team Stats",
+                "Season to pull (the year the season ends, e.g. "
+                f"{default_season} for {default_season - 1}-{str(default_season)[-2:]}).\n\n"
+                f"Leave blank to use the current season ({default_season}).",
+                parent=self.root
+            )
+
+            if season_text is None:
+                return
+
+            season_text = season_text.strip()
+
+            if not season_text:
+                season = default_season
+                break
+
+            if season_text.isdigit() and 1990 <= int(season_text) <= 2100:
+                season = int(season_text)
+                break
+
+            messagebox.showerror(
+                "Pull Team Stats",
+                "Enter a four-digit year such as "
+                f"{default_season}, or leave it blank."
+            )
+
         if not messagebox.askyesno(
             "Pull Team Stats",
             f"Pull the top {players_per_team} players for "
-            f"{len(teams)} teams from ESPN?\n\n"
+            f"{len(teams)} teams from ESPN for the {season} season?\n\n"
             f'This replaces all player rows on "{TEAM_DATA_SHEET}".'
         ):
             return
@@ -4039,7 +4079,7 @@ class DraftApp:
                     raise ValueError("Team not found on ESPN")
 
                 players = fetch_espn_team_top_players(
-                    team_id, players_per_team
+                    team_id, players_per_team, season
                 )
 
                 if not players:
