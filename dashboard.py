@@ -2772,12 +2772,14 @@ st.markdown(
     }
 
     /* Team owner dropdown: tap to choose only, no typing/keyboard */
-    input[aria-label="Select a team owner"] {
+    input[aria-label="Select a team owner"],
+    input[aria-label^="👤 Choose your team"] {
         pointer-events: none !important;
         caret-color: transparent !important;
         user-select: none !important;
     }
-    div[data-baseweb="select"]:has(input[aria-label="Select a team owner"]) {
+    div[data-baseweb="select"]:has(input[aria-label="Select a team owner"]),
+    div[data-baseweb="select"]:has(input[aria-label^="👤 Choose your team"]) {
         cursor: pointer;
     }
 
@@ -2892,12 +2894,26 @@ c4.metric("Teams Eliminated", len(data["teams_out"]))
 pick_col, _pick_spacer = st.columns([1, 2])
 with pick_col:
     my_team_choice = st.selectbox(
-        "👤 I'm (highlights your team in tables)",
+        "👤 Choose your team (highlights team in tables)",
         [""] + data["drafters"],
         index=0,
         key="my_team",
         bind="query-params",
     )
+
+components.html(
+    """<script>
+    const fixMyTeam = () => {
+        window.parent.document.querySelectorAll('input[aria-label^="👤 Choose your team"]').forEach(el => {
+            el.setAttribute('inputmode', 'none');
+            el.setAttribute('readonly', 'readonly');
+        });
+    };
+    fixMyTeam();
+    new MutationObserver(fixMyTeam).observe(window.parent.document.body, {childList: true, subtree: true});
+    </script>""",
+    height=0,
+)
 
 components.html(
     """<script>
@@ -3551,6 +3567,14 @@ with tab2:
 
 with tab3:
     st.subheader("Team View")
+
+    my_team_now = st.session_state.get("my_team") or ""
+    last_my_team = st.session_state.get("_last_my_team", "")
+    if my_team_now != last_my_team:
+        current_owner = st.session_state.get("team_owner") or ""
+        if current_owner in ("", last_my_team):
+            st.session_state["team_owner"] = my_team_now
+        st.session_state["_last_my_team"] = my_team_now
 
     selected_draftee = st.selectbox(
         "Select a team owner",
