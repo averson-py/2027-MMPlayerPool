@@ -1492,10 +1492,10 @@ def player_total(row, fantasy_weights):
 def player_label(name, stats):
     status = str(stats.get("Status") or "").strip().casefold()
     marker = {
-        "q": "🟣",
-        "questionable": "🟣",
-        "o": "🔴",
-        "out": "🔴",
+        "q": "⚠️",
+        "questionable": "⚠️",
+        "o": "⛔",
+        "out": "⛔",
     }.get(status)
     return f"{marker} {name}" if marker else name
 
@@ -2898,7 +2898,7 @@ with tab1:
 
 with tab2:
     st.subheader("Player Rankings — Top 10")
-    st.caption("🔴 Out · 🟣 Questionable")
+    st.caption("⛔ Out · ⚠️ Questionable")
     display_df(players, height=400
     )
 
@@ -3010,7 +3010,7 @@ with tab3:
         else:
             st.caption(
                 f"Showing {len(team_df)} player(s) drafted by {selected_draftee}.  "
-                "🔴 Out · 🟣 Questionable"
+                "⛔ Out · ⚠️ Questionable"
             )
             display_df(
                 team_df,
