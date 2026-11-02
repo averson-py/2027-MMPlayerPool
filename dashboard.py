@@ -773,7 +773,7 @@ def render_regional_winner_card_html(region, winner, label=None):
                 align-items: center;
                 justify-content: center;
                 box-sizing: border-box;
-                background: white;
+                background: transparent;
             }}
             .matchup-container {{
                 width: 100%;
@@ -867,7 +867,7 @@ def render_bracket_html(rounds, region=None, team_players=None):
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
                 margin: 0;
                 padding: 10px;
-                background: white;
+                background: transparent;
             }
 
             .ncaa-bracket-wrapper {
@@ -2300,7 +2300,9 @@ def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, p
 
         return styles
 
-    styled = df.style.apply(apply_styles, axis=1)
+    styled = df.style.set_properties(
+        **{"background-color": "#FFFFFF", "color": "#000000"}
+    ).apply(apply_styles, axis=1)
 
     # Display numeric values cleanly. Calculations remain unchanged.
     # One-decimal fields show exactly one decimal; integer fields do not
@@ -2509,14 +2511,14 @@ st.markdown(
     /* Enhanced title styling */
     h1 {
         color: #2E5C8A;
-        border-bottom: 3px solid #4472C4;
+        border-bottom: 3px solid #F28C28;
         padding-bottom: 0.5rem;
     }
 
     /* Enhanced header styling with accent colors */
     h2 {
         color: #2E5C8A;
-        border-bottom: 2px solid #1B9E9A;
+        border-bottom: 2px solid #4472C4;
         padding-bottom: 0.3rem;
     }
 
