@@ -3396,6 +3396,19 @@ with tab3:
         [""] + data["drafters"],
         index=0,
     )
+    components.html(
+        """<script>
+        const fix = () => {
+            window.parent.document.querySelectorAll('input[aria-label="Select a team owner"]').forEach(el => {
+                el.setAttribute('inputmode', 'none');
+                el.setAttribute('readonly', 'readonly');
+            });
+        };
+        fix();
+        new MutationObserver(fix).observe(window.parent.document.body, {childList: true, subtree: true});
+        </script>""",
+        height=0,
+    )
 
     if selected_draftee:
         team_rows = make_team_rows(data, selected_draftee)
