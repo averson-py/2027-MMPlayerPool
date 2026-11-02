@@ -2487,8 +2487,14 @@ st.markdown(
     header[data-testid="stHeader"],
     div[data-testid="stToolbar"],
     #MainMenu,
-    footer {
+    footer,
+    [class*="viewerBadge"],
+    [class*="_viewerBadge"],
+    [data-testid="stDecoration"],
+    a[href*="streamlit.io"][target="_blank"][class*="badge"],
+    .stAppDeployButton {
         display: none !important;
+        visibility: hidden !important;
     }
 
     .block-container {padding-top: 1.2rem; padding-bottom: 2rem;}
