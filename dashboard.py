@@ -3094,6 +3094,15 @@ with tab0:
         highest_game_player,
         highest_game_text,
     )
+    if individual_game_scores:
+        game_stats = data["player_stats"].get(highest_game_player.casefold(), {})
+        game_photo = get_player_photo_url(highest_game_player, game_stats.get("Team"))
+        if game_photo:
+            c8.markdown(
+                f'<img class="mvp-photo-float" src="{html_lib.escape(game_photo)}" '
+                'referrerpolicy="no-referrer" alt="">',
+                unsafe_allow_html=True,
+            )
 
 
     st.subheader("🚀 Standings Progression")
