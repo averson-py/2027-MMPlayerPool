@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MM Pool - Add to Home Screen</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="MM Pool">
+<link rel="apple-touch-icon" id="touch-icon" href="">
+<style>
+  :root { --navy:#13294B; --orange:#F28C28; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+		 background:#f4f6fa; color:#222; }
+  .wrap { max-width:480px; margin:0 auto; padding:24px 18px 40px; }
+  .hero { text-align:center; margin-bottom:18px; }
+  .hero .ball { font-size:64px; line-height:1; }
+  h1 { color:var(--navy); margin:8px 0 4px; font-size:26px; }
+  .sub { color:#555; margin:0; }
+  .card { background:#fff; border-radius:12px; padding:16px; margin-top:16px;
+		  box-shadow:0 1px 4px rgba(0,0,0,.1); }
+  .card h2 { margin:0 0 10px; font-size:17px; color:var(--navy); }
+  ol { margin:0; padding-left:22px; } li { margin:8px 0; line-height:1.4; }
+  .btn { display:block; text-align:center; text-decoration:none; background:var(--orange); color:#fff;
+		 font-weight:700; padding:13px; border-radius:10px; margin-top:12px; font-size:17px; }
+  .btn.alt { background:var(--navy); }
+  .warn { background:#FFF4E5; border:1px solid var(--orange); }
+  .hide { display:none; }
+  .share { display:inline-block; width:18px; height:18px; vertical-align:-3px; }
+  small { color:#777; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hero">
+	<div class="ball">🏀</div>
+	<h1>March Madness Pool</h1>
+	<p class="sub">Add the pool to your home screen for one-tap access.</p>
+  </div>
+
+  <div class="card warn hide" id="inapp">
+	<h2>Open in Safari first</h2>
+	<p style="margin:0">This browser can't add to the home screen. Tap the <b>&hellip;</b> or Share menu and choose
+	  <b>Open in Safari</b> (or copy this page's link into Safari), then come back here.</p>
+  </div>
+
+  <div class="card hide" id="ios">
+	<h2>Add to Home Screen</h2>
+	<ol>
+	  <li>Tap the <b>Share</b> button
+		<svg class="share" viewBox="0 0 24 24" fill="none" stroke="#007AFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M8 7l4-4 4 4M5 11v9h14v-9"/></svg>
+		<span id="sharewhere">at the bottom of Safari</span>.</li>
+	  <li>Scroll down and tap <b>Add to Home Screen</b>.</li>
+	  <li>Tap <b>Add</b>. The 🏀 icon appears on your home screen.</li>
+	</ol>
+	<a class="btn alt" id="openlink-ios" href="#">Open the pool</a>
+	<small>Tip: open the pool first, pick your team in the dropdown at the top, then add it to your home screen.</small>
+  </div>
+
+  <div class="card hide" id="other">
+	<h2>Open the pool</h2>
+	<p style="margin:0">On an iPhone, open this page in Safari to add it to your home screen. Otherwise just bookmark the link below.</p>
+	<a class="btn" id="openlink-other" href="#">Open the pool</a>
+  </div>
+</div>
+
+<script>
+  // ===== CONFIG: edit these =====
+  const APP_URL = "https://YOUR-APP.streamlit.app/";
+  // ==============================
+
+  // Emoji icon for the home screen (iOS reads this when adding)
+  (function () {
+	const c = document.createElement("canvas"); c.width = c.height = 180;
+	const x = c.getContext("2d");
+	x.fillStyle = "#13294B"; x.fillRect(0, 0, 180, 180);
+	x.font = "110px serif"; x.textAlign = "center"; x.textBaseline = "middle";
+	x.fillText("🏀", 90, 98);
+	document.getElementById("touch-icon").href = c.toDataURL("image/png");
+  })();
+
+  document.getElementById("openlink-ios").href = APP_URL;
+  document.getElementById("openlink-other").href = APP_URL;
+
+  const ua = navigator.userAgent;
+  const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const inApp = /FBAN|FBAV|Instagram|Line\/|Twitter|GSA\/|MicroMessenger|Snapchat|; wv\)/i.test(ua);
+  const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
+  const show = id => document.getElementById(id).classList.remove("hide");
+
+  if (isIOS && inApp) { show("inapp"); }
+  else if (isIOS) {
+	show("ios");
+	if (!isSafari) document.getElementById("sharewhere").textContent = "in the browser's address bar or menu";
+  } else { show("other"); }
+</script>
+</body>
+</html>
