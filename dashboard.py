@@ -2613,6 +2613,23 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             )
 
         styled = styled.format(player_cell, subset=["Player Name"], escape=None)
+        if "Team" in df.columns:
+            def team_cell(value):
+                if value is None or pd.isna(value) or not str(value).strip():
+                    return ""
+                url = get_logo_url(value)
+                img = (
+                    f'<img src="{html_lib.escape(str(url))}" class="team-photo" '
+                    'referrerpolicy="no-referrer" loading="lazy" '
+                    'onerror="this.style.visibility=\'hidden\'">'
+                    if url else '<span class="team-photo"></span>'
+                )
+                return (
+                    '<div class="player-cell" style="min-width:120px;">' + img
+                    + '<span>' + html_lib.escape(str(value)) + '</span></div>'
+                )
+
+            styled = styled.format(team_cell, subset=["Team"], escape=None)
         try:
             styled = styled.hide(axis="index")
         except AttributeError:
@@ -2631,6 +2648,10 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .player-cell span {white-space: normal; min-width: 0; overflow-wrap: anywhere;}
             .player-photo {
                 width: 56px; height: 56px; object-fit: contain;
+                background: transparent; flex-shrink: 0; display: inline-block;
+            }
+            .team-photo {
+                width: 40px; height: 40px; object-fit: contain;
                 background: transparent; flex-shrink: 0; display: inline-block;
             }
             </style>
