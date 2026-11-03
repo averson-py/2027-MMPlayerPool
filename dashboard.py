@@ -1761,12 +1761,6 @@ def load_data(file_path, updated_time=None):
     }
 
 
-@st.cache_resource(ttl=3600, max_entries=2, show_spinner=False)
-def load_data_shared(file_path, mtime_ns, size, updated_time):
-    """Parse the workbook once and share the result across all sessions."""
-    return load_data(file_path, updated_time=updated_time)
-
-
 def player_total(row, fantasy_weights):
     return weighted_fantasy_points(
         row.get("tourn_pts"),
@@ -2888,7 +2882,7 @@ try:
     if _cached_data is not None and _cached_data[0] == _data_stamp:
         data = _cached_data[1]
     else:
-        data = load_data_shared(*_data_stamp)
+        data = load_data(workbook_path, updated_time=cloud_updated_time)
         st.session_state["_data_cache"] = (_data_stamp, data)
 except Exception as exc:
     st.error(f"Could not load the workbook: {exc}")
