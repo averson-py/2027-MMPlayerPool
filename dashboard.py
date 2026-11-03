@@ -2547,7 +2547,7 @@ def _standings_cell_clicked(select_key="standings_select"):
             return
 
 
-def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None, column_colors=None, selectable=False):
+def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None, column_colors=None, selectable=False, player_select=None):
     if df.empty:
         st.info("No data available yet.")
         return
@@ -2586,6 +2586,8 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             _style_cache[_cache_key] = (_style_sig, styled)
 
     if photo_map is not None:
+        _pick_names = {}
+
         def player_cell(value):
             url = photo_map.get(value)
             img = (
@@ -2594,9 +2596,20 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
                 'onerror="this.style.visibility=\'hidden\'">'
                 if url else '<span class="player-photo"></span>'
             )
-            return (
+            cell = (
                 '<div class="player-cell">' + img
                 + '<span>' + html_lib.escape(str(value)) + '</span></div>'
+            )
+            if not player_select:
+                return cell
+            raw = str(value)
+            for marker in ("⚠️ ", "⛔ "):
+                if raw.startswith(marker):
+                    raw = raw[len(marker):]
+            idx = _pick_names.setdefault(raw, len(_pick_names))
+            return (
+                f'<a class="player-link" data-key="pickbtn_{player_select}_{idx}" '
+                f'style="color:inherit; text-decoration:none; cursor:pointer;">{cell}</a>'
             )
 
         styled = styled.format(player_cell, subset=["Player Name"], escape=None)
@@ -2629,9 +2642,44 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             f'<div class="photo-table-wrap">{table_html}</div>',
             unsafe_allow_html=True,
         )
+        if player_select and _pick_names:
+            for raw_name, idx in _pick_names.items():
+                st.button(
+                    raw_name,
+                    key=f"pickbtn_{player_select}_{idx}",
+                    on_click=lambda n=raw_name: st.session_state.__setitem__("player_finder", n),
+                )
+            st.markdown(
+                "<style>[class*='st-key-pickbtn_'] {display:none !important;}</style>",
+                unsafe_allow_html=True,
+            )
+            components.html(
+                """<script>
+                const doc = window.parent.document;
+                if (!doc._playerLinkBound) {
+                    doc._playerLinkBound = true;
+                    doc.addEventListener('click', function (e) {
+                        const link = e.target.closest && e.target.closest('.player-link');
+                        if (!link) return;
+                        const btn = doc.querySelector('.st-key-' + link.dataset.key + ' button');
+                        if (btn) btn.click();
+                        setTimeout(function () {
+                            const heads = doc.querySelectorAll('h1, h2, h3, h4');
+                            for (const h of heads) {
+                                if (h.textContent.trim() === 'Player Finder') {
+                                    h.scrollIntoView({behavior: 'smooth', block: 'start'});
+                                    break;
+                                }
+                            }
+                        }, 800);
+                    });
+                }
+                </script>""",
+                height=0,
+            )
         return
 
-    # Size the table to its actual row count so short tables do not
+    # Size the table
     # show a large block of blank cells underneath the data.
     row_height = 35
     header_height = 38
@@ -3492,9 +3540,8 @@ with tab1:
 
 with tab2:
     st.subheader("Player Rankings — Top 10")
-    st.caption("⛔ Out · ⚠️ Questionable")
-    display_df(players, height=400
-    )
+    st.caption("⛔ Out · ⚠️ Questionable · Click a player to open them in the Player Finder below.")
+    display_df(players, height=400, player_select="players_select")
 
     st.markdown("### <span style='color:#2E8B57; font-weight:800;'>↑</span> Top Overperformers 🦄", unsafe_allow_html=True)
     over_display = over.rename(columns={"Delta From Average": "Delta From Season Avg."}).copy()
@@ -3513,6 +3560,7 @@ with tab2:
         over_display,
         height=240,
         performance_gradient="green",
+        player_select="over_select",
     )
 
     st.markdown("### <span style='color:#C62828; font-weight:800;'>↓</span> Top Underperformers 🪠", unsafe_allow_html=True)
@@ -3520,6 +3568,7 @@ with tab2:
         under_display,
         height=240,
         performance_gradient="red",
+        player_select="under_select",
     )
 
     st.divider()
@@ -3528,6 +3577,7 @@ with tab2:
         "Search for a player",
         [""] + data["player_names"],
         index=0,
+        key="player_finder",
     )
 
     if selected_player:
