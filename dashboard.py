@@ -409,7 +409,7 @@ def lookup_seed(team, default):
     return TEAM_SEEDS.get(str(team).casefold(), default)
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=180, show_spinner=False)
 def get_espn_tournament_games():
     """Return NCAA tournament games from ESPN's scoreboard (cached 60s).
 
@@ -1761,6 +1761,12 @@ def load_data(file_path, updated_time=None):
     }
 
 
+@st.cache_resource(ttl=3600, max_entries=2, show_spinner=False)
+def load_data_shared(file_path, mtime_ns, size, updated_time):
+    """Parse the workbook once and share the result across all sessions."""
+    return load_data(file_path, updated_time=updated_time)
+
+
 def player_total(row, fantasy_weights):
     return weighted_fantasy_points(
         row.get("tourn_pts"),
@@ -2660,7 +2666,7 @@ def get_onedrive_share_url():
     return url or None
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=180, show_spinner=False)
 def download_onedrive_workbook_from_share(share_url):
     """Download an anonymously shared OneDrive workbook.
 
@@ -2882,7 +2888,7 @@ try:
     if _cached_data is not None and _cached_data[0] == _data_stamp:
         data = _cached_data[1]
     else:
-        data = load_data(workbook_path, updated_time=cloud_updated_time)
+        data = load_data_shared(*_data_stamp)
         st.session_state["_data_cache"] = (_data_stamp, data)
 except Exception as exc:
     st.error(f"Could not load the workbook: {exc}")
