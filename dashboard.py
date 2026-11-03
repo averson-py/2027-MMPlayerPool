@@ -3673,13 +3673,6 @@ with tab3:
                         str(best_player["Player Name"]),
                         f"{float(best_player['Tourn. FPts']):.1f} FPts",
                     )
-                    best_photo = best_player.get("_photo")
-                    if best_photo:
-                        sc3.markdown(
-                            f'<img class="mvp-photo-float" src="{html_lib.escape(str(best_photo))}" '
-                            'referrerpolicy="no-referrer" alt="">',
-                            unsafe_allow_html=True,
-                        )
                 else:
                     sc3.metric("Best Player", "—")
                 sc4.metric(
