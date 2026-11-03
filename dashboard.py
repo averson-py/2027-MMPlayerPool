@@ -325,18 +325,6 @@ def get_logo_url(team):
     return ESPN_LOGO_URL.format(team_id) if team_id else None
 
 
-SHOW_TEAM_LOGOS = False
-
-
-def resized_espn_url(url, size):
-    """Return an ESPN-resized copy of an image URL (2x for retina)."""
-    prefix = "https://a.espncdn.com"
-    if not url or not str(url).startswith(prefix + "/i/"):
-        return url
-    path = str(url)[len(prefix):]
-    return f"{prefix}/combiner/i?img={path}&w={size * 2}&h={size * 2}"
-
-
 LOGO_ONERROR = (
     "if(!this.dataset.r){this.dataset.r=1;var i=this,s=this.src;"
     "setTimeout(function(){i.src=s+'?r=1'},1500)}"
@@ -2606,30 +2594,12 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
                 'onerror="this.style.visibility=\'hidden\'">'
                 if url else '<span class="player-photo"></span>'
             )
-            cell = (
+            return (
                 '<div class="player-cell">' + img
                 + '<span>' + html_lib.escape(str(value)) + '</span></div>'
             )
-            return cell
 
         styled = styled.format(player_cell, subset=["Player Name"], escape=None)
-        if SHOW_TEAM_LOGOS and "Team" in df.columns:
-            def team_cell(value):
-                if value is None or pd.isna(value) or not str(value).strip():
-                    return ""
-                url = resized_espn_url(get_logo_url(value), 40)
-                img = (
-                    f'<img src="{html_lib.escape(str(url))}" class="team-photo" '
-                    'referrerpolicy="no-referrer" loading="lazy" '
-                    'onerror="this.style.visibility=\'hidden\'">'
-                    if url else '<span class="team-photo"></span>'
-                )
-                return (
-                    '<div class="player-cell" style="min-width:120px;">' + img
-                    + '<span>' + html_lib.escape(str(value)) + '</span></div>'
-                )
-
-            styled = styled.format(team_cell, subset=["Team"], escape=None)
         try:
             styled = styled.hide(axis="index")
         except AttributeError:
@@ -2650,10 +2620,6 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
                 width: 56px; height: 56px; object-fit: contain;
                 background: transparent; flex-shrink: 0; display: inline-block;
             }
-            .team-photo {
-                width: 40px; height: 40px; object-fit: contain;
-                background: transparent; flex-shrink: 0; display: inline-block;
-            }
             </style>
             """,
             unsafe_allow_html=True,
@@ -2665,7 +2631,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
         )
         return
 
-    # Size the table
+    # Size the table to its actual row count so short tables do not
     # show a large block of blank cells underneath the data.
     row_height = 35
     header_height = 38
@@ -3527,7 +3493,8 @@ with tab1:
 with tab2:
     st.subheader("Player Rankings — Top 10")
     st.caption("⛔ Out · ⚠️ Questionable")
-    display_df(players, height=400)
+    display_df(players, height=400
+    )
 
     st.markdown("### <span style='color:#2E8B57; font-weight:800;'>↑</span> Top Overperformers 🦄", unsafe_allow_html=True)
     over_display = over.rename(columns={"Delta From Average": "Delta From Season Avg."}).copy()
