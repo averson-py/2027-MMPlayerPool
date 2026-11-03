@@ -409,7 +409,7 @@ def lookup_seed(team, default):
     return TEAM_SEEDS.get(str(team).casefold(), default)
 
 
-@st.cache_data(ttl=180, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def get_espn_tournament_games():
     """Return NCAA tournament games from ESPN's scoreboard (cached 60s).
 
@@ -2660,7 +2660,7 @@ def get_onedrive_share_url():
     return url or None
 
 
-@st.cache_data(ttl=180, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def download_onedrive_workbook_from_share(share_url):
     """Download an anonymously shared OneDrive workbook.
 
