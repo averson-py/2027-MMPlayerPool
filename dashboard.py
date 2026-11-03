@@ -920,7 +920,7 @@ def build_team_players(data):
     return result
 
 
-def render_bracket_html(rounds, region=None, team_players=None):
+def render_bracket_html(rounds, region=None, team_players=None, my_team=None):
     team_players = team_players or {}
     regions_list = ["EAST", "WEST", "MIDWEST", "SOUTH", "FINAL_FOUR"]
 
@@ -1160,6 +1160,8 @@ def render_bracket_html(rounds, region=None, team_players=None):
             #player-modal .pp { width: 48px; height: 48px; object-fit: contain; flex-shrink: 0; display: inline-block; }
             #player-modal .info { flex: 1; min-width: 0; }
             #player-modal .owner { color: #888; }
+            #player-modal .owner.me { color: #B85C00; font-weight: 800; background: #FFE0B2; border-radius: 4px; padding: 0 4px; }
+            #player-modal .row.me { background: #FFF4E5; }
             #player-modal .none { color: #999; font-style: italic; }
             #player-modal .stats { color: #555; font-size: 12px; }
             #player-modal .close { float: right; cursor: pointer; font-size: 18px; color: #888; }
@@ -1404,6 +1406,8 @@ def render_bracket_html(rounds, region=None, team_players=None):
             const modal = document.getElementById('player-modal');
             const modalBox = modal.querySelector('.box');
             const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+            const MY_TEAM = __MY_TEAM__;
+            const isMine = o => MY_TEAM && String(o).toLowerCase() === MY_TEAM.toLowerCase();
             document.querySelectorAll('.matchup-container').forEach(el => {
                 el.addEventListener('click', () => {
                     let info;
@@ -1418,7 +1422,8 @@ def render_bracket_html(rounds, region=None, team_players=None):
                         t.players.slice().sort((a, b) => fp(b) - fp(a)).forEach(p => {
                             const val = k => (info.ri >= 0 && p.s[k][info.ri] !== null && p.s[k][info.ri] !== undefined && p.s[k][info.ri] !== '') ? p.s[k][info.ri] : '-';
                             const photo = p.i ? '<img class="pp" src="' + esc(p.i) + '" referrerpolicy="no-referrer">' : '<span class="pp"></span>';
-                            h += '<div class="row">' + photo + '<div class="info">' + esc(p.n) + ' <span class="owner">&mdash; ' + esc(p.o) + '</span>'
+                            const mine = isMine(p.o);
+                            h += '<div class="row' + (mine ? ' me' : '') + '">' + photo + '<div class="info">' + esc(p.n) + ' <span class="owner' + (mine ? ' me' : '') + '">&mdash; ' + esc(p.o) + '</span>'
                               + '<div class="stats"><b>FPts ' + (fp(p) >= 0 ? fp(p).toFixed(1) : '-') + '</b> &middot; PTS ' + esc(val(0)) + ' &middot; REB ' + esc(val(1)) + ' &middot; AST ' + esc(val(2)) + '</div></div></div>';
                         });
                     });
@@ -1439,6 +1444,7 @@ def render_bracket_html(rounds, region=None, team_players=None):
     </html>
     """
 
+    html = html.replace("__MY_TEAM__", json.dumps(my_team or ""))
     return html
 
 
@@ -2551,15 +2557,33 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
         photo_map = dict(zip(df["Player Name"], df["_photo"]))
         df = df.drop(columns=["_photo"])
 
-    styled = style_table(
-        df,
-        scale_columns=scale_columns,
-        reverse_columns=reverse_columns,
-        pink_last=pink_last,
-        rank_rwg=rank_rwg,
-        performance_gradient=performance_gradient,
-        column_colors=column_colors,
-    )
+    try:
+        _style_sig = (
+            int(pd.util.hash_pandas_object(df.astype(str), index=True).sum()),
+            tuple(df.columns),
+            repr(scale_columns), repr(reverse_columns), pink_last, rank_rwg,
+            repr(performance_gradient), repr(column_colors),
+            st.session_state.get("my_team") or "",
+        )
+    except Exception:
+        _style_sig = None
+    _style_cache = st.session_state.setdefault("_styled_cache", {})
+    _cache_key = (selectable if isinstance(selectable, str) else None, photo_map is not None, height)
+    _hit = _style_cache.get(_cache_key)
+    if _style_sig is not None and _hit and _hit[0] == _style_sig:
+        styled = _hit[1]
+    else:
+        styled = style_table(
+            df,
+            scale_columns=scale_columns,
+            reverse_columns=reverse_columns,
+            pink_last=pink_last,
+            rank_rwg=rank_rwg,
+            performance_gradient=performance_gradient,
+            column_colors=column_colors,
+        )
+        if _style_sig is not None and isinstance(selectable, str):
+            _style_cache[_cache_key] = (_style_sig, styled)
 
     if photo_map is not None:
         def player_cell(value):
@@ -3743,12 +3767,14 @@ with tab3:
 with tab4:
     st.subheader("Draft Ratings")
     st.caption(
-        "Projected FPts = seed average games × season-average FPts, summed by draftee."
+        "Projected FPts = seed average games × season-average FPts, summed by draftee. "
+        "Click a team owner's name to open their Team View."
     )
     display_df(
         ratings,
         height=520,
         rank_rwg=True,
+        selectable="ratings_select",
         scale_columns={
             "Draft Position": (
                 ratings["Draft Position"].min(),
@@ -3760,9 +3786,7 @@ with tab4:
             ),
         },
         reverse_columns={"Draft Position": True},
-        selectable="ratings_select",
     )
-    st.caption("Click a team owner's name to open their Team View.")
 
 with tab5:
     st.subheader("Tournament Bracket")
@@ -3812,9 +3836,8 @@ with tab5:
                     st.markdown("---")
 
                     # Show bracket
-                    bracket_html = render_bracket_html(regional_rounds, region=region, team_players=build_team_players(data))
+                    bracket_html = render_bracket_html(regional_rounds, region=region, team_players=build_team_players(data), my_team=st.session_state.get("my_team"))
                     components.html(bracket_html, height=1200, scrolling=True)
-
             # Final Four tab - show only Final Four and Championship
             with region_tabs[4]:
                 # Compute regional winners
@@ -3857,9 +3880,8 @@ with tab5:
 
                 st.markdown("---")
 
-                bracket_html = render_bracket_html(final_four_rounds, team_players=build_team_players(data))
+                bracket_html = render_bracket_html(final_four_rounds, team_players=build_team_players(data), my_team=st.session_state.get("my_team"))
                 components.html(bracket_html, height=550, scrolling=False)
-
         except Exception as e:
             st.error(f"Error rendering bracket: {str(e)}")
             st.write(f"Details: {e}")
