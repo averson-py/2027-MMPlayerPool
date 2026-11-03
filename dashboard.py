@@ -325,6 +325,15 @@ def get_logo_url(team):
     return ESPN_LOGO_URL.format(team_id) if team_id else None
 
 
+def resized_espn_url(url, size):
+    """Return an ESPN-resized copy of an image URL (2x for retina)."""
+    prefix = "https://a.espncdn.com"
+    if not url or not str(url).startswith(prefix + "/i/"):
+        return url
+    path = str(url)[len(prefix):]
+    return f"{prefix}/combiner/i?img={path}&w={size * 2}&h={size * 2}"
+
+
 LOGO_ONERROR = (
     "if(!this.dataset.r){this.dataset.r=1;var i=this,s=this.src;"
     "setTimeout(function(){i.src=s+'?r=1'},1500)}"
@@ -2605,7 +2614,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             def team_cell(value):
                 if value is None or pd.isna(value) or not str(value).strip():
                     return ""
-                url = get_logo_url(value)
+                url = resized_espn_url(get_logo_url(value), 40)
                 img = (
                     f'<img src="{html_lib.escape(str(url))}" class="team-photo" '
                     'referrerpolicy="no-referrer" loading="lazy" '
