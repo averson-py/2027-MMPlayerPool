@@ -325,6 +325,9 @@ def get_logo_url(team):
     return ESPN_LOGO_URL.format(team_id) if team_id else None
 
 
+SHOW_TEAM_LOGOS = False
+
+
 def resized_espn_url(url, size):
     """Return an ESPN-resized copy of an image URL (2x for retina)."""
     prefix = "https://a.espncdn.com"
@@ -2610,7 +2613,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             return cell
 
         styled = styled.format(player_cell, subset=["Player Name"], escape=None)
-        if "Team" in df.columns:
+        if SHOW_TEAM_LOGOS and "Team" in df.columns:
             def team_cell(value):
                 if value is None or pd.isna(value) or not str(value).strip():
                     return ""
