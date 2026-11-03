@@ -3760,7 +3760,9 @@ with tab4:
             ),
         },
         reverse_columns={"Draft Position": True},
+        selectable="ratings_select",
     )
+    st.caption("Click a team owner's name to open their Team View.")
 
 with tab5:
     st.subheader("Tournament Bracket")
