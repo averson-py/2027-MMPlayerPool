@@ -318,9 +318,37 @@ def get_espn_team_ids():
     return ids
 
 
+ASSETS_DIR = Path(__file__).parent / "assets"
+ASSETS_BASE_URL = (
+    "https://raw.githubusercontent.com/averson-py/2027-MMPlayerPool/main/assets/"
+)
+
+
+@st.cache_data(show_spinner=False)
+def load_image_manifest(_mtime):
+    """Stored image index written by fetch_images.py (None if not run yet)."""
+    try:
+        data = json.loads((ASSETS_DIR / "manifest.json").read_text(encoding="utf-8"))
+        return {"teams": data.get("teams", {}), "players": data.get("players", {})}
+    except Exception:
+        return None
+
+
+def get_image_manifest():
+    try:
+        mtime = (ASSETS_DIR / "manifest.json").stat().st_mtime
+    except OSError:
+        return None
+    return load_image_manifest(mtime)
+
+
 def get_logo_url(team):
     if not team or "TBD" in str(team):
         return None
+    manifest = get_image_manifest()
+    if manifest is not None:
+        rel = manifest["teams"].get(_norm_team_name(team))
+        return ASSETS_BASE_URL + rel if rel else None
     team_id = get_espn_team_ids().get(_norm_team_name(team))
     return ESPN_LOGO_URL.format(team_id) if team_id else None
 
@@ -398,6 +426,12 @@ def photo_url_works(url):
 def get_player_photo_url(player_name, team):
     if not team or not player_name:
         return None
+    manifest = get_image_manifest()
+    if manifest is not None:
+        rel = manifest["players"].get(
+            f"{_norm_team_name(team)}|{_norm_person_name(player_name)}"
+        )
+        return ASSETS_BASE_URL + rel if rel else None
     team_id = get_espn_team_ids().get(_norm_team_name(team))
     if not team_id:
         return None
