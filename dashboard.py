@@ -2666,7 +2666,8 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .photo-table-wrap th {background: #FFFFFF; color: #000000;}
             .player-cell {display: flex; align-items: center; gap: 8px; text-align: left; min-width: 200px;}
             .player-cell span {white-space: normal; min-width: 0; overflow-wrap: anywhere;}
-            .team-cell {display: flex; align-items: center; gap: 6px;}
+            .team-cell {display: flex; align-items: center; gap: 6px; min-width: 150px;}
+            .team-cell span {white-space: normal; min-width: 0; overflow-wrap: anywhere;}
             .team-logo-sm {width: 28px; height: 28px; object-fit: contain; flex-shrink: 0; display: inline-block;}
             .player-photo {
                 width: 56px; height: 56px; object-fit: contain;
@@ -3631,6 +3632,8 @@ with tab2:
                     "Tourn. AST": LIGHT_GREEN,
                 },
             )
+        else:
+            st.info(f"{selected_player} was not drafted.")
 
 with tab3:
     st.subheader("Team View")
