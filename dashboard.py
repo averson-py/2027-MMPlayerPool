@@ -2999,6 +2999,14 @@ c3.metric("Players Active", int(standings["Active Players"].sum()) if not standi
 c4.metric("Teams Eliminated", len(data["teams_out"]))
 
 pick_col, _pick_spacer = st.columns([1, 2])
+if "my_team" not in st.session_state and not st.query_params.get("my_team"):
+    try:
+        from urllib.parse import unquote
+        _saved_team = unquote(st.context.cookies.get("mmpool_my_team", ""))
+    except Exception:
+        _saved_team = ""
+    if _saved_team in data["drafters"]:
+        st.session_state["my_team"] = _saved_team
 with pick_col:
     my_team_choice = st.selectbox(
         "👤 Choose your team (highlights team in tables, should only have to select once)",
@@ -3970,20 +3978,19 @@ components.html(
     const current = """ + json.dumps(my_team_choice or "") + """;
     try {
         const p = window.parent;
+        const setCookie = v => {
+            p.document.cookie = KEY + '=' + encodeURIComponent(v) +
+                '; path=/; max-age=31536000; SameSite=Lax';
+        };
         if (current) {
-            p.localStorage.setItem(KEY, current);
-            p.sessionStorage.setItem('mmpool_restored', '1');
-        } else if (!p.sessionStorage.getItem('mmpool_restored')) {
-            p.sessionStorage.setItem('mmpool_restored', '1');
-            const saved = p.localStorage.getItem(KEY);
-            if (saved) {
-                const url = new URL(p.location.href);
-                url.searchParams.set('my_team', saved);
-                p.location.replace(url.toString());
-            }
+            setCookie(current);
+        } else if (p.sessionStorage.getItem('mmpool_seen')) {
+            p.document.cookie = KEY + '=; path=/; max-age=0';
         } else {
-            p.localStorage.removeItem(KEY);
+            const old = p.localStorage.getItem(KEY);
+            if (old) setCookie(old);
         }
+        p.sessionStorage.setItem('mmpool_seen', '1');
     } catch (e) {}
     </script>""",
     height=0,
