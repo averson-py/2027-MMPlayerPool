@@ -2634,6 +2634,22 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             )
 
         styled = styled.format(player_cell, subset=["Player Name"], escape=None)
+        if "Team" in df.columns:
+            def team_cell(value):
+                if value is None or (isinstance(value, float) and pd.isna(value)):
+                    return ""
+                url = get_logo_url(value)
+                img = (
+                    f'<img src="{html_lib.escape(str(url))}" class="team-logo-sm" '
+                    'loading="lazy" onerror="this.style.visibility=\'hidden\'">'
+                    if url else '<span class="team-logo-sm"></span>'
+                )
+                return (
+                    '<div class="team-cell">' + img
+                    + '<span>' + html_lib.escape(str(value)) + '</span></div>'
+                )
+
+            styled = styled.format(team_cell, subset=["Team"], escape=None)
         try:
             styled = styled.hide(axis="index")
         except AttributeError:
@@ -2650,6 +2666,8 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .photo-table-wrap th {background: #FFFFFF; color: #000000;}
             .player-cell {display: flex; align-items: center; gap: 8px; text-align: left; min-width: 200px;}
             .player-cell span {white-space: normal; min-width: 0; overflow-wrap: anywhere;}
+            .team-cell {display: flex; align-items: center; gap: 6px;}
+            .team-logo-sm {width: 28px; height: 28px; object-fit: contain; flex-shrink: 0; display: inline-block;}
             .player-photo {
                 width: 56px; height: 56px; object-fit: contain;
                 background: transparent; flex-shrink: 0; display: inline-block;
