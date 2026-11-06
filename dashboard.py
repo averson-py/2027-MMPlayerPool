@@ -2007,7 +2007,18 @@ def make_standings(data):
         draftee.casefold(): position
         for position, draftee in enumerate(data["drafters"], start=1)
     }
-    totals = {}
+    totals = {
+        d.casefold(): {
+            "Team Owner": d,
+            "Draft Position": positions.get(d.casefold(), ""),
+            "Total FPts": None,
+            "Active Players": 0,
+            "Poss. Games Remaining": 0,
+            "MVP": "",
+            "MVP FPts": None,
+        }
+        for d in data["drafters"]
+    }
 
     for row in data["draft_rows"]:
         key = row["draftee"].casefold()
@@ -2066,7 +2077,16 @@ def make_power_rankings(data):
         draftee.casefold(): position
         for position, draftee in enumerate(data["drafters"], start=1)
     }
-    totals = {}
+    totals = {
+        d.casefold(): {
+            "Team Owner": d,
+            "Draft Position": positions.get(d.casefold(), ""),
+            "Total FPts": None,
+            "Active Players": 0,
+            "Games Played": 0,
+        }
+        for d in data["drafters"]
+    }
 
     for row in data["draft_rows"]:
         key = row["draftee"].casefold()
@@ -2695,7 +2715,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
     # Give every supplied row enough room to render without a vertical
     # scrollbar. The height argument is retained only as a safety cap for
     # unusually large tables.
-    actual_height = compact_height if compact_height <= height else height
+    actual_height = compact_height if (compact_height <= height or len(df) <= 60) else height
 
     if selectable:
         select_key = selectable if isinstance(selectable, str) else "standings_select"
