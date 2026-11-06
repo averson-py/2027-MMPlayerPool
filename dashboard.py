@@ -2664,13 +2664,14 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
                 border: 1px solid #e0e0e0; padding: 4px 8px; white-space: nowrap;
             }
             .photo-table-wrap th {background: #FFFFFF; color: #000000;}
-            .player-cell {display: flex; align-items: center; gap: 8px; text-align: left; min-width: 200px;}
-            .player-cell span {white-space: normal; min-width: 0; overflow-wrap: anywhere;}
-            .team-cell {display: flex; align-items: center; gap: 6px; min-width: 150px;}
+            .player-cell {display: flex; align-items: flex-end; gap: 8px; text-align: left; min-width: 200px;}
+            .player-cell span {white-space: normal; min-width: 0; overflow-wrap: anywhere; align-self: center;}
+            .photo-table-wrap td:has(.player-cell) {vertical-align: bottom; padding-bottom: 0;}
+            .team-cell {display: flex; align-items: center; gap: 8px; min-width: 160px; padding-left: 10px;}
             .team-cell span {white-space: normal; min-width: 0; overflow-wrap: anywhere;}
-            .team-logo-sm {width: 28px; height: 28px; object-fit: contain; flex-shrink: 0; display: inline-block;}
+            .team-logo-sm {width: 36px; height: 36px; object-fit: contain; flex-shrink: 0; display: inline-block;}
             .player-photo {
-                width: 56px; height: 56px; object-fit: contain;
+                width: 64px; height: 64px; object-fit: contain;
                 background: transparent; flex-shrink: 0; display: inline-block;
             }
             </style>
