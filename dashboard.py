@@ -2916,8 +2916,21 @@ st.markdown(
         width: auto !important;
         pointer-events: none;
     }
-    .mvp-photo-float {height: 72px; width: auto; max-width: 90px; object-fit: contain; display: block;}
+    .mvp-photo-float {height: 100px; width: auto; max-width: 120px; object-fit: contain; display: block;}
+    div[data-testid="stElementContainer"]:has(.mvp-photo-float),
+    div.element-container:has(.mvp-photo-float) {
+        top: auto;
+        bottom: 16px;
+        right: 0;
+        transform: none;
+    }
     .logo-float {height: 80px; width: 80px; object-fit: contain; display: block; margin-right: 12px;}
+    @media (max-width: 640px) {
+        div[data-testid="stElementContainer"]:has(.mvp-photo-float),
+        div.element-container:has(.mvp-photo-float) {
+            right: -6px;
+        }
+    }
     @container (max-width: 340px) {
         .mvp-photo-float, .logo-float {display: none;}
     }
@@ -3812,12 +3825,20 @@ with tab3:
                 )
                 if best_player is not None:
                     sc3.metric(
-                        "Best Player",
+                        "Team MVP",
                         str(best_player["Player Name"]),
                         f"{float(best_player['Tourn. FPts']):.1f} FPts",
                     )
+                    best_stats = data["player_stats"].get(str(best_player["Player Name"]).casefold(), {})
+                    best_photo = get_player_photo_url(best_player["Player Name"], best_stats.get("Team"))
+                    if best_photo:
+                        sc3.markdown(
+                            f'<img class="mvp-photo-float" src="{html_lib.escape(best_photo)}" '
+                            'referrerpolicy="no-referrer" alt="">',
+                            unsafe_allow_html=True,
+                        )
                 else:
-                    sc3.metric("Best Player", "—")
+                    sc3.metric("Team MVP", "—")
                 sc4.metric(
                     "Players Active",
                     f"{alive_count} of {len(team_rows)}",
