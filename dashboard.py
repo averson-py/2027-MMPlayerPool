@@ -2837,6 +2837,15 @@ st.markdown(
         padding: 0 !important;
         overflow: hidden !important;
     }
+    /* Take the helper out of the layout flow so Streamlit's inter-element gap
+       is not applied around it either. */
+    div[data-testid="stLayoutWrapper"]:has(.st-key-restore_my_team),
+    div[data-testid="stElementContainer"].st-key-restore_my_team {
+        position: absolute !important;
+        width: 0 !important;
+        height: 0 !important;
+        overflow: hidden !important;
+    }
 
     /* Pool MVP photo and Most Recent Game logo float over the right side of the native metric card */
     div[data-testid="stColumn"]:has(.mvp-photo-float),
