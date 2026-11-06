@@ -2804,26 +2804,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# Restore the remembered "me" selection immediately, before the slow data
-# load, so any reload happens up front rather than after content appears.
-components.html(
-    """<script>
-    try {
-        const p = window.parent;
-        const url = new URL(p.location.href);
-        if (!p.__mmpoolChecked) {
-            p.__mmpoolChecked = true;
-            const saved = p.localStorage.getItem('mmpool_my_team');
-            if (saved && !url.searchParams.get('my_team')) {
-                url.searchParams.set('my_team', saved);
-                p.location.replace(url.toString());
-            }
-        }
-    } catch (e) {}
-    </script>""",
-    height=0,
-)
-
 st.markdown(
     """
     <style>
@@ -3019,19 +2999,21 @@ c3.metric("Players Active", int(standings["Active Players"].sum()) if not standi
 c4.metric("Teams Eliminated", len(data["teams_out"]))
 
 pick_col, _pick_spacer = st.columns([1, 2])
-try:
-    _diag_cookies = dict(st.context.cookies)
-except Exception as _exc:
-    _diag_cookies = f"unavailable: {_exc}"
-st.caption(f"DIAG streamlit={st.__version__} cookies={_diag_cookies} my_team_in_state={'my_team' in st.session_state} query={dict(st.query_params)}")
-if "my_team" not in st.session_state and not st.query_params.get("my_team"):
+if not st.session_state.get("my_team") and not st.query_params.get("my_team") \
+        and not st.session_state.get("_my_team_restored"):
     try:
-        from urllib.parse import unquote
-        _saved_team = unquote(st.context.cookies.get("mmpool_my_team", ""))
+        from streamlit_js_eval import streamlit_js_eval
+        _saved_team = streamlit_js_eval(
+            js_expressions="localStorage.getItem('mmpool_my_team') || ''",
+            key="restore_my_team",
+        )
     except Exception:
         _saved_team = ""
-    if _saved_team in data["drafters"]:
-        st.session_state["my_team"] = _saved_team
+        st.session_state["_my_team_restored"] = True
+    if _saved_team is not None:
+        st.session_state["_my_team_restored"] = True
+        if _saved_team in data["drafters"]:
+            st.session_state["my_team"] = _saved_team
 with pick_col:
     my_team_choice = st.selectbox(
         "👤 Choose your team (highlights team in tables, should only have to select once)",
@@ -4006,12 +3988,9 @@ components.html(
         if (current) {
             p.localStorage.setItem(KEY, current);
             p.__mmpoolLast = current;
-            p.document.cookie = KEY + '=' + encodeURIComponent(current) +
-                '; path=/; max-age=31536000; SameSite=None; Secure; Partitioned';
         } else if (p.__mmpoolLast) {
             p.localStorage.removeItem(KEY);
             p.__mmpoolLast = '';
-            p.document.cookie = KEY + '=; path=/; max-age=0; SameSite=None; Secure; Partitioned';
         }
     } catch (e) {}
     </script>""",
