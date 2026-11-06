@@ -2828,7 +2828,9 @@ st.markdown(
        do not leave a blank bar above the tabs. Kept in layout, not display:none,
        so their scripts keep running. */
     div[data-testid="stElementContainer"]:has(iframe[height="0"]),
-    div[data-testid="element-container"]:has(iframe[height="0"]) {
+    div[data-testid="element-container"]:has(iframe[height="0"]),
+    .st-key-restore_my_team,
+    div[data-testid="stElementContainer"]:has(iframe[title="streamlit_js_eval.streamlit_js_eval"]) {
         height: 0 !important;
         min-height: 0 !important;
         margin: 0 !important;
