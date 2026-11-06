@@ -3019,6 +3019,14 @@ c3.metric("Players Active", int(standings["Active Players"].sum()) if not standi
 c4.metric("Teams Eliminated", len(data["teams_out"]))
 
 pick_col, _pick_spacer = st.columns([1, 2])
+if "my_team" not in st.session_state and not st.query_params.get("my_team"):
+    try:
+        from urllib.parse import unquote
+        _saved_team = unquote(st.context.cookies.get("mmpool_my_team", ""))
+    except Exception:
+        _saved_team = ""
+    if _saved_team in data["drafters"]:
+        st.session_state["my_team"] = _saved_team
 with pick_col:
     my_team_choice = st.selectbox(
         "👤 Choose your team (highlights team in tables, should only have to select once)",
@@ -3993,9 +4001,12 @@ components.html(
         if (current) {
             p.localStorage.setItem(KEY, current);
             p.__mmpoolLast = current;
+            p.document.cookie = KEY + '=' + encodeURIComponent(current) +
+                '; path=/; max-age=31536000; SameSite=None; Secure; Partitioned';
         } else if (p.__mmpoolLast) {
             p.localStorage.removeItem(KEY);
             p.__mmpoolLast = '';
+            p.document.cookie = KEY + '=; path=/; max-age=0; SameSite=None; Secure; Partitioned';
         }
     } catch (e) {}
     </script>""",
