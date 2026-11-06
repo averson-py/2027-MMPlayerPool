@@ -2920,7 +2920,7 @@ st.markdown(
     div[data-testid="stElementContainer"]:has(.mvp-photo-float),
     div.element-container:has(.mvp-photo-float) {
         top: auto;
-        bottom: 16px;
+        bottom: 17px;
         right: 0;
         transform: none;
     }
