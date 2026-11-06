@@ -2811,15 +2811,12 @@ components.html(
     try {
         const p = window.parent;
         const url = new URL(p.location.href);
-        if (url.searchParams.get('my_team') || p.sessionStorage.getItem('mmpool_seen')) {
-            p.sessionStorage.setItem('mmpool_seen', '1');
-        } else {
+        if (!p.__mmpoolChecked) {
+            p.__mmpoolChecked = true;
             const saved = p.localStorage.getItem('mmpool_my_team');
-            if (saved) {
+            if (saved && !url.searchParams.get('my_team')) {
                 url.searchParams.set('my_team', saved);
                 p.location.replace(url.toString());
-            } else {
-                p.sessionStorage.setItem('mmpool_seen', '1');
             }
         }
     } catch (e) {}
@@ -3995,9 +3992,10 @@ components.html(
         const p = window.parent;
         if (current) {
             p.localStorage.setItem(KEY, current);
-            p.sessionStorage.setItem('mmpool_seen', '1');
-        } else if (p.sessionStorage.getItem('mmpool_seen')) {
+            p.__mmpoolLast = current;
+        } else if (p.__mmpoolLast) {
             p.localStorage.removeItem(KEY);
+            p.__mmpoolLast = '';
         }
     } catch (e) {}
     </script>""",
