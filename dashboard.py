@@ -1486,7 +1486,7 @@ def render_bracket_html(rounds, region=None, team_players=None, my_team=None):
                             const photo = p.i ? '<img class="pp" src="' + esc(p.i) + '" referrerpolicy="no-referrer">' : '<span class="pp"></span>';
                             const mine = isMine(p.o);
                             h += '<div class="row' + (mine ? ' me' : '') + '">' + photo + '<div class="info">' + esc(p.n) + ' <span class="owner' + (mine ? ' me' : '') + '">&mdash; ' + esc(p.o) + '</span>'
-                              + '<div class="stats"><b>FPts ' + (fp(p) >= 0 ? fp(p).toFixed(1) : '-') + '</b> &middot; PTS ' + esc(val(0)) + ' &middot; REB ' + esc(val(1)) + ' &middot; AST ' + esc(val(2)) + '</div></div></div>';
+                              + (info.ri >= 0 ? '<div class="stats"><b>FPts ' + (fp(p) >= 0 ? fp(p).toFixed(1) : '-') + '</b> &middot; PTS ' + esc(val(0)) + ' &middot; REB ' + esc(val(1)) + ' &middot; AST ' + esc(val(2)) + '</div>' : '') + '</div></div>';
                         });
                     });
                     modalBox.innerHTML = h;
