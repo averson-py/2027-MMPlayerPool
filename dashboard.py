@@ -632,7 +632,7 @@ def build_tournament_bracket(bracket_teams, teams_out=None):
                         return teams[0]
                     else:
                         # Both still active (First Four game not yet played)
-                        return teams[0]
+                        return f"({seed}) TBD"
 
             return f"({seed}) TBD"
 
