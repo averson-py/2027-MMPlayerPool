@@ -3019,6 +3019,11 @@ c3.metric("Players Active", int(standings["Active Players"].sum()) if not standi
 c4.metric("Teams Eliminated", len(data["teams_out"]))
 
 pick_col, _pick_spacer = st.columns([1, 2])
+try:
+    _diag_cookies = dict(st.context.cookies)
+except Exception as _exc:
+    _diag_cookies = f"unavailable: {_exc}"
+st.caption(f"DIAG streamlit={st.__version__} cookies={_diag_cookies} my_team_in_state={'my_team' in st.session_state} query={dict(st.query_params)}")
 if "my_team" not in st.session_state and not st.query_params.get("my_team"):
     try:
         from urllib.parse import unquote
