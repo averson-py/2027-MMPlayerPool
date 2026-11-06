@@ -1217,9 +1217,11 @@ def render_bracket_html(rounds, region=None, team_players=None, my_team=None):
 
         # Get all matchups for this round across specified regions
         all_matchups = []
+        matchup_regions = []
         for r in regions_to_render:
             if r in round_data['regions']:
                 all_matchups.extend(round_data['regions'][r])
+                matchup_regions.extend([r] * len(round_data['regions'][r]))
 
         # Hide the First Four column when the region has no First Four games
         if round_name == "First Four" and not all_matchups:
@@ -1268,6 +1270,19 @@ def render_bracket_html(rounds, region=None, team_players=None, my_team=None):
                 score_html_a = score_html_b = _score_html(None, None, None)
             feeds_to = matchup_idx // 2 if len(all_matchups) > 1 and round_name != "First Four" else -1
 
+            align_to = -1
+            if round_name == "First Four" and len(rounds) > 1:
+                offset = 0
+                for r in regions_to_render:
+                    r64 = rounds[1]['regions'].get(r, [])
+                    if r == matchup_regions[matchup_idx]:
+                        for j, m in enumerate(r64):
+                            if str(seed_a) in (str(m['seed_a']), str(m['seed_b'])):
+                                align_to = offset + j
+                                break
+                        break
+                    offset += len(r64)
+
             players_attr = html_lib.escape(json.dumps({
                 "title": f"G{game_num}",
                 "ri": {
@@ -1285,7 +1300,7 @@ def render_bracket_html(rounds, region=None, team_players=None, my_team=None):
             }), quote=True)
 
             html += f"""
-                    <div class="matchup-container" data-round="{round_idx}" data-index="{matchup_idx}" data-feeds-to="{feeds_to}" data-players="{players_attr}">
+                    <div class="matchup-container" data-round="{round_idx}" data-index="{matchup_idx}" data-feeds-to="{feeds_to}" data-align-to="{align_to}" data-players="{players_attr}">
                         <div class="game-label">G{game_num}</div>
                         <div class="team-box {classes_a}">
                             <div class="team-info">
@@ -1325,6 +1340,19 @@ def render_bracket_html(rounds, region=None, team_players=None, my_team=None):
 
                 // Clear existing lines
                 svg.innerHTML = '';
+
+                // Align opening-round games with the Round of 64 game they feed
+                const alignable = Array.from(document.querySelectorAll('.matchup-container[data-align-to]'))
+                    .filter(m => m.dataset.alignTo !== '-1');
+                alignable.forEach(m => { m.style.transform = ''; });
+                alignable.forEach(m => {
+                    const target = Array.from(document.querySelectorAll('.bracket-column')[1].querySelectorAll('.matchup-container'))[Number(m.dataset.alignTo)];
+                    if (!target) return;
+                    const a = m.getBoundingClientRect();
+                    const b = target.getBoundingClientRect();
+                    const dy = (b.top + b.height / 2) - (a.top + a.height / 2);
+                    m.style.transform = 'translateY(' + dy + 'px)';
+                });
 
                 // Set SVG size to match wrapper
                 svg.style.width = '0px';
