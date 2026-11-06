@@ -2824,6 +2824,18 @@ st.markdown(
 
     .block-container {padding-top: 1.2rem; padding-bottom: 2rem;}
 
+    /* Collapse zero-height helper iframes (browser-storage scripts) so they
+       do not leave a blank bar above the tabs. Kept in layout, not display:none,
+       so their scripts keep running. */
+    div[data-testid="stElementContainer"]:has(iframe[height="0"]),
+    div[data-testid="element-container"]:has(iframe[height="0"]) {
+        height: 0 !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+    }
+
     /* Pool MVP photo and Most Recent Game logo float over the right side of the native metric card */
     div[data-testid="stColumn"]:has(.mvp-photo-float),
     div[data-testid="column"]:has(.mvp-photo-float),
