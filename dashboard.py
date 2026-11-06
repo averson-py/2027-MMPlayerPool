@@ -2804,6 +2804,29 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+# Restore the remembered "me" selection immediately, before the slow data
+# load, so any reload happens up front rather than after content appears.
+components.html(
+    """<script>
+    try {
+        const p = window.parent;
+        const url = new URL(p.location.href);
+        if (url.searchParams.get('my_team') || p.sessionStorage.getItem('mmpool_seen')) {
+            p.sessionStorage.setItem('mmpool_seen', '1');
+        } else {
+            const saved = p.localStorage.getItem('mmpool_my_team');
+            if (saved) {
+                url.searchParams.set('my_team', saved);
+                p.location.replace(url.toString());
+            } else {
+                p.sessionStorage.setItem('mmpool_seen', '1');
+            }
+        }
+    } catch (e) {}
+    </script>""",
+    height=0,
+)
+
 st.markdown(
     """
     <style>
@@ -2999,19 +3022,6 @@ c3.metric("Players Active", int(standings["Active Players"].sum()) if not standi
 c4.metric("Teams Eliminated", len(data["teams_out"]))
 
 pick_col, _pick_spacer = st.columns([1, 2])
-try:
-    _diag_cookies = dict(st.context.cookies)
-except Exception as _exc:
-    _diag_cookies = f"unavailable: {_exc}"
-st.caption(f"DIAG streamlit={st.__version__} cookies={_diag_cookies} my_team_in_state={'my_team' in st.session_state}")
-if "my_team" not in st.session_state and not st.query_params.get("my_team"):
-    try:
-        from urllib.parse import unquote
-        _saved_team = unquote(st.context.cookies.get("mmpool_my_team", ""))
-    except Exception:
-        _saved_team = ""
-    if _saved_team in data["drafters"]:
-        st.session_state["my_team"] = _saved_team
 with pick_col:
     my_team_choice = st.selectbox(
         "👤 Choose your team (highlights team in tables, should only have to select once)",
@@ -3983,19 +3993,12 @@ components.html(
     const current = """ + json.dumps(my_team_choice or "") + """;
     try {
         const p = window.parent;
-        const setCookie = v => {
-            p.document.cookie = KEY + '=' + encodeURIComponent(v) +
-                '; path=/; max-age=31536000; SameSite=Lax';
-        };
         if (current) {
-            setCookie(current);
+            p.localStorage.setItem(KEY, current);
+            p.sessionStorage.setItem('mmpool_seen', '1');
         } else if (p.sessionStorage.getItem('mmpool_seen')) {
-            p.document.cookie = KEY + '=; path=/; max-age=0';
-        } else {
-            const old = p.localStorage.getItem(KEY);
-            if (old) setCookie(old);
+            p.localStorage.removeItem(KEY);
         }
-        p.sessionStorage.setItem('mmpool_seen', '1');
     } catch (e) {}
     </script>""",
     height=0,
