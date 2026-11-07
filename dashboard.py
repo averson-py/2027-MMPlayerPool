@@ -667,7 +667,7 @@ def build_tournament_bracket(bracket_teams, teams_out=None):
         return lost_in_round(team_name, round_num, teams_out)
 
     # Main bracket rounds
-    round_names = ["Round of 64", "Round of 32", "Sweet 16", "Elite Eight", "Final Four", "Championship"]
+    round_names = ["Round of 64", "Round of 32", "Sweet Sixteen", "Elite Eight", "Final Four", "Championship"]
     matchup_structure = [
         [(1, 16), (8, 9), (5, 12), (4, 13), (6, 11), (3, 14), (7, 10), (2, 15)],  # Round 1
         [(1, 8), (5, 4), (6, 3), (7, 2)],  # Round 2
@@ -1186,19 +1186,20 @@ def render_bracket_html(rounds, region=None, team_players=None, my_team=None):
             #player-modal { display: none; position: fixed; inset: 0; z-index: 1000;
                 background: rgba(0,0,0,0.35); align-items: center; justify-content: center; }
             #player-modal .box { background: #fff; border-radius: 10px; padding: 16px 20px;
-                min-width: 260px; max-width: 90%; max-height: 80%; overflow-y: auto;
+                min-width: min(340px, 80%); max-width: 80%;
                 box-shadow: 0 8px 24px rgba(0,0,0,0.25); font-family: sans-serif; font-size: 13px; }
-            #player-modal h3 { margin: 0 0 8px; font-size: 15px; }
+            #player-modal h3 { margin: 0 0 8px; font-size: 15px; white-space: nowrap; }
             #player-modal h4 { margin: 12px 0 4px; font-size: 13px; color: #4472C4; }
-            #player-modal .row { padding: 3px 0; border-bottom: 1px solid #eee; display: flex; align-items: center; gap: 8px; }
-            #player-modal .pp { width: 48px; height: 48px; object-fit: contain; flex-shrink: 0; display: inline-block; }
-            #player-modal .info { flex: 1; min-width: 0; }
+            #player-modal .row { padding: 0; height: 60px; overflow: hidden; border-bottom: 1px solid #eee; display: flex; align-items: flex-end; gap: 8px; }
+            #player-modal .pp { width: 76px; height: 76px; object-fit: contain; object-position: center bottom; flex-shrink: 0; display: block; }
+            #player-modal .info { flex: 1; min-width: 0; align-self: center; }
             #player-modal .owner { color: #888; }
             #player-modal .owner.me { color: #B85C00; font-weight: 800; background: #FFE0B2; border-radius: 4px; padding: 0 4px; }
             #player-modal .row.me { background: #FFF4E5; }
             #player-modal .none { color: #999; font-style: italic; }
             #player-modal .stats { color: #555; font-size: 12px; }
             #player-modal .close { float: right; cursor: pointer; font-size: 18px; color: #888; }
+            @media (max-width: 480px) { #player-modal h3 { white-space: normal; } }
         </style>
         <div id="player-modal"><div class="box"></div></div>
         <div class="ncaa-bracket-wrapper">
@@ -1284,9 +1285,9 @@ def render_bracket_html(rounds, region=None, team_players=None, my_team=None):
                     offset += len(r64)
 
             players_attr = html_lib.escape(json.dumps({
-                "title": f"G{game_num}",
+                "title": f"G{game_num} - {display_name}",
                 "ri": {
-                    "Round of 64": 0, "Round of 32": 1, "Sweet 16": 2,
+                    "Round of 64": 0, "Round of 32": 1, "Sweet Sixteen": 2,
                     "Elite Eight": 3, "Final Four - Semifinals": 4, "Championship": 5,
                 }.get(round_name, -1),
                 "teams": [
