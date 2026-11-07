@@ -1873,6 +1873,8 @@ def make_team_rows(data, selected_draftee):
             "Tourn. PTS": row.get("tourn_pts"),
             "Tourn. REB": row.get("tourn_reb"),
             "Tourn. AST": row.get("tourn_ast"),
+            "Projected FPts": player_projected_fpts(row, data),
+            "Poss. Games Remaining": row.get("possible_games_remaining", 0),
             "Expected Games Remaining": round(player_expected_games_remaining(row, data), 1),
             "_team_out": (
                 stats.get("Team") is not None
@@ -2250,6 +2252,15 @@ def player_expected_games_remaining(row, data):
     return max(historical_avg_games - games_played, 1.0)
 
 
+def player_projected_fpts(row, data):
+    """Tournament FPts so far plus (tournament FPts avg x expected games remaining)."""
+    total = player_total(row, data["fantasy_weights"])
+    games = row.get("games_played") or 0
+    if total is None or games <= 0:
+        return None
+    return round(total + (total / games) * player_expected_games_remaining(row, data), 1)
+
+
 def make_player_rankings(data):
     result = []
     for row in data["draft_rows"]:
@@ -2264,6 +2275,7 @@ def make_player_rankings(data):
             "Games Played": row.get("games_played", 0),
             "Poss. Games Remaining": row.get("possible_games_remaining", 0),
             "Expected Games Remaining": round(player_expected_games_remaining(row, data), 1),
+            "Projected FPts": player_projected_fpts(row, data),
             "_team_out": (
                 team is not None
                 and str(team).strip().casefold() in data["teams_out"]
@@ -2280,7 +2292,7 @@ def make_player_rankings(data):
         row["Rank"] = i
 
     player_columns = [
-        "Rank", "Player Name", "Team", "Total FPts",
+        "Rank", "Player Name", "Team", "Total FPts", "Projected FPts",
         "Team Owner", "Games Played", "Poss. Games Remaining",
         "Expected Games Remaining", "_team_out", "_photo",
     ]
@@ -2322,6 +2334,7 @@ def make_performers(data, positive=True):
             "Games Played": games,
             "Poss. Games Remaining": row.get("possible_games_remaining", 0),
             "Expected Games Remaining": round(player_expected_games_remaining(row, data), 1),
+            "Projected FPts": player_projected_fpts(row, data),
             "_team_out": (
                 team is not None
                 and str(team).strip().casefold() in data["teams_out"]
@@ -2338,7 +2351,7 @@ def make_performers(data, positive=True):
         row["Rank"] = i
 
     performer_columns = [
-        "Rank", "Player Name", "Team", "Avg. FPts/Tourn. Game",
+        "Rank", "Player Name", "Team", "Avg. FPts/Tourn. Game", "Projected FPts",
         "Delta From Average", "Team Owner", "Games Played",
         "Poss. Games Remaining", "Expected Games Remaining", "_team_out", "_photo",
     ]
@@ -2415,7 +2428,7 @@ def make_draft_ratings(data):
 # ---------------------------------------------------------------------
 # Streamlit presentation helpers
 # ---------------------------------------------------------------------
-def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, pink_last=False, rank_rwg=False, performance_gradient=None, column_colors=None):
+def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, pink_last=False, rank_rwg=False, performance_gradient=None, column_colors=None, zebra=False):
     scale_columns = scale_columns or {}
     reverse_columns = reverse_columns or {}
 
@@ -2538,9 +2551,17 @@ def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, p
 
     styled = df.style.set_properties(
         **{"background-color": "#FFFFFF", "color": "#000000"}
-    ).apply(apply_styles, axis=1)
+    )
+    if zebra:
+        def zebra_styles(row):
+            pos = df.index.get_loc(row.name)
+            color = "#FFFFFF" if pos % 2 == 0 else "#EEF0F3"
+            return [f"background-color: {color}"] * len(row)
 
-    # Display numeric values cleanly. Calculations remain unchanged.
+        styled = styled.apply(zebra_styles, axis=1)
+    styled = styled.apply(apply_styles, axis=1)
+
+    # Display numeric values cleanly.
     # One-decimal fields show exactly one decimal; integer fields do not
     # expose pandas' trailing floating-point zeros.
     one_decimal_columns = {
@@ -2629,7 +2650,7 @@ def _standings_cell_clicked(select_key="standings_select"):
             return
 
 
-def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None, column_colors=None, selectable=False):
+def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None, column_colors=None, selectable=False, zebra=False):
     if df.empty:
         st.info("No data available yet.")
         return
@@ -2644,7 +2665,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             int(pd.util.hash_pandas_object(df.astype(str), index=True).sum()),
             tuple(df.columns),
             repr(scale_columns), repr(reverse_columns), pink_last, rank_rwg,
-            repr(performance_gradient), repr(column_colors),
+            repr(performance_gradient), repr(column_colors), zebra,
             st.session_state.get("my_team") or "",
         )
     except Exception:
@@ -2663,6 +2684,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             rank_rwg=rank_rwg,
             performance_gradient=performance_gradient,
             column_colors=column_colors,
+            zebra=zebra,
         )
         if _style_sig is not None and isinstance(selectable, str):
             _style_cache[_cache_key] = (_style_sig, styled)
@@ -3647,7 +3669,7 @@ with tab1:
 with tab2:
     st.subheader("Player Rankings — Top 10")
     st.caption("⛔ Out · ⚠️ Questionable")
-    display_df(players, height=400
+    display_df(players, height=400, zebra=True
     )
 
     st.markdown("### <span style='color:#2E8B57; font-weight:800;'>↑</span> Top Overperformers 🦄", unsafe_allow_html=True)
@@ -3666,6 +3688,7 @@ with tab2:
     display_df(
         over_display,
         height=240,
+        zebra=True,
         performance_gradient="green",
     )
 
@@ -3673,6 +3696,7 @@ with tab2:
     display_df(
         under_display,
         height=240,
+        zebra=True,
         performance_gradient="red",
     )
 
@@ -3707,6 +3731,7 @@ with tab2:
                 "Tourn. PTS": row.get("tourn_pts"),
                 "Tourn. REB": row.get("tourn_reb"),
                 "Tourn. AST": row.get("tourn_ast"),
+                "Projected FPts": player_projected_fpts(row, data),
                 "Expected Games Remaining": round(player_expected_games_remaining(row, data), 1),
                 "_team_out": (
                     stats.get("Team") is not None
@@ -3722,6 +3747,7 @@ with tab2:
             display_df(
                 result,
                 height=90,
+                zebra=True,
                 column_colors={
                     "FPts": LIGHT_BLUE,
                     "PPG": LIGHT_BLUE,
@@ -3854,6 +3880,7 @@ with tab3:
             display_df(
                 team_df,
                 height=500,
+                zebra=True,
                 column_colors={
                     "FPts": LIGHT_BLUE,
                     "PPG": LIGHT_BLUE,
