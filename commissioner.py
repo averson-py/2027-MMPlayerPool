@@ -6,6 +6,7 @@ import difflib
 import json
 import os
 import re
+import sys
 import unicodedata
 import urllib.parse
 import urllib.request
@@ -465,6 +466,117 @@ THEME = {
     "select": "#FDE3C8",
     "font": "Segoe UI",
 }
+
+
+class MacButton(tk.Label):
+    """Label-based button for macOS, where native Tk buttons ignore colors."""
+
+    def __init__(self, master=None, cnf=None, **kw):
+        kw = {**(cnf or {}), **kw}
+        self._command = kw.pop("command", None)
+        self._state = kw.pop("state", tk.NORMAL)
+        self._bg = kw.pop("bg", kw.pop("background", THEME["primary"]))
+        self._fg = kw.pop("fg", kw.pop("foreground", "white"))
+        self._active_bg = kw.pop("activebackground", THEME["primary_active"])
+        self._active_fg = kw.pop("activeforeground", "white")
+        self._disabled_fg = kw.pop("disabledforeground", "#9AA5B5")
+        self._hovering = False
+        self._pressed = False
+
+        kw.setdefault("font", (THEME["font"], 10, "bold"))
+        kw.setdefault("padx", 12)
+        kw.setdefault("pady", 6)
+        kw.setdefault("relief", "flat")
+        kw.setdefault("borderwidth", 0)
+
+        super().__init__(master, **kw)
+        self._apply_state()
+
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+        self.bind("<ButtonPress-1>", self._on_press)
+        self.bind("<ButtonRelease-1>", self._on_release)
+
+    def _apply_state(self):
+        enabled = self._state != tk.DISABLED
+        highlighted = enabled and (self._hovering or self._pressed)
+        super().configure(
+            bg=self._active_bg if highlighted else self._bg,
+            fg=(
+                self._active_fg if highlighted
+                else self._fg if enabled
+                else self._disabled_fg
+            ),
+            cursor="hand2" if enabled else "arrow"
+        )
+
+    def _on_enter(self, _event):
+        self._hovering = True
+        self._apply_state()
+
+    def _on_leave(self, _event):
+        self._hovering = False
+        self._pressed = False
+        self._apply_state()
+
+    def _on_press(self, _event):
+        self._pressed = True
+        self._apply_state()
+
+    def _on_release(self, _event):
+        was_pressed = self._pressed
+        self._pressed = False
+        self._apply_state()
+
+        if was_pressed and self._hovering:
+            self.invoke()
+
+    def invoke(self):
+        if self._state != tk.DISABLED and self._command:
+            return self._command()
+
+    def configure(self, cnf=None, **kw):
+        if isinstance(cnf, str):
+            return super().configure(cnf)
+
+        kw = {**(cnf or {}), **kw}
+        mapping = {
+            "command": "_command",
+            "state": "_state",
+            "bg": "_bg",
+            "background": "_bg",
+            "fg": "_fg",
+            "foreground": "_fg",
+            "activebackground": "_active_bg",
+            "activeforeground": "_active_fg",
+            "disabledforeground": "_disabled_fg",
+        }
+        touched = False
+
+        for option, attribute in mapping.items():
+            if option in kw:
+                setattr(self, attribute, kw.pop(option))
+                touched = True
+
+        if kw:
+            super().configure(**kw)
+
+        if touched:
+            self._apply_state()
+
+    config = configure
+
+    def cget(self, key):
+        if key == "state":
+            return self._state
+        if key == "command":
+            return self._command
+        return super().cget(key)
+
+    __getitem__ = cget
+
+
+ThemedButton = MacButton if sys.platform == "darwin" else tk.Button
 
 
 def fetch_espn_team_index():
@@ -1109,14 +1221,14 @@ class PlayerSelectionDialog:
             lambda event: self.select_player()
         )
 
-        tk.Button(
+        ThemedButton(
             self.window,
             text="Select Player",
             command=self.select_player,
             width=20
         ).pack(pady=10)
 
-        self.undo_button = tk.Button(
+        self.undo_button = ThemedButton(
             self.window,
             text="\u21B6  Undo Last Pick",
             command=self.request_undo,
@@ -1151,7 +1263,7 @@ class PlayerSelectionDialog:
 
         try:
             if self.window.winfo_exists():
-                close_button = tk.Button(
+                close_button = ThemedButton(
                     self.window,
                     text="\u2715  Close",
                     command=self.cancel,
@@ -1933,7 +2045,7 @@ class DraftApp:
         file_card = tk.LabelFrame(body, text="Workbook")
         file_card.pack(fill=tk.X)
 
-        tk.Button(
+        ThemedButton(
             file_card,
             text="📂  Select Excel File",
             command=self.select_file,
@@ -1952,7 +2064,7 @@ class DraftApp:
         actions.pack(fill=tk.X, pady=(12, 0))
         actions.grid_columnconfigure((0, 1), weight=1, uniform="actions")
 
-        self.team_stats_button = tk.Button(
+        self.team_stats_button = ThemedButton(
             actions,
             text="\U0001F4CA  Pull Team Stats from ESPN",
             command=self.pull_team_stats,
@@ -1964,7 +2076,7 @@ class DraftApp:
             row=0, column=0, columnspan=2, sticky="ew", padx=6, pady=6
         )
 
-        self.begin_button = tk.Button(
+        self.begin_button = ThemedButton(
             actions,
             text="📝  Begin / Resume Draft",
             command=self.begin_draft,
@@ -1976,7 +2088,7 @@ class DraftApp:
         )
         self.begin_button.grid(row=1, column=0, sticky="ew", padx=6, pady=6)
 
-        self.game_results_button = tk.Button(
+        self.game_results_button = ThemedButton(
             actions,
             text="🏆  Input Game Results",
             command=self.open_game_results,
@@ -1986,7 +2098,7 @@ class DraftApp:
         )
         self.game_results_button.grid(row=1, column=1, sticky="ew", padx=6, pady=6)
 
-        self.status_button = tk.Button(
+        self.status_button = ThemedButton(
             actions,
             text="\U0001FA79  Update Player Statuses",
             command=self.open_player_statuses,
@@ -2730,7 +2842,7 @@ class DraftApp:
         espn_row = tk.Frame(window)
         espn_row.pack(fill=tk.X, padx=16, pady=(10, 0))
 
-        espn_button = tk.Button(
+        espn_button = ThemedButton(
             espn_row,
             text="⚡  Fetch Stats from ESPN",
             bg=THEME["accent"],
@@ -2940,7 +3052,7 @@ class DraftApp:
         button_frame = tk.Frame(window)
         button_frame.pack(pady=10)
 
-        tk.Button(
+        ThemedButton(
             button_frame,
             text="Save Result",
             command=lambda: self.save_game_result(
@@ -2957,7 +3069,7 @@ class DraftApp:
             width=18
         ).pack(side=tk.LEFT, padx=5)
 
-        tk.Button(
+        ThemedButton(
             button_frame,
             text="Save & Enter Another",
             command=lambda: self.save_game_result(
@@ -2975,7 +3087,7 @@ class DraftApp:
             width=22
         ).pack(side=tk.LEFT, padx=5)
 
-        tk.Button(
+        ThemedButton(
             button_frame,
             text="↶  Undo Last Result",
             command=lambda: self.undo_last_game_result(
@@ -2988,7 +3100,7 @@ class DraftApp:
             width=20
         ).pack(side=tk.LEFT, padx=5)
 
-        tk.Button(
+        ThemedButton(
             button_frame,
             text="Close",
             command=window.destroy,
@@ -4582,7 +4694,7 @@ class DraftApp:
         button_row = tk.Frame(window)
         button_row.pack(fill=tk.X, padx=10, pady=10)
 
-        tk.Button(
+        ThemedButton(
             button_row,
             text="Mark Out",
             bg="#F8C8C8",
@@ -4592,7 +4704,7 @@ class DraftApp:
             width=16,
             command=lambda: apply_status("Out")
         ).pack(side=tk.LEFT, padx=4)
-        tk.Button(
+        ThemedButton(
             button_row,
             text="Mark Questionable",
             bg="#FFD8A8",
@@ -4602,13 +4714,13 @@ class DraftApp:
             width=18,
             command=lambda: apply_status("Questionable")
         ).pack(side=tk.LEFT, padx=4)
-        tk.Button(
+        ThemedButton(
             button_row,
             text="Clear Status",
             width=14,
             command=lambda: apply_status("")
         ).pack(side=tk.LEFT, padx=4)
-        tk.Button(
+        ThemedButton(
             button_row,
             text="Done",
             width=12,
