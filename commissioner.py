@@ -142,6 +142,7 @@ HINT_COLORS = {
     "conflict": "#FFF1CC",
     "stack": "#FFD8A8",
     "crowded_region": "#F8D0D0",
+    "first_four": "#F8D0D0",
     "new_region": "#DFF3E4",
 }
 
@@ -154,6 +155,20 @@ def parse_seed(value):
 
     seed = int(match.group())
     return seed if 1 <= seed <= 16 else None
+
+
+def is_first_four_seed(value):
+    return bool(re.search(r"-\s*FF\b", str(value or ""), re.IGNORECASE))
+
+
+def find_first_four_teams(records):
+    """Return casefolded names of teams whose seed is marked "- FF"."""
+    return {
+        str(record.get("Team") or "").strip().casefold()
+        for record in records
+        if is_first_four_seed(record.get("Seed"))
+        and str(record.get("Team") or "").strip()
+    }
 
 
 def bracket_meeting_round(seed_a, seed_b):
@@ -675,7 +690,8 @@ class PlayerSelectionDialog:
         player_records,
         recent_picks,
         on_deck_text="",
-        pick_timer_seconds=DEFAULT_PICK_TIMER_MINUTES * 60
+        pick_timer_seconds=DEFAULT_PICK_TIMER_MINUTES * 60,
+        first_four_teams=None
     ):
         self.selected_record = None
         self.undo_requested = False
@@ -683,6 +699,11 @@ class PlayerSelectionDialog:
         self.timer_remaining = 0
         self.timer_job = None
         self.player_records = player_records
+        self.first_four_teams = (
+            find_first_four_teams(player_records)
+            if first_four_teams is None
+            else first_four_teams
+        )
         self.filtered_records = player_records.copy()
         self.set_roster_context(drafter, recent_picks)
         self.sort_column = "Proj. FPts"
@@ -771,7 +792,7 @@ class PlayerSelectionDialog:
             ("new_region", "New region for this drafter"),
             ("conflict", "Bracket conflict (could meet before Final Four)"),
             ("stack", "Same-team stack"),
-            ("crowded_region", "3rd+ pick in this region"),
+            ("crowded_region", "3rd+ pick in this region / Opening Round Team"),
             ("questionable", "Questionable"),
             ("out", "Out"),
         ):
@@ -1472,14 +1493,22 @@ class PlayerSelectionDialog:
                 return "", None
 
             roster = getattr(self, "roster", [])
-
-            if not roster:
-                return "", None
-
             team = str(record.get("Team") or "").strip()
             region = str(record.get("Region") or "").strip()
             team_key = team.casefold()
             region_key = region.casefold()
+            is_first_four = team_key in getattr(
+                self,
+                "first_four_teams",
+                ()
+            )
+
+            if not roster:
+                if is_first_four:
+                    return "Opening Round Team", "first_four"
+
+                return "", None
+
             hints = []
             row_tag = None
             conflicts = []
@@ -1536,6 +1565,10 @@ class PlayerSelectionDialog:
             if region and region_count >= 2:
                 hints.append(f"Region pick #{region_count + 1}")
                 row_tag = "crowded_region"
+
+            if is_first_four:
+                hints.append("Opening Round Team")
+                row_tag = "first_four"
 
             roster_regions = {
                 str(pick.get("Region") or "").strip().casefold()
@@ -4682,7 +4715,8 @@ class DraftApp:
                     available_players,
                     draft_history,
                     on_deck_text,
-                    pick_timer_seconds
+                    pick_timer_seconds,
+                    find_first_four_teams(self.players)
                 )
             else:
                 dialog.next_pick(
