@@ -2254,12 +2254,25 @@ def player_expected_games_remaining(row, data):
 
 
 def player_projected_fpts(row, data):
-    """Tournament FPts so far plus (tournament FPts avg x expected games remaining)."""
-    total = player_total(row, data["fantasy_weights"])
+    """Tournament FPts so far plus (FPts avg x expected games remaining).
+
+    Uses the tournament average, or the season average if no tournament
+    games have been played yet.
+    """
     games = row.get("games_played") or 0
-    if total is None or games <= 0:
+    expected_games = player_expected_games_remaining(row, data)
+
+    if games <= 0:
+        stats = data["player_stats"].get(row["player_name"].casefold(), {})
+        season_avg = sum_existing_values([stats.get("Tot. FPts")])
+        if season_avg is None:
+            return None
+        return round(season_avg * expected_games, 1)
+
+    total = player_total(row, data["fantasy_weights"])
+    if total is None:
         return None
-    return round(total + (total / games) * player_expected_games_remaining(row, data), 1)
+    return round(total + (total / games) * expected_games, 1)
 
 
 def make_player_rankings(data):
