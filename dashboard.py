@@ -2252,25 +2252,31 @@ def player_expected_games_remaining(row, data):
 
 
 def player_projected_fpts(row, data):
-    """Tournament FPts so far plus (FPts avg x expected games remaining).
+    """Tournament FPts so far plus (weighted FPts/game x expected games remaining).
 
-    Uses the tournament average, or the season average if no tournament
-    games have been played yet.
+    FPts/game blends the tournament and season averages using Config!J2, the
+    same blend as the power rankings. With no tournament games played, the
+    season average is used on its own.
     """
-    games = row.get("games_played") or 0
-    expected_games = player_expected_games_remaining(row, data)
-
-    if games <= 0:
-        stats = data["player_stats"].get(row["player_name"].casefold(), {})
-        season_avg = sum_existing_values([stats.get("Tot. FPts")])
-        if season_avg is None:
-            return None
-        return round(season_avg * expected_games, 1)
-
-    total = player_total(row, data["fantasy_weights"])
-    if total is None:
+    stats = data["player_stats"].get(row["player_name"].casefold(), {})
+    season_per_game = sum_existing_values([stats.get("Tot. FPts")])
+    if season_per_game is None:
         return None
-    return round(total + (total / games) * expected_games, 1)
+
+    games = row.get("games_played") or 0
+    total = player_total(row, data["fantasy_weights"])
+
+    if games <= 0 or total is None:
+        weighted_per_game = season_per_game
+        total = 0.0
+    else:
+        weight = data["tournament_fpts_weight"]
+        weighted_per_game = (
+            weight * (total / games) + (1.0 - weight) * season_per_game
+        )
+
+    expected_games = player_expected_games_remaining(row, data)
+    return round(total + weighted_per_game * expected_games, 1)
 
 
 def make_player_rankings(data):
