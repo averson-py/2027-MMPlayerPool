@@ -3161,7 +3161,7 @@ tab0, tab1, tab2, tab5, tab3, tab4 = st.tabs([
 ], key="main_tabs", on_change="rerun")
 
 with tab0:
-    st.subheader("Pool Overview")
+    st.subheader("🏟️ Pool Overview")
     st.caption("A quick look at the current state of the pool.")
 
     # Current leaders and headline stats. These are all derived from the
