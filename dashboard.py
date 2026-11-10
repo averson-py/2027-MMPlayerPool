@@ -378,11 +378,14 @@ def _norm_person_name(name):
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
-def get_espn_roster_photos(team_id):
+def get_espn_roster_photos(team_id, league="mens-college-basketball"):
     """Return {normalized player name: headshot URL} for one ESPN team."""
     photos = {}
     try:
-        resp = requests.get(ESPN_ROSTER_URL.format(team_id), timeout=10)
+        resp = requests.get(
+            ESPN_ROSTER_URL.format(team_id).replace("mens-college-basketball", league),
+            timeout=10,
+        )
         resp.raise_for_status()
         athletes = resp.json().get("athletes", [])
     except Exception:
@@ -401,7 +404,7 @@ def get_espn_roster_photos(team_id):
         url = (athlete.get("headshot") or {}).get("href")
         if not url and athlete.get("id"):
             url = (
-                "https://a.espncdn.com/i/headshots/mens-college-basketball/"
+                f"https://a.espncdn.com/i/headshots/{league}/"
                 f"players/full/{athlete['id']}.png"
             )
         if not url:
@@ -423,15 +426,70 @@ def photo_url_works(url):
         return False
 
 
+# Prefix a value with "NBA:" to search an NBA roster instead of a college one.
+PLAYER_PHOTO_TEAM_OVERRIDES = {
+    "Elliot Cadeau": "Michigan",
+    "Morez Johnson Jr.": "NBA:Dallas Mavericks",
+    "Yaxel Lendeborg": "NBA:Golden State Warriors",
+    "Trey McKenney": "Michigan",
+    "Aday Mara": "NBA:Oklahoma City Thunder",
+    "Alex Karaban": "NBA:Sacramento Kings",
+    "Tarris Reed Jr.": "NBA:San Antonio Spurs",
+    "Solo Ball": "UConn",
+    "JT Toppin": "Texas Tech",
+    "Caleb Wilson": "NBA:Chicago Bulls",
+    "Mikel Brown Jr.": "NBA:Brooklyn Nets",
+    "Joshua Jefferson": "NBA:Brooklyn Nets",
+    "Braden Huff": "Gonzaga",
+}
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def get_espn_nba_team_ids():
+    ids = {}
+    try:
+        resp = requests.get(
+            "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams",
+            timeout=10,
+        )
+        resp.raise_for_status()
+        teams = resp.json()["sports"][0]["leagues"][0]["teams"]
+    except Exception:
+        return ids
+    for entry in teams:
+        team = entry.get("team", {})
+        if not team.get("id"):
+            continue
+        for key in ("displayName", "shortDisplayName", "name"):
+            if team.get(key):
+                ids.setdefault(_norm_team_name(team[key]), team["id"])
+    return ids
+
+
 def get_player_photo_url(player_name, team):
     if not team or not player_name:
         return None
+    override = {
+        _norm_person_name(k): v for k, v in PLAYER_PHOTO_TEAM_OVERRIDES.items()
+    }.get(_norm_person_name(player_name))
+    if override and override.upper().startswith("NBA:"):
+        nba_team = override[4:].strip()
+        team_id = get_espn_nba_team_ids().get(_norm_team_name(nba_team))
+        if not team_id:
+            return None
+        url = get_espn_roster_photos(team_id, "nba").get(_norm_person_name(player_name))
+        return url if url and photo_url_works(url) else None
+    if override:
+        team = override
     manifest = get_image_manifest()
     if manifest is not None:
         rel = manifest["players"].get(
             f"{_norm_team_name(team)}|{_norm_person_name(player_name)}"
         )
-        return ASSETS_BASE_URL + rel if rel else None
+        if rel:
+            return ASSETS_BASE_URL + rel
+        if not override:
+            return None
     team_id = get_espn_team_ids().get(_norm_team_name(team))
     if not team_id:
         return None
