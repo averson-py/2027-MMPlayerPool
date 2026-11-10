@@ -3491,7 +3491,23 @@ with tab0:
 
 
     if latest["Winner"] and latest["Loser"]:
-        st.subheader(f"📋 Most Recent Statistics Entered - {latest['Winner']} def {latest['Loser']} [ {latest['Round']} ]")
+        def _title_logo(team):
+            url = get_logo_url(team)
+            return (
+                f'<img src="{html_lib.escape(str(url))}" referrerpolicy="no-referrer" '
+                'style="height:1.3em;width:auto;vertical-align:-0.2em;margin:0 0.2em;" '
+                'onerror="this.style.display=\'none\'">'
+                if url else ""
+            )
+
+        st.subheader("📋 Most Recent Statistics Entered")
+        st.markdown(
+            "<div style='font-size:1.25rem; font-weight:700;'>"
+            f"{_title_logo(latest['Winner'])}{html_lib.escape(str(latest['Winner']))} def "
+            f"{_title_logo(latest['Loser'])}{html_lib.escape(str(latest['Loser']))} "
+            f"[ {html_lib.escape(str(latest['Round']))} ]</div>",
+            unsafe_allow_html=True,
+        )
         game_round = round_lost_index(latest["Round"])
         game_teams = {str(latest["Winner"]).strip().casefold(), str(latest["Loser"]).strip().casefold()}
         recent_rows = []
