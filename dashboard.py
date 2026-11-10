@@ -3872,7 +3872,9 @@ with tab3:
                 sc1.metric(
                     "🧮 Total FPts",
                     f"{float(total_fpts):.1f}" if total_fpts is not None and pd.notna(total_fpts) else "—",
-                    f"{fpts_delta:+.1f} from {changes['round_name']}" if fpts_delta is not None else None,
+                    (f"{fpts_delta:+.1f} from {changes['round_name']}" if round(fpts_delta, 1) != 0 else "no change")
+                    if fpts_delta is not None else None,
+                    delta_color="normal" if fpts_delta is not None and round(fpts_delta, 1) != 0 else "off",
                 )
                 sc2.metric(
                     "📊 Pool Rank",
