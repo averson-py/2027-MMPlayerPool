@@ -3503,8 +3503,8 @@ with tab0:
         st.subheader("📋 Most Recent Statistics Entered")
         st.markdown(
             "<div style='font-size:1.25rem; font-weight:700;'>"
-            f"{_title_logo(latest['Winner'])}{html_lib.escape(str(latest['Winner']))} def "
-            f"{_title_logo(latest['Loser'])}{html_lib.escape(str(latest['Loser']))} "
+            f"{_title_logo(latest['Winner'])} {html_lib.escape(str(latest['Winner']))}  def  "
+            f"{_title_logo(latest['Loser'])} {html_lib.escape(str(latest['Loser']))} "
             f"[ {html_lib.escape(str(latest['Round']))} ]</div>",
             unsafe_allow_html=True,
         )
