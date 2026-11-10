@@ -3861,6 +3861,12 @@ with tab3:
             fpts_delta = changes["fpts_delta"]
             rank_change = changes["rank_change"]
             active_change = changes["active_change"]
+            rank_baseline = changes["round_name"]
+            if rank_change is None and owner_rank is not None and pd.notna(owner_rank) and not ratings.empty:
+                draft_match = ratings[ratings["Team Owner"].astype(str).str.casefold() == selected_draftee.casefold()]
+                if not draft_match.empty:
+                    rank_change = int(draft_match.iloc[0]["Rank"]) - int(owner_rank)
+                    rank_baseline = "draft rating"
             with st.container(key="team_summary"):
                 sc1, sc2, sc3, sc4 = st.columns(4)
                 sc1.metric(
@@ -3871,7 +3877,7 @@ with tab3:
                 sc2.metric(
                     "📊 Pool Rank",
                     f"{int(owner_rank)} of {len(standings)}" if owner_rank is not None and pd.notna(owner_rank) else "—",
-                    (f"{'-' if rank_change < 0 else ''}{abs(rank_change)} spot{'s' if abs(rank_change) != 1 else ''} from {changes['round_name']}"
+                    (f"{'-' if rank_change < 0 else ''}{abs(rank_change)} spot{'s' if abs(rank_change) != 1 else ''} from {rank_baseline}"
                      if rank_change else "no change")
                     if rank_change is not None else None,
                     delta_color="normal" if rank_change else "off",
