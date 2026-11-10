@@ -2320,7 +2320,7 @@ def make_player_rankings(data):
     return pd.DataFrame(result)[player_columns], result
 
 
-def make_performers(data, positive=True):
+def make_performers(data, positive=True, exclude_unavailable=False):
     result = []
     for row in data["draft_rows"]:
         total = player_total(row, data["fantasy_weights"])
@@ -2329,6 +2329,8 @@ def make_performers(data, positive=True):
             continue
 
         stats = data["player_stats"].get(row["player_name"].casefold(), {})
+        if exclude_unavailable and str(stats.get("Status") or "").strip().casefold() in ("q", "questionable", "o", "out"):
+            continue
         season_avg = sum_existing_values([stats.get("Tot. FPts")])
         if season_avg is None:
             continue
@@ -3711,6 +3713,13 @@ with tab2:
     )
 
     st.markdown("### <span style='color:#C62828; font-weight:800;'>↓</span> Top Underperformers 🪠", unsafe_allow_html=True)
+    if st.checkbox("Hide questionable and out players", key="hide_unavailable_under"):
+        under_filtered, _ = make_performers(data, False, exclude_unavailable=True)
+        under_display = under_filtered.rename(columns={"Delta From Average": "Delta From Season Avg."}).copy()
+        if "Avg. FPts/Tourn. Game" in under_display.columns:
+            under_display["Avg. FPts/Tourn. Game"] = under_display["Avg. FPts/Tourn. Game"].apply(
+                lambda x: f"{float(x):.1f}" if pd.notna(x) else ""
+            )
     display_df(
         under_display,
         height=240,
