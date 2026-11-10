@@ -3121,10 +3121,10 @@ ratings = make_draft_ratings(data)
 
 # Top-line summary
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("Pool Members", len(data["drafters"]))
-c2.metric("Drafted Players", len(data["draft_rows"]))
-c3.metric("Players Active", int(standings["Active Players"].sum()) if not standings.empty else 0)
-c4.metric("Teams Eliminated", len(data["teams_out"]))
+c1.metric("🧑‍💻 Pool Members", len(data["drafters"]))
+c2.metric("📝 Drafted Players", len(data["draft_rows"]))
+c3.metric("👥 Players Active", int(standings["Active Players"].sum()) if not standings.empty else 0)
+c4.metric("❌ Teams Eliminated", len(data["teams_out"]))
 
 pick_col, _pick_spacer = st.columns([1, 2])
 if not st.session_state.get("my_team") and not st.query_params.get("my_team") \
@@ -3864,12 +3864,12 @@ with tab3:
             with st.container(key="team_summary"):
                 sc1, sc2, sc3, sc4 = st.columns(4)
                 sc1.metric(
-                    "Total FPts",
+                    "🧮 Total FPts",
                     f"{float(total_fpts):.1f}" if total_fpts is not None and pd.notna(total_fpts) else "—",
                     f"{fpts_delta:+.1f} from {changes['round_name']}" if fpts_delta is not None else None,
                 )
                 sc2.metric(
-                    "Pool Rank",
+                    "📊 Pool Rank",
                     f"{int(owner_rank)} of {len(standings)}" if owner_rank is not None and pd.notna(owner_rank) else "—",
                     (f"{'-' if rank_change < 0 else ''}{abs(rank_change)} spot{'s' if abs(rank_change) != 1 else ''} from {changes['round_name']}"
                      if rank_change else "no change")
@@ -3878,7 +3878,7 @@ with tab3:
                 )
                 if best_player is not None:
                     sc3.metric(
-                        "Team MVP",
+                        "🌟 Team MVP",
                         str(best_player["Player Name"]),
                         f"{float(best_player['Tourn. FPts']):.1f} FPts",
                     )
@@ -3891,9 +3891,9 @@ with tab3:
                             unsafe_allow_html=True,
                         )
                 else:
-                    sc3.metric("Team MVP", "—")
+                    sc3.metric("🌟 Team MVP", "—")
                 sc4.metric(
-                    "Players Active",
+                    "👥 Players Active",
                     f"{alive_count} of {len(team_rows)}",
                     (f"{active_change:+d} from {changes['round_name']}" if active_change else "no change")
                     if active_change is not None else None,
