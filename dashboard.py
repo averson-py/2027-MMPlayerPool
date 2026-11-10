@@ -2752,14 +2752,14 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
                 border: 1px solid #e0e0e0; padding: 4px 8px; white-space: nowrap;
             }
             .photo-table-wrap th {background: #FFFFFF; color: #000000;}
-            .player-cell {display: flex; align-items: center; position: relative; height: 64px; overflow: hidden; padding-left: 112px; text-align: left; min-width: 230px;}
+            .player-cell {display: flex; align-items: center; position: relative; height: 64px; overflow: hidden; padding-left: 88px; text-align: left; min-width: 200px;}
             .player-cell span {white-space: normal; min-width: 0; overflow-wrap: anywhere; align-self: center;}
             .photo-table-wrap td:has(.player-cell) {vertical-align: bottom; padding-top: 0 !important; padding-bottom: 0 !important; overflow: visible;}
             .team-cell {display: flex; align-items: center; gap: 8px; min-width: 160px; padding-left: 10px;}
             .team-cell span {white-space: normal; min-width: 0; overflow-wrap: anywhere;}
             .team-logo-sm {width: 36px; height: 36px; object-fit: contain; flex-shrink: 0; display: inline-block;}
             .player-photo {
-                position: absolute; left: 0; bottom: 0; height: 60px; width: auto; max-width: 108px;
+                position: absolute; left: 0; bottom: 0; height: 60px; width: auto; max-width: 84px;
                 background: transparent; display: block; z-index: 1;
             }
             span.player-photo {width: 1px;}
