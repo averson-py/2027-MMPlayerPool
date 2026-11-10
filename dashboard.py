@@ -3490,6 +3490,48 @@ with tab0:
             )
 
 
+    if latest["Winner"] and latest["Loser"]:
+        st.subheader(f"📋 Most Recent Statistics Entered - {latest['Winner']} def {latest['Loser']} [ {latest['Round']} ]")
+        game_round = round_lost_index(latest["Round"])
+        game_teams = {str(latest["Winner"]).strip().casefold(), str(latest["Loser"]).strip().casefold()}
+        recent_rows = []
+        if game_round is not None and game_round >= 0:
+            for row in data["draft_rows"]:
+                stats = data["player_stats"].get(row["player_name"].casefold(), {})
+                team = stats.get("Team")
+                if team is None or str(team).strip().casefold() not in game_teams:
+                    continue
+                pts = (row.get("tourn_pts_rounds") or [None] * 6)[game_round]
+                reb = (row.get("tourn_reb_rounds") or [None] * 6)[game_round]
+                ast = (row.get("tourn_ast_rounds") or [None] * 6)[game_round]
+                fpts = weighted_fantasy_points(pts, reb, ast, data["fantasy_weights"])
+                if fpts is None:
+                    continue
+                recent_rows.append({
+                    "Player Name": player_label(row["player_name"], stats),
+                    "_photo": get_player_photo_url(row["player_name"], team),
+                    "Team": team,
+                    "FPts": float(fpts),
+                    "PTS": pts, "REB": reb, "AST": ast,
+                    "Team Owner": row["draftee"],
+                })
+        if recent_rows:
+            winner_key = str(latest["Winner"]).strip().casefold()
+            recent_df = pd.DataFrame(recent_rows)
+            recent_df["_loser"] = recent_df["Team"].astype(str).str.strip().str.casefold() != winner_key
+            recent_df = recent_df.sort_values(
+                ["_loser", "FPts"], ascending=[True, False], kind="stable"
+            ).drop(columns=["_loser"])
+            recent_df = recent_df[["Player Name", "_photo", "Team", "Team Owner", "FPts", "PTS", "REB", "AST"]]
+            for col in ("FPts", "PTS", "REB", "AST"):
+                recent_df[col] = recent_df[col].apply(
+                    lambda x: f"{float(x):.1f}" if col == "FPts" and pd.notna(x)
+                    else (f"{float(x):g}" if pd.notna(x) else "")
+                )
+            display_df(recent_df, height=min(80 + 38 * len(recent_df), 600), zebra=True)
+        else:
+            st.info("No drafted players appeared in the most recent game.")
+
     st.subheader("🚀 Standings Progression")
     st.caption("League ranking after each tournament round.")
     standings_history = make_standings_round_history(data)
