@@ -1239,6 +1239,7 @@ def render_bracket_html(rounds, region=None, team_players=None, my_team=None):
                 background: rgba(0,0,0,0.35); align-items: center; justify-content: center; }
             #player-modal .box { background: #fff; border-radius: 10px; padding: 16px 20px;
                 min-width: min(340px, 80%); max-width: 80%;
+                max-height: calc(100% - 16px); overflow-y: auto; box-sizing: border-box;
                 box-shadow: 0 8px 24px rgba(0,0,0,0.25); font-family: sans-serif; font-size: 13px; }
             #player-modal h3 { margin: 0 0 8px; font-size: 15px; white-space: nowrap; }
             #player-modal h4 { margin: 12px 0 4px; font-size: 13px; color: #4472C4; }
