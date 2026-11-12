@@ -2729,7 +2729,7 @@ def _standings_cell_clicked(select_key="standings_select"):
             return
 
 
-def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None, column_colors=None, selectable=False, zebra=False):
+def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None, column_colors=None, selectable=False, zebra=False, center=False):
     if df.empty:
         st.info("No data available yet.")
         return
@@ -2864,6 +2864,10 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
         use_container_width=True,
         hide_index=hide_index,
         height=actual_height,
+        column_config=(
+            {c: st.column_config.Column(alignment="center") for c in df.columns}
+            if center else None
+        ),
     )
 
 
@@ -3226,13 +3230,14 @@ with pick_col:
         bind="query-params",
     )
 
-tab0, tab1, tab2, tab5, tab3, tab4 = st.tabs([
+tab0, tab1, tab2, tab5, tab3, tab4, tab6 = st.tabs([
     "🏠 Pool Overview",
     "🏆 Standings",
     "📊 Player Statistics",
     "⛹️‍♂️ Tournament Bracket",
     TEAM_VIEW_TAB,
     "🎯 Draft Ratings",
+    "ℹ️ League Info",
 ], key="main_tabs", on_change="rerun")
 
 with tab0:
@@ -4146,6 +4151,98 @@ with tab4:
         },
         reverse_columns={"Draft Position": True},
     )
+
+with tab6:
+    st.subheader("ℹ️ League Info")
+
+    st.markdown("### FPts Per Statistic")
+    w_pts, w_reb, w_ast = data["fantasy_weights"]
+    fc1, fc2, fc3 = st.columns(3)
+    fc1.metric("PTS", f"{w_pts:g} FPts")
+    fc2.metric("REB", f"{w_reb:g} FPts")
+    fc3.metric("AST", f"{w_ast:g} FPts")
+
+    st.markdown("### Payouts")
+    cfg = data["payout_config"]
+    buy_in = cfg["D2"]
+    last_payout = buy_in * cfg["E2"]
+    third_payout = buy_in * cfg["F2"]
+    second_payout = buy_in * cfg["G2"]
+    # First place gets whatever remains of the total pot.
+    first_payout = buy_in * len(data["drafters"]) - last_payout - third_payout - second_payout
+    st.markdown(
+        "<style>.st-key-buy_in_card div[data-testid='stMetric'] "
+        "{background-color: #E6F4EA; border-left-color: #2E8B57;}"
+        ".st-key-total_pot_card div[data-testid='stMetric'] "
+        "{background-color: #E3F0FB; border-left-color: #2F80C9;}</style>",
+        unsafe_allow_html=True,
+    )
+    pc1, pc2, pc3, pc4, pc5, pc6 = st.columns(6)
+    with pc1:
+        with st.container(key="buy_in_card"):
+            st.metric("Buy-in", f"${buy_in:,.0f}")
+    with pc2:
+        with st.container(key="total_pot_card"):
+            st.metric("Total Pot", f"${buy_in * len(data['drafters']):,.0f}")
+    pc3.metric("🥇 1st Place", f"${first_payout:,.0f}")
+    pc4.metric("🥈 2nd Place", f"${second_payout:,.0f}")
+    pc5.metric("🥉 3rd Place", f"${third_payout:,.0f}")
+    pc6.metric("🦨 Last Place", f"${last_payout:,.0f}")
+
+    st.markdown("### FPts Projection Calculations")
+    st.markdown(
+        "**DRAFT RATING = Sum of All Players' Pre-Tournament Projected FPts for Each Team Owner**"
+    )
+    st.markdown(
+        "**IN-TOURNAMENT FPTS PROJECTION = Sum of All Players' In-Tournament Projected FPts "
+        "for Each Team Owner**"
+    )
+    st.markdown("<div style='height: 2rem;'></div>", unsafe_allow_html=True)
+    st.markdown(
+        "**PLAYER PRE-TOURNAMENT FPTS PROJECTION = [ Player Season Avg. FPts ] x "
+        "[ Average Number of Games Played By Player's Seed ]**"
+    )
+    st.markdown(
+        "*Ex. Cameron Boozer - 1 Seed: [ 29.7 FPts Per Season Game ] x "
+        "[ 4.34 Avg. Games Played by 1 Seed ] = 128.9 FPts Projected Pre-Tournament*"
+    )
+    st.markdown(
+        "*Ex. Zuby Ejiofor - 5 Seed: [ 21.8 FPts / Game ] x "
+        "[ 2.14 Avg. Games Played by 5 Seed ] = 46.65 FPts Projected Pre-Tournament*"
+    )
+    tourn_w = data["tournament_fpts_weight"]
+    st.markdown("<div style='height: 2rem;'></div>", unsafe_allow_html=True)
+    st.markdown(
+        f"**PLAYER IN-TOURNAMENT FPTS PROJECTION = [ [ [ Player Season Avg. FPts x {1 - tourn_w:g} ] + "
+        f"[Player Tourn. Avg. FPts x {tourn_w:g}] ] x [ Expected Number of Games Remaining ] ] + [ FPts Already Scored ]**"
+    )
+    st.markdown(
+        "**EXPECTED GAMES REMAINING = Maximum of [ Average Number of Games Played By Player's Seed "
+        " - Number of Games Already Played by Player ] and 1, ensuring that players always project "
+        "to have at least 1 game remaining until team is eliminated**"
+    )
+    st.markdown(
+        f"*Ex. Cameron Boozer - 1 Seed after 1 game: [ [ [ 29.7 FPts Per Season Game  x {1 - tourn_w:g} ] + "
+        f"[ 30 FPts per Tournament Game x {tourn_w:g}] ] x [ 4.34 Avg. Games Played by 1 Seed  - 1 Game "
+        "Already Played ] ] + [ 30 FPts Already Scored ] = 129.9 FPts Projected For Tournament "
+        "After 1 Game*"
+    )
+    st.markdown(
+        f"*Ex. Zuby Ejiofor - 5 Seed after 2 games: [ [ [ 21.8 FPts Per Season Game x {1 - tourn_w:g} ] + "
+        f"[ 34.5 FPts per Tournament Game x {tourn_w:g}] ] x [ 2.14 Avg. Games Played by 5 Seed - 2 Game "
+        "Already Played ( = 0.14, so only expected to play 1 more game and lose ) ] ] + "
+        "[ 69 FPts Already Scored ] = 99.7 FPts Projected For Tournament After 2 Games*"
+    )
+    st.caption("Average number of tournament games played by each seed.")
+    seed_games_df = pd.DataFrame(
+        [
+            {"Seed": seed, "Avg. Games Played": f"{games:.2f}"}
+            for seed, games in data["seed_average_games"].items()
+        ]
+    )
+    seed_table_col, _seed_spacer = st.columns([1, 2])
+    with seed_table_col:
+        display_df(seed_games_df, height=620, center=True)
 
 with tab5:
     st.subheader("Tournament Bracket")
