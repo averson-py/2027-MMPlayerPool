@@ -3034,6 +3034,14 @@ st.markdown(
     @container (max-width: 340px) {
         .mvp-photo-float, .logo-float {display: none;}
     }
+    /* Below ~1400px four cards per row are too narrow for text plus photo/logo, so use 2 per row. */
+    @media (min-width: 641px) and (max-width: 1400px) {
+        div[data-testid="stHorizontalBlock"]:has(.mvp-photo-float) > div[data-testid="stColumn"],
+        div[data-testid="stHorizontalBlock"]:has(.logo-float) > div[data-testid="stColumn"] {
+            flex: 1 1 calc(50% - 1rem) !important;
+            min-width: calc(50% - 1rem) !important;
+        }
+    }
 
     /* Zero-height script frames: take them out of the layout flow so they
        do not add blank gaps between elements. */
