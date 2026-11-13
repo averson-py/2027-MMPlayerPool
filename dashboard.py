@@ -2363,6 +2363,8 @@ def player_expected_games_remaining(row, data):
         if seed_number is not None else None
     )
 
+    if injury_status(row["player_name"], stats) in ("o", "out"):
+        return 0.0
     if not team_is_active or games_played >= 6:
         return 0.0
     if historical_avg_games is None:
