@@ -1896,8 +1896,68 @@ def player_total(row, fantasy_weights):
     )
 
 
-def player_label(name, stats):
+COVERS_INJURIES_URL = "https://www.covers.com/sport/basketball/ncaab/injuries"
+COVERS_TEAM_ALIASES = {"uconn": "connecticut"}
+_NAME_SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
+
+
+def _injury_name_key(name):
+    parts = [re.sub(r"[^a-z0-9]", "", p) for p in str(name).casefold().split()]
+    parts = [p for p in parts if p and p not in _NAME_SUFFIXES]
+    if len(parts) < 2:
+        return None
+    return parts[0][0], parts[-1]
+
+
+def _injury_team_key(team):
+    key = _norm_team_name(team)
+    return COVERS_TEAM_ALIASES.get(key, key)
+
+
+@st.cache_data(ttl=10800, show_spinner=False)
+def get_covers_injuries():
+    """Return {(first initial, last name): [(team key, 'out'|'questionable')]} from Covers.com."""
+    injuries = {}
+    try:
+        resp = requests.get(COVERS_INJURIES_URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        resp.raise_for_status()
+        html = resp.text
+    except Exception:
+        return injuries
+
+    sections = re.split(r'<a id="([^"]+)"></a>\s*<section>', html)
+    for team, body in zip(sections[1::2], sections[2::2]):
+        for name, status in re.findall(
+            r"class='player-link'[^>]*>\s*([^<]+?)\s*</a>.*?<b>([^<]+)</b>", body, re.S
+        ):
+            status = status.strip().casefold()
+            if status.startswith("out"):
+                level = "out"
+            elif status.startswith(("questionable", "doubtful", "day")):
+                level = "questionable"
+            else:
+                continue
+            key = _injury_name_key(re.sub(r"\s+", " ", name))
+            if key:
+                injuries.setdefault(key, []).append((_injury_team_key(team), level))
+    return injuries
+
+
+def injury_status(name, stats):
+    """Workbook Status wins; otherwise fall back to the Covers.com injury report."""
     status = str(stats.get("Status") or "").strip().casefold()
+    if status:
+        return status
+    key = _injury_name_key(name)
+    matches = get_covers_injuries().get(key, []) if key else []
+    if len(matches) > 1:
+        team = _injury_team_key(stats.get("Team") or "")
+        matches = [m for m in matches if m[0] == team or m[0] in team or team in m[0]]
+    return matches[0][1] if len(matches) == 1 else ""
+
+
+def player_label(name, stats):
+    status = injury_status(name, stats)
     marker = {
         "q": "⚠️",
         "questionable": "⚠️",
@@ -2388,7 +2448,7 @@ def make_performers(data, positive=True, exclude_unavailable=False):
             continue
 
         stats = data["player_stats"].get(row["player_name"].casefold(), {})
-        if exclude_unavailable and str(stats.get("Status") or "").strip().casefold() in ("q", "questionable", "o", "out"):
+        if exclude_unavailable and injury_status(row["player_name"], stats) in ("q", "questionable", "o", "out"):
             continue
         season_avg = sum_existing_values([stats.get("Tot. FPts")])
         if season_avg is None:
