@@ -651,6 +651,166 @@ class MacButton(tk.Label):
 ThemedButton = MacButton if sys.platform == "darwin" else tk.Button
 
 
+IMAGE_ASSETS_DIR = Path(__file__).parent / "assets"
+IMAGE_ROSTER_URL = (
+    "https://site.api.espn.com/apis/site/v2/sports/basketball/"
+    "mens-college-basketball/teams/{}/roster"
+)
+IMAGE_LOGO_URL = "https://a.espncdn.com/i/teamlogos/ncaa/500/{}.png"
+
+
+# These must stay identical to the helpers in dashboard.py.
+def image_norm_team(name):
+    name = str(name).casefold().replace("saint", "st")
+    return re.sub(r"[^a-z0-9]", "", name)
+
+
+def image_norm_person(name):
+    return re.sub(r"[^a-z0-9]", "", str(name).casefold())
+
+
+def image_sheet_rows(wb, sheet):
+    if sheet not in wb.sheetnames:
+        return [], []
+    rows = wb[sheet].iter_rows(values_only=True)
+    header = next(rows, ())
+    return [str(h).strip() if h is not None else "" for h in header], list(rows)
+
+
+def image_get_json(url):
+    import requests
+    resp = requests.get(url, timeout=20)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def image_download(url, dest):
+    import requests
+    try:
+        resp = requests.get(url, timeout=20)
+        if resp.status_code == 200 and "image" in resp.headers.get("content-type", ""):
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(resp.content)
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def image_roster_photos(team_id):
+    photos = {}
+    try:
+        athletes = image_get_json(IMAGE_ROSTER_URL.format(team_id)).get("athletes", [])
+    except Exception:
+        return photos
+    flat = []
+    for entry in athletes:
+        if isinstance(entry, dict) and "items" in entry:
+            flat.extend(entry["items"])
+        else:
+            flat.append(entry)
+    for athlete in flat:
+        if not isinstance(athlete, dict):
+            continue
+        url = (athlete.get("headshot") or {}).get("href")
+        if not url and athlete.get("id"):
+            url = (
+                "https://a.espncdn.com/i/headshots/mens-college-basketball/"
+                f"players/full/{athlete['id']}.png"
+            )
+        if not url:
+            continue
+        for key in ("fullName", "displayName"):
+            if athlete.get(key):
+                photos.setdefault(
+                    image_norm_person(athlete[key]), (athlete.get("id"), url)
+                )
+    return photos
+
+
+def download_pool_images(workbook_path, progress=lambda text: None):
+    """Save team logos and drafted-player headshots into assets/."""
+    wb = load_workbook(workbook_path, read_only=True, data_only=True)
+
+    header, rows = image_sheet_rows(wb, "TeamList")
+    if "Team" not in header:
+        raise ValueError("TeamList sheet with a Team column is required.")
+    ti = header.index("Team")
+    teams = {}
+    for r in rows:
+        if ti < len(r) and r[ti]:
+            teams[image_norm_team(r[ti])] = str(r[ti]).strip()
+
+    header, rows = image_sheet_rows(wb, TEAM_DATA_SHEET)
+    pi, ci = header.index("Player"), header.index("Team")
+    player_team = {}
+    for r in rows:
+        if pi < len(r) and r[pi] and ci < len(r) and r[ci]:
+            player_team[str(r[pi]).strip().casefold()] = str(r[ci]).strip()
+
+    _, rows = image_sheet_rows(wb, DRAFT_SHEET)
+    drafted = sorted({str(r[2]).strip() for r in rows if len(r) > 2 and r[2]})
+    wb.close()
+
+    progress("Looking up ESPN team IDs...")
+    espn = image_get_json(
+        "https://site.api.espn.com/apis/site/v2/sports/basketball/"
+        "mens-college-basketball/teams?limit=500"
+    )["sports"][0]["leagues"][0]["teams"]
+    ids = {}
+    for entry in espn:
+        t = entry.get("team", {})
+        if not t.get("id"):
+            continue
+        for key in ("location", "shortDisplayName", "displayName", "name"):
+            if t.get(key):
+                ids.setdefault(image_norm_team(t[key]), t["id"])
+
+    manifest = {"teams": {}, "players": {}}
+    missing = []
+
+    for n, (key, name) in enumerate(sorted(teams.items()), 1):
+        progress(f"Logo {n}/{len(teams)}: {name}")
+        team_id = ids.get(key)
+        rel = f"logos/{team_id}.png" if team_id else None
+        if rel and image_download(IMAGE_LOGO_URL.format(team_id), IMAGE_ASSETS_DIR / rel):
+            manifest["teams"][key] = rel
+        else:
+            missing.append(f"logo: {name}")
+
+    roster_cache = {}
+    for n, player in enumerate(drafted, 1):
+        progress(f"Headshot {n}/{len(drafted)}: {player}")
+        team = player_team.get(player.casefold())
+        team_id = ids.get(image_norm_team(team)) if team else None
+        if not team_id:
+            missing.append(f"headshot (no team): {player}")
+            continue
+        if team_id not in roster_cache:
+            roster_cache[team_id] = image_roster_photos(team_id)
+        found = roster_cache[team_id].get(image_norm_person(player))
+        if not found:
+            missing.append(f"headshot (not on roster): {player} ({team})")
+            continue
+        athlete_id, url = found
+        rel = f"headshots/{athlete_id or image_norm_person(player)}.png"
+        if image_download(url, IMAGE_ASSETS_DIR / rel):
+            manifest["players"][
+                f"{image_norm_team(team)}|{image_norm_person(player)}"
+            ] = rel
+        else:
+            missing.append(f"headshot (download failed): {player}")
+
+    IMAGE_ASSETS_DIR.mkdir(exist_ok=True)
+    (IMAGE_ASSETS_DIR / "manifest.json").write_text(
+        json.dumps(manifest, indent=1, sort_keys=True), encoding="utf-8"
+    )
+    return (
+        len(manifest["teams"]), len(teams),
+        len(manifest["players"]), len(drafted), missing,
+    )
+
+
 def fetch_espn_team_index():
     data = espn_get_json("teams", {"limit": 500, "groups": 50})
     teams = []
@@ -2188,6 +2348,18 @@ class DraftApp:
             row=2, column=0, columnspan=2, sticky="ew", padx=6, pady=6
         )
 
+        self.images_button = ThemedButton(
+            actions,
+            text="\U0001F5BC  Fetch Team Logos and Player Images",
+            command=self.fetch_images,
+            font=(THEME["font"], 11, "bold"),
+            pady=10,
+            state=tk.DISABLED
+        )
+        self.images_button.grid(
+            row=3, column=0, columnspan=2, sticky="ew", padx=6, pady=6
+        )
+
         drafters_card = tk.LabelFrame(body, text="Draft Order")
         drafters_card.pack(fill=tk.BOTH, expand=True, pady=(12, 0))
 
@@ -2321,6 +2493,7 @@ class DraftApp:
 
             self.available_teams = self.get_available_teams()
             self.status_button.config(state=tk.NORMAL)
+            self.images_button.config(state=tk.NORMAL)
 
             self.game_results_button.config(
                 state=(
@@ -4094,6 +4267,49 @@ class DraftApp:
 
                 if cell.value in (None, ""):
                     cell.value = "OUT"
+
+    def fetch_images(self):
+        if not self.file_path or not Path(self.file_path).is_file():
+            messagebox.showwarning("Fetch Images", "Load a workbook first.")
+            return
+
+        if not messagebox.askyesno(
+            "Fetch Images",
+            "Download team logos and drafted-player headshots into the "
+            "assets folder?\n\nSave the workbook first so drafted players "
+            "are included. Commit and push assets/ afterward."
+        ):
+            return
+
+        self.images_button.config(state=tk.DISABLED)
+        self.root.config(cursor="watch")
+
+        def progress(text):
+            self.status_label.config(text=text)
+            self.root.update()
+
+        try:
+            summary = download_pool_images(self.file_path, progress)
+        except Exception as error:
+            messagebox.showerror("Fetch Images", f"Image fetch failed: {error}")
+            summary = None
+        finally:
+            self.root.config(cursor="")
+            self.images_button.config(state=tk.NORMAL)
+
+        if summary:
+            logos, team_total, heads, player_total, missing = summary
+            self.status_label.config(
+                text=f"Saved {logos}/{team_total} logos and "
+                f"{heads}/{player_total} headshots."
+            )
+            detail = f"Saved {logos}/{team_total} logos and {heads}/{player_total} headshots."
+            if missing:
+                detail += "\n\nMissing:\n" + "\n".join(missing[:25])
+                if len(missing) > 25:
+                    detail += f"\n...and {len(missing) - 25} more"
+            detail += "\n\nNow commit and push the assets/ folder."
+            messagebox.showinfo("Fetch Images", detail)
 
     def find_team_list_sheet(self):
         if self.workbook is None:
