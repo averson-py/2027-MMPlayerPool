@@ -3026,7 +3026,9 @@ class DraftApp:
         window.transient(self.root)
         window.grab_set()
 
-        round_var = tk.StringVar()
+        round_var = tk.StringVar(
+            value=self.last_game_result.get("Round", "")
+        )
         winner_var = tk.StringVar()
         loser_var = tk.StringVar()
 
@@ -4079,7 +4081,7 @@ class DraftApp:
             window.destroy()
             return
 
-        round_var.set("")
+        round_var.set(selected_round)
         winner_var.set("")
         loser_var.set("")
 
