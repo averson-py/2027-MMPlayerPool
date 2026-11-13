@@ -293,6 +293,78 @@ def name_similarity(first, second):
     return difflib.SequenceMatcher(None, first, second).ratio()
 
 
+COVERS_INJURIES_URL = "https://www.covers.com/sport/basketball/ncaab/injuries"
+COVERS_TEAM_ALIASES = {"uconn": "connecticut"}
+
+
+def injury_name_key(name):
+    """Return (first initial, last name) so 'N. Khamenia' matches 'Nik Khamenia'."""
+    parts = normalize_name(name).split()
+
+    if len(parts) < 2:
+        return None
+
+    return parts[0][0], parts[-1]
+
+
+def injury_team_key(team):
+    key = re.sub(r"[^a-z0-9]", "", str(team or "").casefold().replace("saint", "st"))
+    return COVERS_TEAM_ALIASES.get(key, key)
+
+
+def fetch_covers_injuries():
+    """Return {(initial, last): [(team key, 'Out'|'Questionable')]} from Covers.com."""
+    request = urllib.request.Request(
+        COVERS_INJURIES_URL,
+        headers={"User-Agent": "Mozilla/5.0"}
+    )
+
+    with urllib.request.urlopen(request, timeout=20) as response:
+        html = response.read().decode("utf-8", errors="replace")
+
+    injuries = {}
+    sections = re.split(r'<a id="([^"]+)"></a>\s*<section>', html)
+
+    for team, body in zip(sections[1::2], sections[2::2]):
+        for name, status in re.findall(
+            r"class='player-link'[^>]*>\s*([^<]+?)\s*</a>.*?<b>([^<]+)</b>",
+            body,
+            re.S
+        ):
+            status = status.strip().casefold()
+
+            if status.startswith("out"):
+                level = "Out"
+            elif status.startswith(("questionable", "doubtful", "day")):
+                level = "Questionable"
+            else:
+                continue
+
+            key = injury_name_key(re.sub(r"\s+", " ", name))
+
+            if key:
+                injuries.setdefault(key, []).append(
+                    (injury_team_key(team), level)
+                )
+
+    return injuries
+
+
+def lookup_covers_injury(injuries, player, team):
+    key = injury_name_key(player)
+    matches = injuries.get(key, []) if key else []
+
+    if len(matches) > 1:
+        team_key = injury_team_key(team)
+        matches = [
+            match for match in matches
+            if match[0] == team_key
+            or match[0] in team_key
+            or team_key in match[0]
+        ]
+
+    return matches[0][1] if len(matches) == 1 else ""
+
 def espn_team_score(espn_team, team_name):
     candidates = [
         espn_team.get(key)
@@ -4739,6 +4811,38 @@ class DraftApp:
         refresh()
         filter_entry.focus_set()
 
+    def apply_live_injuries(self):
+        """Overlay the current Covers.com injury report on player statuses.
+
+        Statuses are held in memory only (never written to the workbook). A
+        status typed into the workbook still takes priority.
+        """
+        try:
+            injuries = fetch_covers_injuries()
+        except Exception as error:
+            self.status_label.config(
+                text=f"Injury report unavailable ({error}); using workbook statuses."
+            )
+            return
+
+        count = 0
+
+        for record in self.players:
+            if "_sheet_status" not in record:
+                record["_sheet_status"] = normalize_status(record.get("Status"))
+
+            status = record["_sheet_status"] or lookup_covers_injury(
+                injuries, record.get("Player"), record.get("Team")
+            )
+            record["Status"] = status
+
+            if status and not record["_sheet_status"]:
+                count += 1
+
+        self.status_label.config(
+            text=f"Loaded live injury status for {count} player(s)."
+        )
+
     def begin_draft(self):
         if self.workbook is None:
             messagebox.showwarning(
@@ -4766,6 +4870,8 @@ class DraftApp:
         pick_timer_seconds = self.read_pick_timer_seconds(
             self.workbook[CONFIG_SHEET]
         )
+
+        self.apply_live_injuries()
 
         available_players = self.players.copy()
         draft_history = []
