@@ -1713,8 +1713,12 @@ class PlayerSelectionDialog:
                     pick.get("Seed")
                 )
 
-                if meeting and (meeting, pick_team) not in conflicts:
-                    conflicts.append((meeting, pick_team))
+                if meeting and (meeting, pick_team) not in [
+                    (m, t) for m, t, _ in conflicts
+                ]:
+                    conflicts.append(
+                        (meeting, pick_team, parse_seed(pick.get("Seed")))
+                    )
 
             if conflicts:
                 conflicts.sort(
@@ -1722,8 +1726,9 @@ class PlayerSelectionDialog:
                 )
                 hints.append(
                     "Conflict: " + ", ".join(
-                        f"{meeting} vs {pick_team}"
-                        for meeting, pick_team in conflicts
+                        f"{meeting} vs ({seed}) {pick_team}" if seed
+                        else f"{meeting} vs {pick_team}"
+                        for meeting, pick_team, seed in conflicts
                     )
                 )
                 row_tag = "conflict"
@@ -4584,6 +4589,8 @@ class DraftApp:
             )
             return
 
+        self.apply_live_injuries()
+
         window = tk.Toplevel(self.root)
         window.title("Update Player Statuses")
         window.geometry("760x620")
@@ -4726,7 +4733,7 @@ class DraftApp:
                 previous[row_id] = (cell.value, record.get("Status"))
                 cell.value = status or None
                 record["Status"] = status
-
+                record["_sheet_status"] = status
             if not self.safe_save():
                 for row_id, (cell_value, record_status) in previous.items():
                     record = record_by_row[row_id]
@@ -4735,6 +4742,7 @@ class DraftApp:
                         column=STATUS_COLUMN
                     ).value = cell_value
                     record["Status"] = record_status
+                    record["_sheet_status"] = normalize_status(cell_value)
                 return
 
             label = status or "cleared"
