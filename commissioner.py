@@ -3561,6 +3561,8 @@ class DraftApp:
             )
             return
 
+        self.apply_live_injuries()
+
         status_by_player = {
             str(record.get("Player") or "").strip().casefold():
                 str(record.get("Status") or "").strip().casefold()
