@@ -3377,8 +3377,8 @@ with tab0:
                 biggest_faller_text = "No one moved down"
     else:
         # Before the first round is complete, use the pre-tournament Draft
-        # Ratings rank as the baseline and compare it with the current Power
-        # Rankings rank. Positive movement means a team is ranked higher now.
+        # Ratings rank as the baseline and compare it with the current
+        # tournament standings rank. Positive movement means a team is ranked higher now.
         draft_rank_by_owner = {}
         if not ratings.empty and {"Team Owner", "Rank"}.issubset(ratings.columns):
             draft_rank_by_owner = {
@@ -3387,8 +3387,8 @@ with tab0:
             }
 
         changes = []
-        if not power.empty and {"Team Owner", "Rank"}.issubset(power.columns):
-            for _, row in power.iterrows():
+        if not standings.empty and {"Team Owner", "Rank"}.issubset(standings.columns):
+            for _, row in standings.iterrows():
                 owner = str(row["Team Owner"])
                 draft_rank = draft_rank_by_owner.get(owner.casefold())
                 current_rank = row["Rank"]
