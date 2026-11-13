@@ -1927,12 +1927,13 @@ class PlayerSelectionDialog:
     def confirm_status(self, record):
         status = normalize_status(record.get("Status"))
 
-        if status != "Out":
+        if status not in ("Out", "Questionable"):
             return True
 
         return messagebox.askyesno(
-            "Player Marked Out",
-            f"{record.get('Player')} ({record.get('Team')}) is marked OUT."
+            f"Player Marked {status}",
+            f"{record.get('Player')} ({record.get('Team')}) is marked "
+            f"{status.upper()}."
             "\n\nDraft anyway?",
             icon="warning",
             parent=self.window
