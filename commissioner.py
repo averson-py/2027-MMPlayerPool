@@ -4,6 +4,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 import difflib
 import json
+import random
 import os
 import re
 import sys
@@ -3112,6 +3113,17 @@ class DraftApp:
         )
         espn_status_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=12)
 
+        simulate_button = ThemedButton(
+            espn_row,
+            text="Simulate Game",
+            padx=14,
+            command=lambda: self.simulate_game_stats(
+                stats_entries,
+                espn_status_label
+            )
+        )
+        simulate_button.pack(side=tk.RIGHT)
+
         players_frame = tk.LabelFrame(
             window,
             text="Drafted Players and Statistics"
@@ -3538,6 +3550,44 @@ class DraftApp:
                 "entries": player_stat_entries
             }
 
+
+    def simulate_game_stats(self, stats_entries, status_label):
+        if not stats_entries:
+            messagebox.showwarning(
+                "Simulate Game",
+                "Select the winner and loser first so players are loaded."
+            )
+            return
+
+        status_by_player = {
+            str(record.get("Player") or "").strip().casefold():
+                str(record.get("Status") or "").strip().casefold()
+            for record in self.players
+        }
+        simulated = 0
+        out = 0
+
+        for player_key, info in stats_entries.items():
+            is_out = status_by_player.get(player_key) in ("out", "o")
+
+            if is_out:
+                values = {"PTS": 0, "REB": 0, "AST": 0}
+                out += 1
+            else:
+                values = {
+                    "PTS": random.randint(2, 32),
+                    "REB": random.randint(0, 12),
+                    "AST": random.randint(0, 9)
+                }
+                simulated += 1
+
+            for stat_name, entry in info["entries"].items():
+                entry.delete(0, tk.END)
+                entry.insert(0, str(values[stat_name]))
+
+        status_label.config(
+            text=f"Simulated {simulated} players; {out} OUT set to 0."
+        )
 
     def fetch_espn_stats(
         self,
