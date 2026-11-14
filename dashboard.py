@@ -3186,12 +3186,28 @@ if LOGO_PATH.is_file():
     logo_b64 = base64.b64encode(LOGO_PATH.read_bytes()).decode()
     st.markdown(
         f"""
-        <div style="display:flex;justify-content:center;
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Alfa+Slab+One&display=swap');
+        .pool-header-text {{display:none;}}
+        @media (min-width: 1000px) {{
+            .pool-header-text {{
+                display:block;margin-left:1.5rem;
+                font-family:'Alfa Slab One','Rockwell Extra Bold','Rockwell','Georgia',serif;
+                font-weight:400;font-style:italic;letter-spacing:0.02em;
+                font-size:clamp(1.8rem,3vw,3rem);line-height:1.1;
+                color:#2E5C8A;text-transform:uppercase;
+            }}
+        }}
+        </style>
+        <div style="display:flex;justify-content:center;align-items:center;
                     border-bottom:3px solid #F28C28;padding-bottom:0.75rem;
                     margin-bottom:0.5rem;">
             <img src="data:image/png;base64,{logo_b64}"
                  style="height:clamp(7rem,14vw,11rem);width:auto;max-width:90%;
                         object-fit:contain;">
+            <div class="pool-header-text">
+                2027 March Madness<br>Player Pool Dashboard
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
