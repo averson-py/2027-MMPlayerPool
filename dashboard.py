@@ -4032,7 +4032,7 @@ with tab2:
     )
 
     st.markdown("### <span style='color:#C62828; font-weight:800;'>↓</span> Top Underperformers 🪠", unsafe_allow_html=True)
-    if st.checkbox("Hide questionable and out players", key="hide_unavailable_under"):
+    if st.checkbox("Hide Injured players", key="hide_unavailable_under"):
         under_filtered, _ = make_performers(data, False, exclude_unavailable=True)
         under_display = under_filtered.rename(columns={"Delta From Average": "Delta From Season Avg."}).copy()
         if "Avg. FPts/Tourn. Game" in under_display.columns:
@@ -4046,8 +4046,11 @@ with tab2:
         performance_gradient="red",
     )
 
-    st.divider()
-    st.subheader("Injured Players")
+    st.markdown(
+        "<hr style='margin:0.25rem 0 0.5rem 0;border:0;border-top:1px solid #d9dbe0;'>",
+        unsafe_allow_html=True,
+    )
+    st.subheader("🚑 Injured Players 🩼")
     st.caption("⛔ Out · ⚠️ Questionable")
     unavailable_df, _ = make_player_rankings(data, only_unavailable=True)
     unavailable_df = unavailable_df.drop(columns=["Rank"], errors="ignore")
