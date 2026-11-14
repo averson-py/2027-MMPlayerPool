@@ -3021,6 +3021,21 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+import streamlit.components.v1 as components
+
+components.html(
+    f"""<script>
+    const d = window.parent.document;
+    for (const rel of ["apple-touch-icon", "icon"]) {{
+        let l = d.createElement("link");
+        l.rel = rel;
+        l.href = "{ASSETS_BASE_URL}app_icon.png";
+        d.head.appendChild(l);
+    }}
+    </script>""",
+    height=0,
+)
+
 st.markdown(
     """
     <style>
