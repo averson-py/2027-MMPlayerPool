@@ -3938,7 +3938,10 @@ with tab1:
 
 
 with tab2:
-    st.subheader("Player Finder")
+    st.markdown(
+        "<h3 style='margin:0;padding:0 0 0.25rem 0;'>Player Finder</h3>",
+        unsafe_allow_html=True,
+    )
     selected_player = st.selectbox(
         "Search for a player",
         [""] + data["player_names"],
@@ -3998,7 +4001,10 @@ with tab2:
             )
         else:
             st.info(f"{selected_player} was not drafted.")
-    st.divider()
+    st.markdown(
+        "<hr style='margin:0.25rem 0 0.5rem 0;border:0;border-top:1px solid #d9dbe0;'>",
+        unsafe_allow_html=True,
+    )
 
     st.subheader("Player Rankings — Top 10")
     st.caption("⛔ Out · ⚠️ Questionable")
