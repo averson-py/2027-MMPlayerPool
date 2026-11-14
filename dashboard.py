@@ -3040,7 +3040,8 @@ st.markdown(
         visibility: hidden !important;
     }
 
-    .block-container {padding-top: 1.2rem; padding-bottom: 2rem;}
+    .block-container,
+    div[data-testid="stMainBlockContainer"] {padding-top: 0.5rem !important; padding-bottom: 2rem;}
 
     /* Collapse zero-height helper iframes (browser-storage scripts) so they
        do not leave a blank bar above the tabs. Kept in layout, not display:none,
