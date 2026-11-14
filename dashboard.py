@@ -2408,8 +2408,12 @@ def make_player_rankings(data, only_unavailable=False):
             "q", "questionable", "o", "out"
         ):
             continue
+        injury_order = (
+            0 if injury_status(row["player_name"], stats) in ("o", "out") else 1
+        )
         team = stats.get("Team")
         result.append({
+            "_injury_order": injury_order,
             "Player Name": player_label(row["player_name"], stats),
             "_photo": get_player_photo_url(row["player_name"], team),
             "Team": team,
@@ -2427,6 +2431,7 @@ def make_player_rankings(data, only_unavailable=False):
         })
 
     result.sort(key=lambda p: (
+        p["_injury_order"] if only_unavailable else 0,
         -(p["Total FPts"] if p["Total FPts"] is not None else 0),
         draft_position_sort_key(p["_draft_position"]),
     ))
