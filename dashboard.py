@@ -3184,16 +3184,26 @@ if LOGO_PATH.is_file():
     import base64
 
     logo_b64 = base64.b64encode(LOGO_PATH.read_bytes()).decode()
+    FONT_PATH = ASSETS_DIR / "freshman.ttf"
+    font_face_css = ""
+    if FONT_PATH.is_file():
+        font_b64 = base64.b64encode(FONT_PATH.read_bytes()).decode()
+        font_face_css = (
+            "@font-face {font-family:'Freshman';"
+            f"src:url(data:font/ttf;base64,{font_b64}) format('truetype');"
+            "font-display:swap;}"
+        )
     st.markdown(
         f"""
         <style>
-        @import url('https://fonts.googleapis.com/css2?family=Alfa+Slab+One&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Barlow:wght@600&display=swap');
         .pool-header-text {{display:none;}}
+        {font_face_css}
         @media (min-width: 1000px) {{
             .pool-header-text {{
                 display:block;margin-left:1.5rem;
-                font-family:'Alfa Slab One','Rockwell Extra Bold','Rockwell','Georgia',serif;
-                font-weight:400;font-style:italic;letter-spacing:0.02em;
+                font-family:'Freshman','Alfa Slab One','Rockwell Extra Bold','Georgia',serif;
+                font-weight:400;font-style:normal;letter-spacing:0.02em;
                 font-size:clamp(1.8rem,3vw,3rem);line-height:1.1;
                 color:#2E5C8A;text-transform:uppercase;
             }}
@@ -3206,7 +3216,8 @@ if LOGO_PATH.is_file():
                  style="height:clamp(7rem,14vw,11rem);width:auto;max-width:90%;
                         object-fit:contain;">
             <div class="pool-header-text">
-                2027 March Madness<br>Player Pool Dashboard
+                <span style="font-style:italic;">2027 March Madness</span><br>
+                <span style="font-family:'Barlow','Arial',sans-serif;font-weight:600;font-style:normal;font-size:1.0025em;letter-spacing:0.06em;">Player Pool Dashboard</span>
             </div>
         </div>
         """,
