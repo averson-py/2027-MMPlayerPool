@@ -3178,7 +3178,25 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("🏀 2027 March Madness Player Pool Dashboard")
+LOGO_PATH = ASSETS_DIR / "logo.png"
+if LOGO_PATH.is_file():
+    import base64
+
+    logo_b64 = base64.b64encode(LOGO_PATH.read_bytes()).decode()
+    st.markdown(
+        f"""
+        <div style="display:flex;justify-content:center;
+                    border-bottom:3px solid #F28C28;padding-bottom:0.75rem;
+                    margin-bottom:0.5rem;">
+            <img src="data:image/png;base64,{logo_b64}"
+                 style="height:clamp(7rem,14vw,11rem);width:auto;max-width:90%;
+                        object-fit:contain;">
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+else:
+    st.title("🏀 2027 March Madness Player Pool Dashboard")
 
 # Production mode: read the workbook directly from the public OneDrive
 # sharing link. Visitors do NOT need to sign in with Microsoft.
