@@ -2400,10 +2400,14 @@ def player_projected_fpts(row, data):
     return round(total + weighted_per_game * expected_games, 1)
 
 
-def make_player_rankings(data):
+def make_player_rankings(data, only_unavailable=False):
     result = []
     for row in data["draft_rows"]:
         stats = data["player_stats"].get(row["player_name"].casefold(), {})
+        if only_unavailable and injury_status(row["player_name"], stats) not in (
+            "q", "questionable", "o", "out"
+        ):
+            continue
         team = stats.get("Team")
         result.append({
             "Player Name": player_label(row["player_name"], stats),
@@ -2426,7 +2430,7 @@ def make_player_rankings(data):
         -(p["Total FPts"] if p["Total FPts"] is not None else 0),
         draft_position_sort_key(p["_draft_position"]),
     ))
-    result = result[:10]
+    result = result[:10] if not only_unavailable else result
     for i, row in enumerate(result, start=1):
         row["Rank"] = i
 
@@ -3934,47 +3938,6 @@ with tab1:
 
 
 with tab2:
-    st.subheader("Player Rankings — Top 10")
-    st.caption("⛔ Out · ⚠️ Questionable")
-    display_df(players, height=400, zebra=True
-    )
-
-    st.markdown("### <span style='color:#2E8B57; font-weight:800;'>↑</span> Top Overperformers 🦄", unsafe_allow_html=True)
-    over_display = over.rename(columns={"Delta From Average": "Delta From Season Avg."}).copy()
-    under_display = under.rename(columns={"Delta From Average": "Delta From Season Avg."}).copy()
-
-    # Format these two dashboard columns explicitly as display strings.
-    # This avoids Streamlit/pandas rendering the underlying floats with
-    # six decimal places on some pandas/Streamlit versions.
-    for display_df_ in (over_display, under_display):
-        if "Avg. FPts/Tourn. Game" in display_df_.columns:
-            display_df_["Avg. FPts/Tourn. Game"] = display_df_["Avg. FPts/Tourn. Game"].apply(
-                lambda x: f"{float(x):.1f}" if pd.notna(x) else ""
-            )
-
-    display_df(
-        over_display,
-        height=240,
-        zebra=True,
-        performance_gradient="green",
-    )
-
-    st.markdown("### <span style='color:#C62828; font-weight:800;'>↓</span> Top Underperformers 🪠", unsafe_allow_html=True)
-    if st.checkbox("Hide questionable and out players", key="hide_unavailable_under"):
-        under_filtered, _ = make_performers(data, False, exclude_unavailable=True)
-        under_display = under_filtered.rename(columns={"Delta From Average": "Delta From Season Avg."}).copy()
-        if "Avg. FPts/Tourn. Game" in under_display.columns:
-            under_display["Avg. FPts/Tourn. Game"] = under_display["Avg. FPts/Tourn. Game"].apply(
-                lambda x: f"{float(x):.1f}" if pd.notna(x) else ""
-            )
-    display_df(
-        under_display,
-        height=240,
-        zebra=True,
-        performance_gradient="red",
-    )
-
-    st.divider()
     st.subheader("Player Finder")
     selected_player = st.selectbox(
         "Search for a player",
@@ -4035,6 +3998,61 @@ with tab2:
             )
         else:
             st.info(f"{selected_player} was not drafted.")
+    st.divider()
+
+    st.subheader("Player Rankings — Top 10")
+    st.caption("⛔ Out · ⚠️ Questionable")
+    display_df(players, height=400, zebra=True
+    )
+
+    st.markdown("### <span style='color:#2E8B57; font-weight:800;'>↑</span> Top Overperformers 🦄", unsafe_allow_html=True)
+    over_display = over.rename(columns={"Delta From Average": "Delta From Season Avg."}).copy()
+    under_display = under.rename(columns={"Delta From Average": "Delta From Season Avg."}).copy()
+
+    # Format these two dashboard columns explicitly as display strings.
+    # This avoids Streamlit/pandas rendering the underlying floats with
+    # six decimal places on some pandas/Streamlit versions.
+    for display_df_ in (over_display, under_display):
+        if "Avg. FPts/Tourn. Game" in display_df_.columns:
+            display_df_["Avg. FPts/Tourn. Game"] = display_df_["Avg. FPts/Tourn. Game"].apply(
+                lambda x: f"{float(x):.1f}" if pd.notna(x) else ""
+            )
+
+    display_df(
+        over_display,
+        height=240,
+        zebra=True,
+        performance_gradient="green",
+    )
+
+    st.markdown("### <span style='color:#C62828; font-weight:800;'>↓</span> Top Underperformers 🪠", unsafe_allow_html=True)
+    if st.checkbox("Hide questionable and out players", key="hide_unavailable_under"):
+        under_filtered, _ = make_performers(data, False, exclude_unavailable=True)
+        under_display = under_filtered.rename(columns={"Delta From Average": "Delta From Season Avg."}).copy()
+        if "Avg. FPts/Tourn. Game" in under_display.columns:
+            under_display["Avg. FPts/Tourn. Game"] = under_display["Avg. FPts/Tourn. Game"].apply(
+                lambda x: f"{float(x):.1f}" if pd.notna(x) else ""
+            )
+    display_df(
+        under_display,
+        height=240,
+        zebra=True,
+        performance_gradient="red",
+    )
+
+    st.divider()
+    st.subheader("Injured Players")
+    st.caption("⛔ Out · ⚠️ Questionable")
+    unavailable_df, _ = make_player_rankings(data, only_unavailable=True)
+    unavailable_df = unavailable_df.drop(columns=["Rank"], errors="ignore")
+    if unavailable_df.empty:
+        st.info("No drafted players are currently listed as questionable or out.")
+    else:
+        display_df(
+            unavailable_df,
+            height=min(400, 40 + 35 * len(unavailable_df)),
+            zebra=True,
+        )
 
 with tab3:
     st.subheader("Team View")
