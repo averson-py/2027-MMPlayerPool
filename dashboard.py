@@ -1967,6 +1967,19 @@ def player_label(name, stats):
     return f"{marker} {name}" if marker else name
 
 
+def short_player_name(label):
+    """'Darius Acuff Jr.' -> 'D. Acuff Jr.', keeping any status marker."""
+    marker = ""
+    for prefix in ("⚠️ ", "⛔ "):
+        if label.startswith(prefix):
+            marker, label = prefix, label[len(prefix):]
+            break
+    parts = label.split()
+    if len(parts) < 2:
+        return marker + label
+    return f"{marker}{parts[0][0]}. {' '.join(parts[1:])}"
+
+
 def make_team_rows(data, selected_draftee):
     rows = [
         row for row in data["draft_rows"]
@@ -2949,7 +2962,8 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             )
             return (
                 '<div class="player-cell">' + img
-                + '<span>' + html_lib.escape(str(value)) + '</span></div>'
+                + '<span class="name-full">' + html_lib.escape(str(value)) + '</span>'
+                + '<span class="name-short">' + html_lib.escape(short_player_name(str(value))) + '</span></div>'
             )
 
         styled = styled.format(player_cell, subset=["Player Name"], escape=None)
@@ -3007,6 +3021,11 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
                 background: transparent; display: block; z-index: 1;
             }
             span.player-photo {width: 1px;}
+            .name-short {display: none;}
+            .photo-table-wrap.scrolled .name-full {display: none;}
+            .photo-table-wrap.scrolled .name-short {display: inline; font-size: 12px; white-space: nowrap; overflow-wrap: normal;}
+            .photo-table-wrap.scrolled .player-cell {min-width: 0; padding-left: 52px;}
+            .photo-table-wrap.scrolled .player-photo {height: 50px; max-width: 48px;}
             .cell-tip {position: relative; display: inline-block; cursor: help; border-bottom: 1px dotted #888; outline: none;}
             .cell-tip .cell-tip-text {
                 display: none; position: absolute; right: 0; z-index: 20; width: max-content; min-width: 200px; max-width: 300px;
@@ -3025,8 +3044,19 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
         table_html = styled.to_html().replace("\n", "")
         # Side popups are taller than a one-row table, so leave room beneath it.
         room_style = ' style="padding-bottom: 48px;"' if "cell-tip side" in table_html else ""
+        # Freeze the Player Name column so it stays visible while scrolling sideways.
+        name_col = [c for c in df.columns if not str(c).startswith("_")].index("Player Name") + 1
+        freeze_css = (
+            f".photo-table-wrap.freeze-{name_col} th:nth-child({name_col}),"
+            f".photo-table-wrap.freeze-{name_col} td:nth-child({name_col})"
+            "{position: sticky; left: 0; z-index: 3;}"
+            f".photo-table-wrap.freeze-{name_col}.scrolled th:nth-child({name_col}),"
+            f".photo-table-wrap.freeze-{name_col}.scrolled td:nth-child({name_col})"
+            "{box-shadow: 2px 0 4px rgba(0,0,0,0.15);}"
+        )
         st.markdown(
-            f'<div class="photo-table-wrap"{room_style}>{table_html}</div>',
+            f'<style>{freeze_css}</style>'
+            f'<div class="photo-table-wrap freeze-{name_col}"{room_style}>{table_html}</div>',
             unsafe_allow_html=True,
         )
         return
@@ -4016,12 +4046,12 @@ with tab0:
 with tab1:
     st.subheader("Tournament Standings")
     standings_event = display_df(
-        standings,
+        standings.rename(columns={"Draft Position": "Draft Pos."}),
         height=520,
         pink_last=True,
         selectable=True,
         scale_columns={
-            "Draft Position": (
+            "Draft Pos.": (
                 standings["Draft Position"].min(),
                 standings["Draft Position"].max(),
             ),
@@ -4042,19 +4072,19 @@ with tab1:
                 standings["MVP FPts"].max(),
             ),
         },
-        reverse_columns={"Draft Position": True},
+        reverse_columns={"Draft Pos.": True},
     )
 
     st.caption("Click a team owner's name to open their Team View.")
     st.session_state.pop("jump_to_team_view", None)
     st.subheader("Power Rankings")
     display_df(
-        power,
+        power.rename(columns={"Draft Position": "Draft Pos."}),
         height=520,
         rank_rwg=True,
         selectable="power_select",
         scale_columns={
-            "Draft Position": (
+            "Draft Pos.": (
                 power["Draft Position"].min(),
                 power["Draft Position"].max(),
             ),
@@ -4073,7 +4103,7 @@ with tab1:
                 if col in power.columns
             },
         },
-        reverse_columns={"Draft Position": True},
+        reverse_columns={"Draft Pos.": True},
     )
 
 
@@ -4099,7 +4129,7 @@ with tab2:
             result = pd.DataFrame([{
                 "Player Name": player_label(selected_player, stats),
                 "_photo": get_player_photo_url(selected_player, stats.get("Team")),
-                "Draft Position": row["draft_position"],
+                "Draft Pos.": row["draft_position"],
                 "Draftee": row["draftee"],
                 "Team": stats.get("Team"),
                 "Seed": stats.get("Seed"),
@@ -4329,7 +4359,7 @@ with tab3:
                 "⛔ Out · ⚠️ Questionable"
             )
             display_df(
-                team_df,
+                team_df.rename(columns={"Draft Position": "Draft Pos."}),
                 height=500,
                 zebra=True,
                 column_colors={
@@ -4413,12 +4443,12 @@ with tab4:
         "Click a team owner's name to open their Team View."
     )
     display_df(
-        ratings,
+        ratings.rename(columns={"Draft Position": "Draft Pos."}),
         height=520,
         rank_rwg=True,
         selectable="ratings_select",
         scale_columns={
-            "Draft Position": (
+            "Draft Pos.": (
                 ratings["Draft Position"].min(),
                 ratings["Draft Position"].max(),
             ),
@@ -4427,7 +4457,7 @@ with tab4:
                 ratings["Projected FPts"].max(),
             ),
         },
-        reverse_columns={"Draft Position": True},
+        reverse_columns={"Draft Pos.": True},
     )
 
     st.subheader("Drafted Players")
@@ -4446,7 +4476,7 @@ with tab4:
             "FPts", "PPG", "RPG", "APG", "Tourn. FPts", "Tourn. PTS", "Tourn. REB",
             "Tourn. AST", "Projected FPts", "Poss. Games Remaining",
             "Expected Games Remaining", "_expected_tip", "_projected_tip", "_team_out",
-        ]]
+        ]].rename(columns={"Draft Position": "Draft Pos."})
         for column in ["FPts", "PPG", "RPG", "APG", "Tourn. FPts"]:
             all_players_df[column] = all_players_df[column].apply(
                 lambda value: "" if pd.isna(value) else f"{float(value):.1f}"
@@ -4693,6 +4723,26 @@ components.html(
             p.localStorage.removeItem(KEY);
             p.__mmpoolLast = '';
         }
+    } catch (e) {}
+    </script>""",
+    height=0,
+)
+
+# Player tables: once scrolled sideways, mark the table so the frozen name column can shrink.
+components.html(
+    """<script>
+    try {
+        const p = window.parent, d = p.document;
+        if (p.__mmFreezeOff) p.__mmFreezeOff();
+        const onScroll = e => {
+            const el = e.target;
+            if (!el || !el.classList || !el.classList.contains('photo-table-wrap')) return;
+            const scrolled = el.classList.contains('scrolled');
+            if (!scrolled && el.scrollLeft > 24) el.classList.add('scrolled');
+            else if (scrolled && el.scrollLeft < 4) el.classList.remove('scrolled');
+        };
+        d.addEventListener('scroll', onScroll, true);
+        p.__mmFreezeOff = () => d.removeEventListener('scroll', onScroll, true);
     } catch (e) {}
     </script>""",
     height=0,
