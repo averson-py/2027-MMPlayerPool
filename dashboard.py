@@ -3987,6 +3987,7 @@ with tab2:
                 "Tourn. REB": row.get("tourn_reb"),
                 "Tourn. AST": row.get("tourn_ast"),
                 "Projected FPts": player_projected_fpts(row, data),
+                "Poss. Games Remaining": row.get("possible_games_remaining", 0),
                 "Expected Games Remaining": round(player_expected_games_remaining(row, data), 1),
                 "_team_out": (
                     stats.get("Team") is not None
@@ -4302,6 +4303,43 @@ with tab4:
         },
         reverse_columns={"Draft Position": True},
     )
+
+    st.subheader("Drafted Players")
+    st.caption("Listed in draft order.  ⛔ Out · ⚠️ Questionable")
+    all_player_rows = []
+    for drafter in data["drafters"]:
+        for player_row in make_team_rows(data, drafter):
+            all_player_rows.append({"Team Owner": drafter, **player_row})
+    all_player_rows.sort(key=lambda r: draft_position_sort_key(r["Draft Position"]))
+    all_players_df = pd.DataFrame(all_player_rows)
+    if all_players_df.empty:
+        st.info("No drafted players found.")
+    else:
+        all_players_df = all_players_df[[
+            "Draft Position", "Player Name", "_photo", "Team", "Team Owner", "Seed",
+            "FPts", "PPG", "RPG", "APG", "Tourn. FPts", "Tourn. PTS", "Tourn. REB",
+            "Tourn. AST", "Projected FPts", "Poss. Games Remaining",
+            "Expected Games Remaining", "_team_out",
+        ]]
+        for column in ["FPts", "PPG", "RPG", "APG", "Tourn. FPts"]:
+            all_players_df[column] = all_players_df[column].apply(
+                lambda value: "" if pd.isna(value) else f"{float(value):.1f}"
+            )
+        display_df(
+            all_players_df,
+            height=500,
+            zebra=True,
+            column_colors={
+                "FPts": LIGHT_BLUE,
+                "PPG": LIGHT_BLUE,
+                "RPG": LIGHT_BLUE,
+                "APG": LIGHT_BLUE,
+                "Tourn. FPts": LIGHT_GREEN,
+                "Tourn. PTS": LIGHT_GREEN,
+                "Tourn. REB": LIGHT_GREEN,
+                "Tourn. AST": LIGHT_GREEN,
+            },
+        )
 
 with tab6:
     st.subheader("ℹ️ League Info")
