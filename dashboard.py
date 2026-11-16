@@ -4697,3 +4697,40 @@ components.html(
     </script>""",
     height=0,
 )
+
+# Streamlit snaps the page to the top during a rerun (e.g. changing "my team"); put it back.
+components.html(
+    """<script>
+    try {
+        const p = window.parent;
+        if (!p.__mmScrollFix) {
+            p.__mmScrollFix = true;
+            const s = p.document.createElement('script');
+            s.textContent = `
+            (function () {
+                let saved = 0, target = null, lastUserMove = 0, timer = null;
+                const cancel = () => { if (timer) { clearInterval(timer); timer = null; } };
+                const markUser = () => { lastUserMove = Date.now(); cancel(); };
+                ['touchmove', 'wheel', 'keydown'].forEach(ev =>
+                    document.addEventListener(ev, markUser, {passive: true, capture: true}));
+                const restore = (el, y) => {
+                    cancel();
+                    const start = Date.now();
+                    timer = setInterval(() => {
+                        if (Date.now() - start > 6000) return cancel();
+                        if (el.scrollHeight - el.clientHeight >= y) { el.scrollTop = y; cancel(); }
+                    }, 50);
+                };
+                document.addEventListener('scroll', e => {
+                    const el = e.target === document ? document.scrollingElement : e.target;
+                    if (!el || el.scrollTop === undefined) return;
+                    if (el.scrollTop > 0) { saved = el.scrollTop; target = el; return; }
+                    if (el === target && saved > 300 && Date.now() - lastUserMove > 800) restore(el, saved);
+                }, true);
+            })();`;
+            p.document.head.appendChild(s);
+        }
+    } catch (e) {}
+    </script>""",
+    height=0,
+)
