@@ -3050,7 +3050,9 @@ st.markdown(
     }
 
     .block-container,
-    div[data-testid="stMainBlockContainer"] {padding-top: 0.15rem !important; padding-bottom: 2rem;}
+    div[data-testid="stMainBlockContainer"] {padding-top: 0 !important; padding-bottom: 2rem;}
+    /* Style-only markdown blocks would otherwise add a flex gap above the header banner. */
+    div[data-testid="stElementContainer"]:has(style):not(:has(.pool-header)) {display: none !important;}
 
     /* Collapse zero-height helper iframes (browser-storage scripts) so they
        do not leave a blank bar above the tabs. Kept in layout, not display:none,
@@ -3207,6 +3209,11 @@ if LOGO_PATH.is_file():
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Barlow:wght@600&display=swap');
         .pool-header-text {{display:none;}}
+        div[data-testid="stMain"] {{overflow-x:hidden;}}
+        .pool-header {{
+            width:100vw;margin-left:calc(50% - 50vw);box-sizing:border-box;
+            background:#4e9efd;padding:0.75rem 1rem;
+        }}
         {font_face_css}
         @media (min-width: 1000px) {{
             .pool-header-text {{
@@ -3214,11 +3221,13 @@ if LOGO_PATH.is_file():
                 font-family:'Freshman','Alfa Slab One','Rockwell Extra Bold','Georgia',serif;
                 font-weight:400;font-style:normal;letter-spacing:0.02em;
                 font-size:clamp(1.8rem,3vw,3rem);line-height:1.1;
-                color:#2E5C8A;text-transform:uppercase;
+                color:#FFFFFF;text-transform:uppercase;text-align:center;
+                text-shadow:-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000,
+                            0 -1px 0 #000,0 1px 0 #000,-1px 0 0 #000,1px 0 0 #000;
             }}
         }}
         </style>
-        <div style="display:flex;justify-content:center;align-items:center;
+        <div class="pool-header" style="display:flex;justify-content:center;align-items:center;
                     border-bottom:3px solid #F28C28;padding-bottom:0.75rem;
                     margin-bottom:0.5rem;">
             <img src="data:image/png;base64,{logo_b64}"
@@ -3354,7 +3363,7 @@ tab0, tab1, tab2, tab5, tab3, tab4, tab6 = st.tabs([
     "📊 Player Statistics",
     "⛹️‍♂️ Tournament Bracket",
     TEAM_VIEW_TAB,
-    "🎯 Draft Ratings",
+    "🎯 Draft Recap",
     "ℹ️ League Info",
 ], key="main_tabs", on_change="rerun")
 
