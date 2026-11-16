@@ -4698,35 +4698,57 @@ components.html(
     height=0,
 )
 
-# Streamlit snaps the page to the top during a rerun (e.g. changing "my team"); put it back.
+# Switching tabs shrinks the page and the browser snaps to the top; keep the tab bar where it was.
 components.html(
     """<script>
     try {
         const p = window.parent;
-        if (!p.__mmScrollFix) {
-            p.__mmScrollFix = true;
+        if (!p.__mmTabAnchor) {
+            p.__mmTabAnchor = true;
             const s = p.document.createElement('script');
             s.textContent = `
             (function () {
-                let saved = 0, target = null, lastUserMove = 0, timer = null;
-                const cancel = () => { if (timer) { clearInterval(timer); timer = null; } };
-                const markUser = () => { lastUserMove = Date.now(); cancel(); };
-                ['touchmove', 'wheel', 'keydown'].forEach(ev =>
-                    document.addEventListener(ev, markUser, {passive: true, capture: true}));
-                const restore = (el, y) => {
-                    cancel();
-                    const start = Date.now();
-                    timer = setInterval(() => {
-                        if (Date.now() - start > 6000) return cancel();
-                        if (el.scrollHeight - el.clientHeight >= y) { el.scrollTop = y; cancel(); }
-                    }, 50);
+                const TABS = '[data-baseweb="tab-list"]';
+                let index = -1, offset = 0, scroller = null, until = 0, raf = 0;
+                const lists = () => Array.from(document.querySelectorAll(TABS));
+                const scrollParent = el => {
+                    for (let n = el.parentElement; n; n = n.parentElement) {
+                        const o = getComputedStyle(n).overflowY;
+                        if ((o === 'auto' || o === 'scroll') && n.scrollHeight > n.clientHeight) return n;
+                    }
+                    return document.scrollingElement;
                 };
-                document.addEventListener('scroll', e => {
-                    const el = e.target === document ? document.scrollingElement : e.target;
-                    if (!el || el.scrollTop === undefined) return;
-                    if (el.scrollTop > 0) { saved = el.scrollTop; target = el; return; }
-                    if (el === target && saved > 300 && Date.now() - lastUserMove > 800) restore(el, saved);
+                const stop = () => { until = 0; cancelAnimationFrame(raf); };
+                const tick = () => {
+                    const list = lists()[index];
+                    if (!list || Date.now() > until) return stop();
+                    const diff = list.getBoundingClientRect().top - offset;
+                    if (Math.abs(diff) > 1) {
+                        const want = scroller.scrollTop + diff;
+                        scroller.scrollTop = want;
+                        const short = want - scroller.scrollTop;
+                        if (short > 1) {
+                            const box = document.querySelector('[data-testid="stMainBlockContainer"]');
+                            if (box) { box.style.minHeight = (box.offsetHeight + short) + 'px'; scroller.scrollTop = want; }
+                        }
+                    }
+                    raf = requestAnimationFrame(tick);
+                };
+                document.addEventListener('pointerdown', e => {
+                    const tab = e.target.closest && e.target.closest('[data-baseweb="tab"]');
+                    if (!tab) return;
+                    const list = tab.closest(TABS);
+                    index = lists().indexOf(list);
+                    offset = list.getBoundingClientRect().top;
+                    scroller = scrollParent(list);
+                    const box = document.querySelector('[data-testid="stMainBlockContainer"]');
+                    if (box) box.style.minHeight = '';
+                    cancelAnimationFrame(raf);
+                    until = Date.now() + 5000;
+                    raf = requestAnimationFrame(tick);
                 }, true);
+                ['touchmove', 'wheel'].forEach(ev =>
+                    document.addEventListener(ev, stop, {passive: true, capture: true}));
             })();`;
             p.document.head.appendChild(s);
         }
