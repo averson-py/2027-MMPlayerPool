@@ -1994,6 +1994,7 @@ def make_team_rows(data, selected_draftee):
             "Projected FPts": player_projected_fpts(row, data),
             "Poss. Games Remaining": row.get("possible_games_remaining", 0),
             "Expected Games Remaining": round(player_expected_games_remaining(row, data), 1),
+            "_expected_tip": expected_games_explanation(row, data),
             "_team_out": (
                 stats.get("Team") is not None
                 and str(stats.get("Team")).strip().casefold() in data["teams_out"]
@@ -2372,6 +2373,45 @@ def player_expected_games_remaining(row, data):
     return max(historical_avg_games - games_played, 1.0)
 
 
+def expected_games_explanation(row, data):
+    """HTML text describing how player_expected_games_remaining() got its value."""
+    stats = data["player_stats"].get(row["player_name"].casefold(), {})
+    team = stats.get("Team")
+    team_is_active = (
+        team is not None
+        and str(team).strip().casefold() not in data["teams_out"]
+    )
+    games_played = row.get("games_played") or 0
+
+    seed_value = stats.get("Seed")
+    try:
+        seed_number = int(float(seed_value))
+    except (TypeError, ValueError):
+        match = re.search(r"\d+", str(seed_value))
+        seed_number = int(match.group(0)) if match else None
+    avg_games = (
+        data["seed_average_games"].get(seed_number)
+        if seed_number is not None else None
+    )
+
+    if injury_status(row["player_name"], stats) in ("o", "out"):
+        return "Player is listed as out, so 0 games are expected."
+    if not team_is_active:
+        return "Team is eliminated, so 0 games are expected."
+    if games_played >= 6:
+        return "Player has played the maximum 6 games, so 0 games are expected."
+    if avg_games is None:
+        return "No average games found for this seed, so 1 game is assumed."
+    remaining = avg_games - games_played
+    return (
+        f"<b>Expected Games Remaining</b><br>"
+        f"Seed {seed_number} averages {avg_games:.2f} games.<br>"
+        f"{avg_games:.2f} avg. - {games_played} played = {remaining:.2f}<br>"
+        f"Never less than 1 while the team is alive:<br>"
+        f"<b>max({remaining:.2f}, 1) = {max(remaining, 1.0):.2f}</b>"
+    )
+
+
 def player_projected_fpts(row, data):
     """Tournament FPts so far plus (weighted FPts/game x expected games remaining).
 
@@ -2422,6 +2462,7 @@ def make_player_rankings(data, only_unavailable=False):
             "Games Played": row.get("games_played", 0),
             "Poss. Games Remaining": row.get("possible_games_remaining", 0),
             "Expected Games Remaining": round(player_expected_games_remaining(row, data), 1),
+            "_expected_tip": expected_games_explanation(row, data),
             "Projected FPts": player_projected_fpts(row, data),
             "_team_out": (
                 team is not None
@@ -2442,7 +2483,7 @@ def make_player_rankings(data, only_unavailable=False):
     player_columns = [
         "Rank", "Player Name", "Team", "Total FPts", "Projected FPts",
         "Team Owner", "Games Played", "Poss. Games Remaining",
-        "Expected Games Remaining", "_team_out", "_photo",
+        "Expected Games Remaining", "_expected_tip", "_team_out", "_photo",
     ]
     if not result:
         return pd.DataFrame(columns=player_columns), result
@@ -2484,6 +2525,7 @@ def make_performers(data, positive=True, exclude_unavailable=False):
             "Games Played": games,
             "Poss. Games Remaining": row.get("possible_games_remaining", 0),
             "Expected Games Remaining": round(player_expected_games_remaining(row, data), 1),
+            "_expected_tip": expected_games_explanation(row, data),
             "Projected FPts": player_projected_fpts(row, data),
             "_team_out": (
                 team is not None
@@ -2503,7 +2545,7 @@ def make_performers(data, positive=True, exclude_unavailable=False):
     performer_columns = [
         "Rank", "Player Name", "Team", "Avg. FPts/Tourn. Game", "Projected FPts",
         "Delta From Average", "Team Owner", "Games Played",
-        "Poss. Games Remaining", "Expected Games Remaining", "_team_out", "_photo",
+        "Poss. Games Remaining", "Expected Games Remaining", "_expected_tip", "_team_out", "_photo",
     ]
     if not result:
         return pd.DataFrame(columns=performer_columns), result
@@ -2805,10 +2847,26 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
         st.info("No data available yet.")
         return
 
+    cell_tips = None
+    if "_expected_tip" in df.columns:
+        if "Expected Games Remaining" in df.columns:
+            cell_tips = {"Expected Games Remaining": df["_expected_tip"].tolist()}
+        df = df.drop(columns=["_expected_tip"])
+
     photo_map = None
     if "_photo" in df.columns and "Player Name" in df.columns:
         photo_map = dict(zip(df["Player Name"], df["_photo"]))
         df = df.drop(columns=["_photo"])
+        # Photo tables only: pair each value with its tooltip text and where the popup fits.
+        if cell_tips:
+            df = df.copy()
+            for tip_col, tips in cell_tips.items():
+                if tip_col in df.columns:
+                    last = len(df) - 1
+                    df[tip_col] = [
+                        (value, tip, "above" if position >= 2 else ("below" if last - position >= 2 else "side"))
+                        for position, (value, tip) in enumerate(zip(df[tip_col], tips))
+                    ]
 
     try:
         _style_sig = (
@@ -2854,6 +2912,17 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             )
 
         styled = styled.format(player_cell, subset=["Player Name"], escape=None)
+        if cell_tips:
+            def tip_cell(value):
+                shown, tip, placement = value
+                return (
+                    f'<span class="cell-tip {placement}" tabindex="0">'
+                    f'{float(shown):.1f}<span class="cell-tip-text">{tip}</span></span>'
+                )
+
+            for tip_col in cell_tips:
+                if tip_col in df.columns:
+                    styled = styled.format(tip_cell, subset=[tip_col], escape=None)
         if "Team" in df.columns:
             def team_cell(value):
                 if value is None or (isinstance(value, float) and pd.isna(value)):
@@ -2895,6 +2964,17 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
                 background: transparent; display: block; z-index: 1;
             }
             span.player-photo {width: 1px;}
+            .cell-tip {position: relative; display: inline-block; cursor: help; border-bottom: 1px dotted #888; outline: none;}
+            .cell-tip .cell-tip-text {
+                display: none; position: absolute; right: 0; z-index: 20; width: 260px;
+                white-space: normal; text-align: left; font-size: 12px; font-weight: 400;
+                color: #000000; background: #FFFFFF; border: 1px solid #4472C4; border-radius: 6px;
+                padding: 8px 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            }
+            .cell-tip.above .cell-tip-text {bottom: 100%; margin-bottom: 6px;}
+            .cell-tip.below .cell-tip-text {top: 100%; margin-top: 6px;}
+            .cell-tip.side .cell-tip-text {right: 100%; top: 50%; transform: translateY(-50%); margin-right: 8px;}
+            .cell-tip:hover .cell-tip-text, .cell-tip:focus .cell-tip-text {display: block;}
             </style>
             """,
             unsafe_allow_html=True,
@@ -3989,6 +4069,7 @@ with tab2:
                 "Projected FPts": player_projected_fpts(row, data),
                 "Poss. Games Remaining": row.get("possible_games_remaining", 0),
                 "Expected Games Remaining": round(player_expected_games_remaining(row, data), 1),
+                "_expected_tip": expected_games_explanation(row, data),
                 "_team_out": (
                     stats.get("Team") is not None
                     and str(stats.get("Team")).strip().casefold() in data["teams_out"]
@@ -4024,8 +4105,7 @@ with tab2:
 
     st.subheader("Player Rankings — Top 10")
     st.caption("⛔ Out · ⚠️ Questionable")
-    display_df(players, height=400, zebra=True
-    )
+    display_df(players, height=400, zebra=True)
 
     st.markdown("### <span style='color:#2E8B57; font-weight:800;'>↑</span> Top Overperformers 🦄", unsafe_allow_html=True)
     over_display = over.rename(columns={"Delta From Average": "Delta From Season Avg."}).copy()
@@ -4319,7 +4399,7 @@ with tab4:
             "Draft Position", "Player Name", "_photo", "Team", "Team Owner", "Seed",
             "FPts", "PPG", "RPG", "APG", "Tourn. FPts", "Tourn. PTS", "Tourn. REB",
             "Tourn. AST", "Projected FPts", "Poss. Games Remaining",
-            "Expected Games Remaining", "_team_out",
+            "Expected Games Remaining", "_expected_tip", "_team_out",
         ]]
         for column in ["FPts", "PPG", "RPG", "APG", "Tourn. FPts"]:
             all_players_df[column] = all_players_df[column].apply(
