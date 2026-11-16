@@ -4703,12 +4703,14 @@ components.html(
     """<script>
     try {
         const p = window.parent;
-        if (!p.__mmTabAnchor) {
-            p.__mmTabAnchor = true;
+        if (!p.__mmTabAnchor2) {
+            p.__mmTabAnchor2 = true;
             const s = p.document.createElement('script');
             s.textContent = `
             (function () {
-                const TABS = '[data-baseweb="tab-list"]';
+                const TABS = '[role="tablist"], [data-baseweb="tab-list"]';
+                const TAB = '[role="tab"], [data-baseweb="tab"]';
+                const BOX = '[data-testid="stMainBlockContainer"], .block-container';
                 let index = -1, offset = 0, scroller = null, until = 0, raf = 0;
                 const lists = () => Array.from(document.querySelectorAll(TABS));
                 const scrollParent = el => {
@@ -4728,20 +4730,21 @@ components.html(
                         scroller.scrollTop = want;
                         const short = want - scroller.scrollTop;
                         if (short > 1) {
-                            const box = document.querySelector('[data-testid="stMainBlockContainer"]');
+                            const box = document.querySelector(BOX);
                             if (box) { box.style.minHeight = (box.offsetHeight + short) + 'px'; scroller.scrollTop = want; }
                         }
                     }
                     raf = requestAnimationFrame(tick);
                 };
                 document.addEventListener('pointerdown', e => {
-                    const tab = e.target.closest && e.target.closest('[data-baseweb="tab"]');
+                    const tab = e.target.closest && e.target.closest(TAB);
                     if (!tab) return;
                     const list = tab.closest(TABS);
+                    if (!list) return;
                     index = lists().indexOf(list);
                     offset = list.getBoundingClientRect().top;
                     scroller = scrollParent(list);
-                    const box = document.querySelector('[data-testid="stMainBlockContainer"]');
+                    const box = document.querySelector(BOX);
                     if (box) box.style.minHeight = '';
                     cancelAnimationFrame(raf);
                     until = Date.now() + 5000;
