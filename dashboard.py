@@ -3051,8 +3051,9 @@ st.markdown(
 
     .block-container,
     div[data-testid="stMainBlockContainer"] {padding-top: 0 !important; padding-bottom: 2rem;}
-    /* Style-only markdown blocks would otherwise add a flex gap above the header banner. */
-    div[data-testid="stElementContainer"]:has(style):not(:has(.pool-header)) {display: none !important;}
+    /* Style-only markdown blocks above the tabs would otherwise add a flex gap above the header banner.
+       Styler tables embed their own <style>, so tables and anything inside tabs are excluded. */
+    div[data-testid="stElementContainer"]:has(style):not(:has(.pool-header, table, canvas)):not([data-testid="stTabs"] *) {display: none !important;}
 
     /* Collapse zero-height helper iframes (browser-storage scripts) so they
        do not leave a blank bar above the tabs. Kept in layout, not display:none,
