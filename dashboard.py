@@ -2528,8 +2528,8 @@ def projected_fpts_explanation(row, data):
     weighted_per_game = weight * tourn_per_game + (1.0 - weight) * season_per_game
     return (
         "<b>Projected FPts</b><br>"
-        f"Blended FPts/game:<br>[{season_per_game:.1f} season x {1 - weight:g}] + "
-        f"[{tourn_per_game:.1f} tourn. x {weight:g}] = {weighted_per_game:.2f}<br>"
+        f"Blended FPts/game:<br>[{season_per_game:.1f} season x {round((1 - weight) * 100, 1):g}%] + "
+        f"[{tourn_per_game:.1f} tourn. x {round(weight * 100, 1):g}%] = {weighted_per_game:.2f}<br>"
         f"{weighted_per_game:.2f} x {expected_games:.2f} expected games = "
         f"{weighted_per_game * expected_games:.1f}<br>"
         f"+ {total:.1f} FPts already scored<br>"
@@ -3007,7 +3007,12 @@ def _standings_cell_clicked(select_key="standings_select"):
             return
 
 
-def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None, column_colors=None, selectable=False, zebra=False, center=False):
+def _owner_link_clicked(owner):
+    st.session_state["team_owner"] = owner
+    st.session_state["_goto_tab"] = "Team View"
+
+
+def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None, column_colors=None, selectable=False, zebra=False, center=False, owner_links=None):
     if df.empty:
         st.info("No data available yet.")
         return
@@ -3048,7 +3053,8 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
     except Exception:
         _style_sig = None
     _style_cache = st.session_state.setdefault("_styled_cache", {})
-    _cache_key = (selectable if isinstance(selectable, str) else None, photo_map is not None, height)
+    html_mode = photo_map is not None or bool(owner_links)
+    _cache_key = (selectable if isinstance(selectable, str) else None, html_mode, height)
     _hit = _style_cache.get(_cache_key)
     if _style_sig is not None and _hit and _hit[0] == _style_sig:
         styled = _hit[1]
@@ -3066,30 +3072,42 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
         if _style_sig is not None and isinstance(selectable, str):
             _style_cache[_cache_key] = (_style_sig, styled)
 
-    if photo_map is not None:
-        team_by_player = dict(zip(df["Player Name"], df["Team"])) if "Team" in df.columns else {}
+    if html_mode:
+        if photo_map is not None:
+            team_by_player = dict(zip(df["Player Name"], df["Team"])) if "Team" in df.columns else {}
 
-        def player_cell(value):
-            url = photo_map.get(value)
-            logo_url = get_logo_url(team_by_player.get(value)) if team_by_player.get(value) else None
-            logo = (
-                f'<img src="{html_lib.escape(str(logo_url))}" class="player-team-logo" '
-                'loading="lazy" onerror="this.style.visibility=\'hidden\'">'
-                if logo_url else ''
-            )
-            img = (
-                f'<img src="{html_lib.escape(str(url))}" class="player-photo" '
-                'referrerpolicy="no-referrer" loading="lazy" '
-                'onerror="this.style.visibility=\'hidden\'">'
-                if url else '<span class="player-photo"></span>'
-            )
-            return (
-                '<div class="player-cell">' + logo + img
-                + '<span class="name-wrap"><span class="name-full">' + html_lib.escape(str(value)) + '</span>'
-                + '<span class="name-short">' + html_lib.escape(short_player_name(str(value))) + '</span></span></div>'
-            )
+            def player_cell(value):
+                url = photo_map.get(value)
+                logo_url = get_logo_url(team_by_player.get(value)) if team_by_player.get(value) else None
+                logo = (
+                    f'<img src="{html_lib.escape(str(logo_url))}" class="player-team-logo" '
+                    'loading="lazy" onerror="this.style.visibility=\'hidden\'">'
+                    if logo_url else ''
+                )
+                img = (
+                    f'<img src="{html_lib.escape(str(url))}" class="player-photo" '
+                    'referrerpolicy="no-referrer" loading="lazy" '
+                    'onerror="this.style.visibility=\'hidden\'">'
+                    if url else '<span class="player-photo"></span>'
+                )
+                return (
+                    '<div class="player-cell">' + logo + img
+                    + '<span class="name-wrap"><span class="name-full">' + html_lib.escape(str(value)) + '</span>'
+                    + '<span class="name-short">' + html_lib.escape(short_player_name(str(value))) + '</span></span></div>'
+                )
 
-        styled = styled.format(player_cell, subset=["Player Name"], escape=None)
+            styled = styled.format(player_cell, subset=["Player Name"], escape=None)
+        if owner_links and "Team Owner" in df.columns:
+            owners = df["Team Owner"].tolist()
+            owner_index = {owner: i for i, owner in enumerate(owners)}
+
+            def owner_cell(value):
+                return (
+                    f'<a class="owner-link" href="#" data-key="ownerlink_{owner_links}_{owner_index[value]}">'
+                    f'{html_lib.escape(str(value))}</a>'
+                )
+
+            styled = styled.format(owner_cell, subset=["Team Owner"], escape=None)
         if cell_tips:
             def tip_cell(value):
                 shown, tip, placement = value
@@ -3136,10 +3154,12 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .photo-table-wrap th, .photo-table-wrap td {
                 border: 1px solid #e0e0e0; padding: 4px 8px; white-space: nowrap;
             }
-            .photo-table-wrap th {background: #FFFFFF; color: #000000;}
+            .photo-table-wrap th {background: #004FB3 !important; color: #FFFFFF; font-weight: 700;}
             .player-cell {display: flex; align-items: center; position: relative; height: 64px; overflow: hidden; padding-left: 88px; text-align: left; width: 200px; transition: width 0.25s ease, padding-left 0.25s ease;}
             .player-cell span {white-space: normal; min-width: 0; overflow-wrap: anywhere; align-self: center;}
             .photo-table-wrap td:has(.player-cell) {vertical-align: bottom; padding-top: 0 !important; padding-bottom: 0 !important; overflow: visible;}
+            .photo-table-wrap a.owner-link, .photo-table-wrap a.owner-link:hover, .photo-table-wrap a.owner-link:visited {color: inherit !important; text-decoration: none !important; border-bottom: 1px dotted #888; cursor: pointer;}
+            [class*="st-key-ownerlinks_"] {display: none;}
             .team-cell {display: flex; align-items: center; gap: 8px; min-width: 160px; padding-left: 10px;}
             .team-cell span {white-space: normal; min-width: 0; overflow-wrap: anywhere;}
             .team-logo-sm {width: 36px; height: 36px; object-fit: contain; flex-shrink: 0; display: inline-block;}
@@ -3181,20 +3201,32 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
         # Side popups are taller than a one-row table, so leave room beneath it.
         room_style = ' style="padding-bottom: 48px;"' if "cell-tip side" in table_html else ""
         # Freeze the Player Name column so it stays visible while scrolling sideways.
-        name_col = [c for c in df.columns if not str(c).startswith("_")].index("Player Name") + 1
-        freeze_css = (
-            f".photo-table-wrap.freeze-{name_col} th:nth-child({name_col}),"
-            f".photo-table-wrap.freeze-{name_col} td:nth-child({name_col})"
-            "{position: sticky; left: -1px; z-index: 3;}"
-            f".photo-table-wrap.freeze-{name_col}.scrolled th:nth-child({name_col}),"
-            f".photo-table-wrap.freeze-{name_col}.scrolled td:nth-child({name_col})"
-            "{box-shadow: 2px 0 4px rgba(0,0,0,0.15);}"
-        )
+        freeze_css, freeze_class = "", ""
+        visible_columns = [c for c in df.columns if not str(c).startswith("_")]
+        if "Player Name" in visible_columns:
+            name_col = visible_columns.index("Player Name") + 1
+            freeze_class += f" freeze-{name_col}"
+            freeze_css = (
+                f".photo-table-wrap.freeze-{name_col} th:nth-child({name_col}),"
+                f".photo-table-wrap.freeze-{name_col} td:nth-child({name_col})"
+                "{position: sticky; left: -1px; z-index: 3;}"
+                f".photo-table-wrap.freeze-{name_col}.scrolled th:nth-child({name_col}),"
+                f".photo-table-wrap.freeze-{name_col}.scrolled td:nth-child({name_col})"
+                "{box-shadow: 2px 0 4px rgba(0,0,0,0.15);}"
+            )
         st.markdown(
             f'<style>{freeze_css}</style>'
-            f'<div class="photo-table-wrap freeze-{name_col}"{room_style}>{table_html}</div>',
+            f'<div class="photo-table-wrap{freeze_class}"{room_style}>{table_html}</div>',
             unsafe_allow_html=True,
         )
+        if owner_links and "Team Owner" in df.columns:
+            # Hidden buttons that the owner links click, so a click runs a normal Streamlit callback.
+            with st.container(key=f"ownerlinks_{owner_links}"):
+                for i, owner in enumerate(owners):
+                    st.button(
+                        str(owner), key=f"ownerlink_{owner_links}_{i}",
+                        on_click=_owner_link_clicked, args=(owner,),
+                    )
         return
 
     # Size the table to its actual row count so short tables do not
@@ -4627,7 +4659,8 @@ with tab4:
         ratings.rename(columns={"Draft Position": "Draft Pos."}),
         height=520,
         rank_rwg=True,
-        selectable="ratings_select",
+        zebra=True,
+        owner_links="ratings",
         scale_columns={
             "Draft Pos.": (
                 ratings["Draft Position"].min(),
@@ -4915,6 +4948,14 @@ components.html(
     try {
         const p = window.parent, d = p.document;
         if (p.__mmFreezeOff) p.__mmFreezeOff();
+        const onOwnerClick = e => {
+            const a = e.target.closest && e.target.closest('a.owner-link');
+            if (!a) return;
+            e.preventDefault();
+            const btn = d.querySelector('.st-key-' + a.dataset.key + ' button');
+            if (btn) btn.click();
+        };
+        d.addEventListener('click', onOwnerClick, true);
         const onScroll = e => {
             const el = e.target;
             if (!el || !el.classList || !el.classList.contains('photo-table-wrap')) return;
@@ -4931,7 +4972,10 @@ components.html(
             el.classList.toggle('team-passed', passed);
         };
         d.addEventListener('scroll', onScroll, true);
-        p.__mmFreezeOff = () => d.removeEventListener('scroll', onScroll, true);
+        p.__mmFreezeOff = () => {
+            d.removeEventListener('scroll', onScroll, true);
+            d.removeEventListener('click', onOwnerClick, true);
+        };
     } catch (e) {}
     </script>""",
     height=0,
