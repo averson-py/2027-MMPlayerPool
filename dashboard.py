@@ -3022,7 +3022,7 @@ def _next_owner_table_key():
     return f"t{_owner_table_count}"
 
 
-def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None, column_colors=None, selectable=False, zebra=False, center=False, owner_links=None):
+def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None, column_colors=None, selectable=False, zebra=False, center=False, owner_links=None, medal_rank=True):
     if df.empty:
         st.info("No data available yet.")
         return
@@ -3080,6 +3080,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             performance_gradient=performance_gradient,
             column_colors=column_colors,
             zebra=zebra,
+            medal_rank=medal_rank,
         )
         if _style_sig is not None and isinstance(selectable, str):
             _style_cache[_cache_key] = (_style_sig, styled)
@@ -3942,7 +3943,7 @@ with tab0:
 
         payout_display = pd.DataFrame(payout_rows)
         st.caption("Click a team owner's name to open their Team View.")
-        display_df(payout_display, height=210, selectable="payout_select")
+        display_df(payout_display, height=210, zebra=True, owner_links="payout", medal_rank=False)
     # Biggest riser / faller / highest team round / highest individual game
     c5, c6, c7, c8 = st.columns(4)
     if biggest_riser_name != "—":
@@ -4251,7 +4252,8 @@ with tab1:
         standings.rename(columns={"Draft Position": "Draft Pos."}),
         height=520,
         pink_last=True,
-        selectable=True,
+        zebra=True,
+        owner_links="standings",
         scale_columns={
             "Draft Pos.": (
                 standings["Draft Position"].min(),
@@ -4284,7 +4286,8 @@ with tab1:
         power.rename(columns={"Draft Position": "Draft Pos."}),
         height=520,
         rank_rwg=True,
-        selectable="power_select",
+        zebra=True,
+        owner_links="power",
         scale_columns={
             "Draft Pos.": (
                 power["Draft Position"].min(),
