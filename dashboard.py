@@ -2644,8 +2644,8 @@ def make_performers(data, positive=True, exclude_unavailable=False):
         row["Rank"] = i
 
     performer_columns = [
-        "Rank", "Player Name", "Team", "Next Opponent", "Avg. FPts/Tourn. Game", "Projected FPts",
-        "Delta From Average", "Team Owner", "Games Played",
+        "Rank", "Player Name", "Team", "Next Opponent", "Avg. FPts/Tourn. Game", "Delta From Average",
+        "Projected FPts", "Team Owner", "Games Played",
         "Poss. Games Remaining", "Expected Games Remaining", "_expected_tip", "_projected_tip", "_team_out", "_photo",
     ]
     if not result:
