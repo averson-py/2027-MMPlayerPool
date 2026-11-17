@@ -3185,7 +3185,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
         freeze_css = (
             f".photo-table-wrap.freeze-{name_col} th:nth-child({name_col}),"
             f".photo-table-wrap.freeze-{name_col} td:nth-child({name_col})"
-            "{position: sticky; left: 0; z-index: 3;}"
+            "{position: sticky; left: -1px; z-index: 3;}"
             f".photo-table-wrap.freeze-{name_col}.scrolled th:nth-child({name_col}),"
             f".photo-table-wrap.freeze-{name_col}.scrolled td:nth-child({name_col})"
             "{box-shadow: 2px 0 4px rgba(0,0,0,0.15);}"
