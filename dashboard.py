@@ -3028,7 +3028,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .player-cell .name-short {opacity: 0; white-space: nowrap; overflow-wrap: normal; font-size: 12px;}
             .photo-table-wrap.scrolled .name-full {opacity: 0;}
             .photo-table-wrap.scrolled .name-short {opacity: 1;}
-            .photo-table-wrap.scrolled .player-cell {width: 104px; padding-left: 52px;}
+            .photo-table-wrap.scrolled .player-cell {width: 124px; padding-left: 52px;}
             .photo-table-wrap.scrolled .player-photo {height: 50px; max-width: 48px;}
             .cell-tip {position: relative; display: inline-block; cursor: help; border-bottom: 1px dotted #888; outline: none;}
             .cell-tip .cell-tip-text {
