@@ -3017,7 +3017,8 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .team-cell span {white-space: normal; min-width: 0; overflow-wrap: anywhere;}
             .team-logo-sm {width: 36px; height: 36px; object-fit: contain; flex-shrink: 0; display: inline-block;}
             .player-photo {
-                position: absolute; left: 0; bottom: 0; height: 60px; width: auto; max-width: 84px;
+                position: absolute; left: 0; bottom: 0; top: auto; height: 60px; width: auto; max-width: 84px;
+                object-fit: cover; object-position: center bottom;
                 background: transparent; display: block; z-index: 1;
                 transition: height 0.25s ease, max-width 0.25s ease;
             }
