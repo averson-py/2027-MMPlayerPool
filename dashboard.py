@@ -4235,7 +4235,7 @@ with tab1:
 
     st.caption("Click a team owner's name to open their Team View.")
     st.session_state.pop("jump_to_team_view", None)
-    st.subheader("Power Rankings")
+    st.subheader("Projected Rankings")
     display_df(
         power.rename(columns={"Draft Position": "Draft Pos."}),
         height=520,
@@ -4588,7 +4588,7 @@ with tab3:
                         y=alt.Y("Start:Q", title="FPts"),
                         y2="End:Q",
                         color=alt.Color("Player:N", legend=alt.Legend(orient="bottom", title=None, columns=2, labelLimit=140, symbolLimit=0)),
-                        tooltip=["Round:N", "Player:N", alt.Tooltip("FPts:Q", format=".1f")],
+                        tooltip=alt.value(None),
                     )
                     round_labels = alt.Chart(round_chart_df).mark_text(
                         dy=-8, fontWeight="bold"
@@ -4596,6 +4596,7 @@ with tab3:
                         x=alt.X("Round:N", sort=chart_rounds),
                         y=alt.Y("sum(FPts):Q"),
                         text=alt.Text("sum(FPts):Q", format=".1f"),
+                        tooltip=alt.value(None),
                     )
                     segment_labels = alt.Chart(
                         round_chart_df[round_chart_df["FPts"] >= 3]
@@ -4603,6 +4604,7 @@ with tab3:
                         x=alt.X("Round:N", sort=chart_rounds),
                         y=alt.Y("Mid:Q"),
                         text=alt.Text("FPts:Q", format=".1f"),
+                        tooltip=alt.value(None),
                     )
                     st.altair_chart(
                         (round_chart + segment_labels + round_labels).properties(height=350),
