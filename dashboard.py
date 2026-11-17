@@ -3067,8 +3067,16 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             _style_cache[_cache_key] = (_style_sig, styled)
 
     if photo_map is not None:
+        team_by_player = dict(zip(df["Player Name"], df["Team"])) if "Team" in df.columns else {}
+
         def player_cell(value):
             url = photo_map.get(value)
+            logo_url = get_logo_url(team_by_player.get(value)) if team_by_player.get(value) else None
+            logo = (
+                f'<img src="{html_lib.escape(str(logo_url))}" class="player-team-logo" '
+                'loading="lazy" onerror="this.style.visibility=\'hidden\'">'
+                if logo_url else ''
+            )
             img = (
                 f'<img src="{html_lib.escape(str(url))}" class="player-photo" '
                 'referrerpolicy="no-referrer" loading="lazy" '
@@ -3076,7 +3084,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
                 if url else '<span class="player-photo"></span>'
             )
             return (
-                '<div class="player-cell">' + img
+                '<div class="player-cell">' + logo + img
                 + '<span class="name-wrap"><span class="name-full">' + html_lib.escape(str(value)) + '</span>'
                 + '<span class="name-short">' + html_lib.escape(short_player_name(str(value))) + '</span></span></div>'
             )
@@ -3151,7 +3159,9 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .photo-table-wrap.scrolled .player-cell {width: 128px; padding-left: 50px;}
             .photo-table-wrap td:has(.player-cell) {transition: padding-left 0.25s ease;}
             .photo-table-wrap.scrolled td:has(.player-cell) {padding-left: 0;}
-            .photo-table-wrap.scrolled .player-photo {height: 50px; max-width: 48px;}
+            .photo-table-wrap.scrolled .player-photo {height: 42px; max-width: 48px;}
+            .player-team-logo {position: absolute; left: 14px; top: 7px; width: 20px; height: 20px; object-fit: contain; opacity: 0; transition: opacity 0.25s ease; z-index: 2;}
+            .photo-table-wrap.scrolled.team-passed .player-team-logo {opacity: 1;}
             .cell-tip {position: relative; display: inline-block; cursor: help; border-bottom: 1px dotted #888; outline: none;}
             .cell-tip .cell-tip-text {
                 display: none; position: absolute; right: 0; z-index: 20; width: max-content; min-width: 200px; max-width: 300px;
@@ -4910,6 +4920,13 @@ components.html(
             // Only shrink when there is plenty of sideways room; shrinking a barely-too-wide table removes its scroll range and flickers.
             if (!scrolled && el.scrollLeft > 24 && el.scrollWidth - el.clientWidth > 200) el.classList.add('scrolled');
             else if (scrolled && el.scrollLeft < 4) el.classList.remove('scrolled');
+            const heads = Array.from(el.querySelectorAll('thead th'));
+            const nameTh = heads.find(h => h.textContent.trim() === 'Player Name');
+            const teamIdx = heads.findIndex(h => h.textContent.trim() === 'Team');
+            const teamLogo = teamIdx >= 0 ? el.querySelector('tbody tr td:nth-child(' + (teamIdx + 1) + ') .team-logo-sm') : null;
+            const passed = !!(nameTh && teamLogo && el.classList.contains('scrolled')
+                && teamLogo.getBoundingClientRect().right <= nameTh.getBoundingClientRect().right);
+            el.classList.toggle('team-passed', passed);
         };
         d.addEventListener('scroll', onScroll, true);
         p.__mmFreezeOff = () => d.removeEventListener('scroll', onScroll, true);
