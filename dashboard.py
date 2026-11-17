@@ -1980,12 +1980,57 @@ def short_player_name(label):
     return f"{marker}{parts[0][0]}. {' '.join(parts[1:])}"
 
 
+def make_next_opponents(data):
+    """{normalized team: next opponent name, or 'TBD'} for teams still alive; cached on data."""
+    cached = data.get("_next_opponents")
+    if cached is not None:
+        return cached
+    result = {}
+    if data.get("bracket_teams"):
+        try:
+            rounds = build_tournament_bracket(data["bracket_teams"], data["teams_out"])
+            regional_rounds = rounds[:-2]
+            regional_winners = {}
+            for region in ("EAST", "WEST", "MIDWEST", "SOUTH"):
+                elite_eight = regional_rounds[-1]["regions"][region]
+                regional_winners[region] = (elite_eight[0].get("winner") if elite_eight else None) or "TBD"
+            final_four_rounds = build_final_four_brackets(
+                regional_winners, data["final_four_config"], data["teams_out"]
+            )
+            for round_data in regional_rounds + final_four_rounds:
+                for matchups in round_data["regions"].values():
+                    for matchup in matchups:
+                        if matchup.get("winner"):
+                            continue
+                        for team, opponent in (
+                            (matchup["team_a"], matchup["team_b"]),
+                            (matchup["team_b"], matchup["team_a"]),
+                        ):
+                            key = _norm_team_name(team)
+                            if "TBD" in str(team) or key in result:
+                                continue
+                            if str(team).strip().casefold() in data["teams_out"]:
+                                continue
+                            result[key] = "TBD" if "TBD" in str(opponent) else str(opponent)
+        except Exception:
+            result = {}
+    data["_next_opponents"] = result
+    return result
+
+
+def next_opponent_for(data, team):
+    if not team:
+        return "—"
+    return make_next_opponents(data).get(_norm_team_name(team), "—")
+
+
 def make_team_rows(data, selected_draftee):
     rows = [
         row for row in data["draft_rows"]
         if row["draftee"].casefold() == selected_draftee.casefold()
     ]
     rows.sort(key=lambda row: draft_position_sort_key(row["draft_position"]))
+    next_opponents = make_next_opponents(data)
 
     result = []
     for row in rows:
@@ -1995,6 +2040,10 @@ def make_team_rows(data, selected_draftee):
             "Player Name": player_label(row["player_name"], stats),
             "_photo": get_player_photo_url(row["player_name"], stats.get("Team")),
             "Team": stats.get("Team"),
+            "Next Opponent": (
+                next_opponents.get(_norm_team_name(stats.get("Team")), "—")
+                if stats.get("Team") else "—"
+            ),
             "Seed": stats.get("Seed"),
             "FPts": stats.get("Tot. FPts"),
             "PPG": stats.get("PPG"),
@@ -2505,6 +2554,7 @@ def make_player_rankings(data, only_unavailable=False):
             "Player Name": player_label(row["player_name"], stats),
             "_photo": get_player_photo_url(row["player_name"], team),
             "Team": team,
+            "Next Opponent": next_opponent_for(data, team),
             "Total FPts": player_total(row, data["fantasy_weights"]),
             "Team Owner": row["draftee"],
             "Games Played": row.get("games_played", 0),
@@ -2530,7 +2580,7 @@ def make_player_rankings(data, only_unavailable=False):
         row["Rank"] = i
 
     player_columns = [
-        "Rank", "Player Name", "Team", "Total FPts", "Projected FPts",
+        "Rank", "Player Name", "Team", "Next Opponent", "Total FPts", "Projected FPts",
         "Team Owner", "Games Played", "Poss. Games Remaining",
         "Expected Games Remaining", "_expected_tip", "_projected_tip", "_team_out", "_photo",
     ]
@@ -2568,6 +2618,7 @@ def make_performers(data, positive=True, exclude_unavailable=False):
             "Player Name": player_label(row["player_name"], stats),
             "_photo": get_player_photo_url(row["player_name"], team),
             "Team": team,
+            "Next Opponent": next_opponent_for(data, team),
             "Avg. FPts/Tourn. Game": round(tournament_avg, 1),
             "Delta From Average": round(delta, 1),
             "Team Owner": row["draftee"],
@@ -2593,7 +2644,7 @@ def make_performers(data, positive=True, exclude_unavailable=False):
         row["Rank"] = i
 
     performer_columns = [
-        "Rank", "Player Name", "Team", "Avg. FPts/Tourn. Game", "Projected FPts",
+        "Rank", "Player Name", "Team", "Next Opponent", "Avg. FPts/Tourn. Game", "Projected FPts",
         "Delta From Average", "Team Owner", "Games Played",
         "Poss. Games Remaining", "Expected Games Remaining", "_expected_tip", "_projected_tip", "_team_out", "_photo",
     ]
@@ -2980,7 +3031,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             for tip_col in cell_tips:
                 if tip_col in df.columns:
                     styled = styled.format(tip_cell, subset=[tip_col], escape=None)
-        if "Team" in df.columns:
+        if "Team" in df.columns or "Next Opponent" in df.columns:
             def team_cell(value):
                 if value is None or (isinstance(value, float) and pd.isna(value)):
                     return ""
@@ -2995,7 +3046,11 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
                     + '<span>' + html_lib.escape(str(value)) + '</span></div>'
                 )
 
-            styled = styled.format(team_cell, subset=["Team"], escape=None)
+            styled = styled.format(
+                team_cell,
+                subset=[c for c in ("Team", "Next Opponent") if c in df.columns],
+                escape=None,
+            )
         try:
             styled = styled.hide(axis="index")
         except AttributeError:
@@ -3918,6 +3973,7 @@ with tab0:
                     "Player Name": player_label(row["player_name"], stats),
                     "_photo": get_player_photo_url(row["player_name"], team),
                     "Team": team,
+                    "Next Opponent": next_opponent_for(data, team),
                     "FPts": float(fpts),
                     "PTS": pts, "REB": reb, "AST": ast,
                     "Team Owner": row["draftee"],
@@ -3929,7 +3985,7 @@ with tab0:
             recent_df = recent_df.sort_values(
                 ["_loser", "FPts"], ascending=[True, False], kind="stable"
             ).drop(columns=["_loser"])
-            recent_df = recent_df[["Player Name", "_photo", "Team", "Team Owner", "FPts", "PTS", "REB", "AST"]]
+            recent_df = recent_df[["Player Name", "_photo", "Team", "Next Opponent", "Team Owner", "FPts", "PTS", "REB", "AST"]]
             for col in ("FPts", "PTS", "REB", "AST"):
                 recent_df[col] = recent_df[col].apply(
                     lambda x: f"{float(x):.1f}" if col == "FPts" and pd.notna(x)
@@ -4160,6 +4216,7 @@ with tab2:
                 "Draft Pos.": row["draft_position"],
                 "Draftee": row["draftee"],
                 "Team": stats.get("Team"),
+                "Next Opponent": next_opponent_for(data, stats.get("Team")),
                 "Seed": stats.get("Seed"),
                 "FPts": stats.get("Tot. FPts"),
                 "PPG": stats.get("PPG"),
@@ -4500,7 +4557,7 @@ with tab4:
         st.info("No drafted players found.")
     else:
         all_players_df = all_players_df[[
-            "Draft Position", "Player Name", "_photo", "Team", "Team Owner", "Seed",
+            "Draft Position", "Player Name", "_photo", "Team", "Next Opponent", "Team Owner", "Seed",
             "FPts", "PPG", "RPG", "APG", "Tourn. FPts", "Tourn. PTS", "Tourn. REB",
             "Tourn. AST", "Projected FPts", "Poss. Games Remaining",
             "Expected Games Remaining", "_expected_tip", "_projected_tip", "_team_out",
