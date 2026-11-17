@@ -4155,7 +4155,7 @@ with tab0:
                     legend=None,
                     scale=alt.Scale(domain=owner_order, range=owner_colors),
                 ),
-                tooltip=["Round:N", "Team Owner:N", "Rank:Q"],
+                tooltip=alt.value(None),
             )
 
             lines = base.mark_line()
