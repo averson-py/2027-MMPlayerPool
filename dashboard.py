@@ -4823,7 +4823,8 @@ components.html(
             const el = e.target;
             if (!el || !el.classList || !el.classList.contains('photo-table-wrap')) return;
             const scrolled = el.classList.contains('scrolled');
-            if (!scrolled && el.scrollLeft > 24) el.classList.add('scrolled');
+            // Only shrink when there is plenty of sideways room; shrinking a barely-too-wide table removes its scroll range and flickers.
+            if (!scrolled && el.scrollLeft > 24 && el.scrollWidth - el.clientWidth > 200) el.classList.add('scrolled');
             else if (scrolled && el.scrollLeft < 4) el.classList.remove('scrolled');
         };
         d.addEventListener('scroll', onScroll, true);
