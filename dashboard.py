@@ -3012,6 +3012,16 @@ def _owner_link_clicked(owner):
     st.session_state["_goto_tab"] = "Team View"
 
 
+# Reset on every script run so each table's hidden button keys are unique.
+_owner_table_count = 0
+
+
+def _next_owner_table_key():
+    global _owner_table_count
+    _owner_table_count += 1
+    return f"t{_owner_table_count}"
+
+
 def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None, column_colors=None, selectable=False, zebra=False, center=False, owner_links=None):
     if df.empty:
         st.info("No data available yet.")
@@ -3053,6 +3063,8 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
     except Exception:
         _style_sig = None
     _style_cache = st.session_state.setdefault("_styled_cache", {})
+    if photo_map is not None and owner_links is None and "Team Owner" in df.columns:
+        owner_links = _next_owner_table_key()
     html_mode = photo_map is not None or bool(owner_links)
     _cache_key = (selectable if isinstance(selectable, str) else None, html_mode, height)
     _hit = _style_cache.get(_cache_key)
@@ -3098,7 +3110,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
 
             styled = styled.format(player_cell, subset=["Player Name"], escape=None)
         if owner_links and "Team Owner" in df.columns:
-            owners = df["Team Owner"].tolist()
+            owners = list(dict.fromkeys(df["Team Owner"].tolist()))
             owner_index = {owner: i for i, owner in enumerate(owners)}
 
             def owner_cell(value):
@@ -3154,7 +3166,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .photo-table-wrap th, .photo-table-wrap td {
                 border: 1px solid #e0e0e0; padding: 4px 8px; white-space: nowrap;
             }
-            .photo-table-wrap th {background: #004FB3 !important; color: #FFFFFF; font-weight: 700;}
+            .photo-table-wrap th {background: #4472C4 !important; color: #FFFFFF; font-weight: 700;}
             .player-cell {display: flex; align-items: center; position: relative; height: 64px; overflow: hidden; padding-left: 88px; text-align: left; width: 200px; transition: width 0.25s ease, padding-left 0.25s ease;}
             .player-cell span {white-space: normal; min-width: 0; overflow-wrap: anywhere; align-self: center;}
             .photo-table-wrap td:has(.player-cell) {vertical-align: bottom; padding-top: 0 !important; padding-bottom: 0 !important; overflow: visible;}
