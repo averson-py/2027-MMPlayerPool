@@ -2654,7 +2654,7 @@ def make_performers(data, positive=True, exclude_unavailable=False):
     return pd.DataFrame(result)[performer_columns], result
 
 
-def make_draft_value(data, steals=True):
+def make_draft_value(data, steals=True, exclude_unavailable=False):
     """Top 5 picks whose projected-FPts rank beats (steals) or trails (busts) their draft order."""
     drafted = sorted(
         data["draft_rows"], key=lambda r: draft_position_sort_key(r["draft_position"])
@@ -2676,6 +2676,8 @@ def make_draft_value(data, steals=True):
         if (steals and value <= 0) or (not steals and value >= 0):
             continue
         stats = data["player_stats"].get(row["player_name"].casefold(), {})
+        if exclude_unavailable and injury_status(row["player_name"], stats) in ("q", "questionable", "o", "out"):
+            continue
         team = stats.get("Team")
         result.append({
             "Player Name": player_label(row["player_name"], stats),
@@ -4378,8 +4380,9 @@ with tab2:
     )
 
     st.markdown("### <span style='color:#C62828; font-weight:800;'>↓</span> Biggest Draft Busts 💩", unsafe_allow_html=True)
+    hide_injured_busts = st.checkbox("Hide Injured players", key="hide_unavailable_busts")
     display_df(
-        make_draft_value(data, steals=False),
+        make_draft_value(data, steals=False, exclude_unavailable=hide_injured_busts),
         height=240,
         zebra=True,
         performance_gradient="red",
