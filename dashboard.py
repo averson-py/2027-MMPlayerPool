@@ -2654,6 +2654,68 @@ def make_performers(data, positive=True, exclude_unavailable=False):
     return pd.DataFrame(result)[performer_columns], result
 
 
+def make_draft_value(data, steals=True):
+    """Top 5 picks whose projected-FPts rank beats (steals) or trails (busts) their draft order."""
+    drafted = sorted(
+        data["draft_rows"], key=lambda r: draft_position_sort_key(r["draft_position"])
+    )
+    entries = []
+    for row in drafted:
+        projected = player_projected_fpts(row, data)
+        if projected is not None:
+            entries.append((row, projected))
+    ranked = sorted(
+        range(len(entries)), key=lambda i: (-entries[i][1], i)
+    )
+    projected_rank = {i: rank for rank, i in enumerate(ranked, start=1)}
+
+    result = []
+    for index, (row, projected) in enumerate(entries):
+        pick_number = index + 1
+        value = pick_number - projected_rank[index]
+        if (steals and value <= 0) or (not steals and value >= 0):
+            continue
+        stats = data["player_stats"].get(row["player_name"].casefold(), {})
+        team = stats.get("Team")
+        result.append({
+            "Player Name": player_label(row["player_name"], stats),
+            "_photo": get_player_photo_url(row["player_name"], team),
+            "Team": team,
+            "Next Opponent": next_opponent_for(data, team),
+            "Draft Pos.": row["draft_position"],
+            "Overall Pick": pick_number,
+            "Projected Rank": projected_rank[index],
+            "Pick Value": f"{value:+d}",
+            "_value": value,
+            "Team Owner": row["draftee"],
+            "Games Played": row.get("games_played", 0),
+            "Poss. Games Remaining": row.get("possible_games_remaining", 0),
+            "Expected Games Remaining": round(player_expected_games_remaining(row, data), 1),
+            "_expected_tip": expected_games_explanation(row, data),
+            "Projected FPts": projected,
+            "_projected_tip": projected_fpts_explanation(row, data),
+            "_team_out": (
+                team is not None
+                and str(team).strip().casefold() in data["teams_out"]
+            ),
+            "_pick": pick_number,
+        })
+
+    result.sort(key=lambda p: (-p["_value"] if steals else p["_value"], p["_pick"]))
+    result = result[:5]
+    for i, row in enumerate(result, start=1):
+        row["Rank"] = i
+
+    value_columns = [
+        "Rank", "Player Name", "Team", "Next Opponent", "Draft Pos.", "Overall Pick",
+        "Projected Rank", "Pick Value", "Projected FPts", "Team Owner", "Games Played",
+        "Poss. Games Remaining", "Expected Games Remaining", "_expected_tip", "_projected_tip",
+        "_team_out", "_photo",
+    ]
+    if not result:
+        return pd.DataFrame(columns=value_columns)
+    return pd.DataFrame(result)[value_columns]
+
 def make_draft_ratings(data):
     positions = {
         draftee.casefold(): position
@@ -4288,6 +4350,18 @@ with tab2:
         performance_gradient="green",
     )
 
+    st.markdown("### <span style='color:#2E8B57; font-weight:800;'>↑</span> Biggest Draft Steals 💎", unsafe_allow_html=True)
+    st.caption(
+        "Pick Value = overall pick number minus rank by Projected FPts. "
+        "A bigger positive number means the player was drafted much later than they are projecting."
+    )
+    display_df(
+        make_draft_value(data, steals=True),
+        height=240,
+        zebra=True,
+        performance_gradient="green",
+    )
+
     st.markdown("### <span style='color:#C62828; font-weight:800;'>↓</span> Top Underperformers 🪠", unsafe_allow_html=True)
     if st.checkbox("Hide Injured players", key="hide_unavailable_under"):
         under_filtered, _ = make_performers(data, False, exclude_unavailable=True)
@@ -4303,6 +4377,13 @@ with tab2:
         performance_gradient="red",
     )
 
+    st.markdown("### <span style='color:#C62828; font-weight:800;'>↓</span> Biggest Draft Busts 💩", unsafe_allow_html=True)
+    display_df(
+        make_draft_value(data, steals=False),
+        height=240,
+        zebra=True,
+        performance_gradient="red",
+    )
     st.markdown(
         "<hr style='margin:0.25rem 0 0.5rem 0;border:0;border-top:1px solid #d9dbe0;'>",
         unsafe_allow_html=True,
