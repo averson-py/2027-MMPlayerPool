@@ -3216,8 +3216,11 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
         # Freeze the Player Name column so it stays visible while scrolling sideways.
         freeze_css, freeze_class = "", ""
         visible_columns = [c for c in df.columns if not str(c).startswith("_")]
-        if "Player Name" in visible_columns:
-            name_col = visible_columns.index("Player Name") + 1
+        freeze_name = next(
+            (c for c in ("Player Name", "Team Owner") if c in visible_columns), None
+        )
+        if freeze_name:
+            name_col = visible_columns.index(freeze_name) + 1
             freeze_class += f" freeze-{name_col}"
             freeze_css = (
                 f".photo-table-wrap.freeze-{name_col} th:nth-child({name_col}),"
