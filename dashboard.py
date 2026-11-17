@@ -2888,7 +2888,7 @@ def _standings_cell_clicked(select_key="standings_select"):
         if col_name == "Team Owner" and row_pos is not None:
             owner = st.session_state.get("_owners_" + select_key, [])[int(row_pos)]
             st.session_state["team_owner"] = owner
-            st.session_state["main_tabs"] = TEAM_VIEW_TAB
+            st.session_state["_goto_tab"] = "Team View"
             return
 
 
@@ -3474,6 +3474,23 @@ if refresh_col.button("🔄 Refresh Standings", key="refresh_data", use_containe
     st.session_state.pop("_data_cache", None)
     st.rerun()
 
+# Restore the saved team before rendering anything heavy, so the tables draw once with the highlight.
+if not st.session_state.get("my_team") and not st.query_params.get("my_team") \
+        and not st.session_state.get("_my_team_restored"):
+    try:
+        from streamlit_js_eval import streamlit_js_eval
+        _saved_team = streamlit_js_eval(
+            js_expressions="(() => { try { return localStorage.getItem('mmpool_my_team') || ''; } catch (e) { return ''; } })()",
+            key="restore_my_team",
+        )
+    except Exception:
+        _saved_team = ""
+    if _saved_team is None:
+        st.stop()
+    st.session_state["_my_team_restored"] = True
+    if _saved_team in data["drafters"]:
+        st.session_state["my_team"] = _saved_team
+
 standings = make_standings(data)
 power = make_power_rankings(data)
 players, player_rows = make_player_rankings(data)
@@ -3489,21 +3506,6 @@ c3.metric("👥 Players Active", int(standings["Active Players"].sum()) if not s
 c4.metric("❌ Teams Eliminated", len(data["teams_out"]))
 
 pick_col, _pick_spacer = st.columns([1, 2])
-if not st.session_state.get("my_team") and not st.query_params.get("my_team") \
-        and not st.session_state.get("_my_team_restored"):
-    try:
-        from streamlit_js_eval import streamlit_js_eval
-        _saved_team = streamlit_js_eval(
-            js_expressions="localStorage.getItem('mmpool_my_team') || ''",
-            key="restore_my_team",
-        )
-    except Exception:
-        _saved_team = ""
-        st.session_state["_my_team_restored"] = True
-    if _saved_team is not None:
-        st.session_state["_my_team_restored"] = True
-        if _saved_team in data["drafters"]:
-            st.session_state["my_team"] = _saved_team
 with pick_col:
     my_team_choice = st.selectbox(
         "👤 Choose your team (highlights team in tables, should only have to select once)",
@@ -3521,7 +3523,26 @@ tab0, tab1, tab2, tab5, tab3, tab4, tab6 = st.tabs([
     TEAM_VIEW_TAB,
     "🎯 Draft Recap",
     "ℹ️ League Info",
-], key="main_tabs", on_change="rerun")
+], key="main_tabs")
+
+# Tabs don't rerun the app, so open a tab programmatically by clicking its button.
+_goto_tab = st.session_state.pop("_goto_tab", None)
+if _goto_tab:
+    st.session_state["_goto_n"] = st.session_state.get("_goto_n", 0) + 1
+    components.html(
+        """<script>
+        // run """ + str(st.session_state["_goto_n"]) + """
+        const label = """ + json.dumps(_goto_tab) + """;
+        let tries = 0;
+        const timer = setInterval(() => {
+            const tab = Array.from(window.parent.document.querySelectorAll('[role="tab"], [data-baseweb="tab"]'))
+                .find(el => el.textContent.includes(label));
+            if (tab) { tab.click(); clearInterval(timer); }
+            else if (++tries > 40) clearInterval(timer);
+        }, 50);
+        </script>""",
+        height=0,
+    )
 
 with tab0:
     st.subheader("🏟️ Pool Overview")
