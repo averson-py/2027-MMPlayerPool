@@ -2962,8 +2962,8 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             )
             return (
                 '<div class="player-cell">' + img
-                + '<span class="name-full">' + html_lib.escape(str(value)) + '</span>'
-                + '<span class="name-short">' + html_lib.escape(short_player_name(str(value))) + '</span></div>'
+                + '<span class="name-wrap"><span class="name-full">' + html_lib.escape(str(value)) + '</span>'
+                + '<span class="name-short">' + html_lib.escape(short_player_name(str(value))) + '</span></span></div>'
             )
 
         styled = styled.format(player_cell, subset=["Player Name"], escape=None)
@@ -3010,7 +3010,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
                 border: 1px solid #e0e0e0; padding: 4px 8px; white-space: nowrap;
             }
             .photo-table-wrap th {background: #FFFFFF; color: #000000;}
-            .player-cell {display: flex; align-items: center; position: relative; height: 64px; overflow: hidden; padding-left: 88px; text-align: left; min-width: 200px;}
+            .player-cell {display: flex; align-items: center; position: relative; height: 64px; overflow: hidden; padding-left: 88px; text-align: left; width: 200px; transition: width 0.25s ease, padding-left 0.25s ease;}
             .player-cell span {white-space: normal; min-width: 0; overflow-wrap: anywhere; align-self: center;}
             .photo-table-wrap td:has(.player-cell) {vertical-align: bottom; padding-top: 0 !important; padding-bottom: 0 !important; overflow: visible;}
             .team-cell {display: flex; align-items: center; gap: 8px; min-width: 160px; padding-left: 10px;}
@@ -3019,12 +3019,15 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .player-photo {
                 position: absolute; left: 0; bottom: 0; height: 60px; width: auto; max-width: 84px;
                 background: transparent; display: block; z-index: 1;
+                transition: height 0.25s ease, max-width 0.25s ease;
             }
             span.player-photo {width: 1px;}
-            .name-short {display: none;}
-            .photo-table-wrap.scrolled .name-full {display: none;}
-            .photo-table-wrap.scrolled .name-short {display: inline; font-size: 12px; white-space: nowrap; overflow-wrap: normal;}
-            .photo-table-wrap.scrolled .player-cell {min-width: 0; padding-left: 52px;}
+            .name-wrap {display: grid; align-items: center;}
+            .name-full, .name-short {grid-area: 1 / 1; transition: opacity 0.25s ease;}
+            .player-cell .name-short {opacity: 0; white-space: nowrap; overflow-wrap: normal; font-size: 12px;}
+            .photo-table-wrap.scrolled .name-full {opacity: 0;}
+            .photo-table-wrap.scrolled .name-short {opacity: 1;}
+            .photo-table-wrap.scrolled .player-cell {width: 104px; padding-left: 52px;}
             .photo-table-wrap.scrolled .player-photo {height: 50px; max-width: 48px;}
             .cell-tip {position: relative; display: inline-block; cursor: help; border-bottom: 1px dotted #888; outline: none;}
             .cell-tip .cell-tip-text {
