@@ -2843,6 +2843,195 @@ def make_draft_ratings(data):
     return pd.DataFrame(result)[ratings_columns]
 
 
+# Rough single-game team strength by seed; win probability is a logistic of the strength gap.
+SEED_STRENGTH = {
+    1: 25.0, 2: 21.0, 3: 18.0, 4: 16.0, 5: 14.0, 6: 13.0, 7: 11.5, 8: 10.0,
+    9: 9.5, 10: 8.5, 11: 8.0, 12: 7.5, 13: 4.5, 14: 2.0, 15: 0.0, 16: -4.0,
+}
+STRENGTH_SCALE = 7.0
+WIN_PROB_SIMS = 10000
+GAME_FPTS_SPREAD = 0.30
+# Seeds in bracket order within a region: each adjacent pair plays in the first round.
+BRACKET_SLOT_SEEDS = [1, 16, 8, 9, 5, 12, 4, 13, 6, 11, 3, 14, 7, 10, 2, 15]
+
+
+def _simulate_win_probabilities(data, n_sims, seed):
+    import numpy as np
+
+    regions = ["EAST", "WEST", "MIDWEST", "SOUTH"]
+    bracket = data["bracket_teams"]
+    owners = data["drafters"]
+    if not bracket or not owners or not data["draft_rows"]:
+        return None
+    rng = np.random.default_rng(seed)
+    teams_out = data["teams_out"]
+
+    team_names, team_seeds, team_index = [], [], {}
+
+    def team_id(team, seed_value):
+        key = _norm_team_name(team)
+        if key not in team_index:
+            team_index[key] = len(team_names)
+            team_names.append(team)
+            team_seeds.append(seed_value)
+        return team_index[key]
+
+    region_slots = {}
+    for region in regions:
+        slots = []
+        for slot_seed in BRACKET_SLOT_SEEDS:
+            teams = bracket.get(slot_seed, {}).get(region, [])
+            if not teams or len(teams) > 2:
+                return None
+            slots.append([team_id(t, slot_seed) for t in teams])
+        region_slots[region] = slots
+
+    n_teams = len(team_names)
+    lost = np.full(n_teams, 99)
+    for i, name in enumerate(team_names):
+        value = teams_out.get(str(name).strip().casefold())
+        if value is not None:
+            lost_round = round_lost_index(value)
+            lost[i] = lost_round if lost_round is not None else 99
+    strength = np.array([SEED_STRENGTH.get(int(s), 0.0) for s in team_seeds])
+
+    def play(a, b, rnd):
+        a_out, b_out = lost[a] <= rnd, lost[b] <= rnd
+        a_surv = (lost[a] > rnd) & (lost[a] < 99)
+        b_surv = (lost[b] > rnd) & (lost[b] < 99)
+        p_a = 1.0 / (1.0 + np.exp(-(strength[a] - strength[b]) / STRENGTH_SCALE))
+        sampled = np.where(rng.random(a.shape) < p_a, a, b)
+        # Real results win over the model: a known loser loses, a team known to play later advances.
+        return np.where(
+            a_out & ~b_out, b,
+            np.where(b_out & ~a_out, a,
+                     np.where(a_surv & ~b_surv, a, np.where(b_surv & ~a_surv, b, sampled))),
+        )
+
+    rows = np.arange(n_sims)[:, None]
+    appearances = np.zeros((n_sims, n_teams), dtype=np.int16)
+
+    def record(a, b):
+        appearances[rows, a] += 1
+        appearances[rows, b] += 1
+
+    def run_region(slots):
+        entrants = []
+        for slot in slots:
+            if len(slot) == 2:
+                entrants.append(play(np.full(n_sims, slot[0]), np.full(n_sims, slot[1]), -1))
+            else:
+                entrants.append(np.full(n_sims, slot[0]))
+        current = np.stack(entrants, axis=1)
+        for rnd in range(4):
+            a, b = current[:, 0::2], current[:, 1::2]
+            record(a, b)
+            current = play(a, b, rnd)
+        return current[:, 0]
+
+    winners = {region: run_region(region_slots[region]) for region in regions}
+    config = data["final_four_config"]
+    semi_pairs = [
+        (config["semifinal_1_region_1"], config["semifinal_1_region_2"]),
+        (config["semifinal_2_region_1"], config["semifinal_2_region_2"]),
+    ]
+    finalists = []
+    for first_region, second_region in semi_pairs:
+        if first_region not in winners or second_region not in winners:
+            return None
+        a, b = winners[first_region], winners[second_region]
+        record(a[:, None], b[:, None])
+        finalists.append(play(a, b, 4))
+    record(finalists[0][:, None], finalists[1][:, None])
+
+    weight = data["tournament_fpts_weight"]
+    owner_pos = {name.casefold(): i for i, name in enumerate(owners)}
+    current_totals = np.zeros(len(owners))
+    sim_players = []
+    fixed_future = np.zeros(len(owners))
+    for row in data["draft_rows"]:
+        owner = owner_pos.get(row["draftee"].casefold())
+        if owner is None:
+            continue
+        stats = data["player_stats"].get(row["player_name"].casefold(), {})
+        total = player_total(row, data["fantasy_weights"])
+        current_totals[owner] += float(total or 0.0)
+        season = sum_existing_values([stats.get("Tot. FPts")]) or 0.0
+        games = row.get("games_played") or 0
+        per_game = (
+            weight * (float(total) / games) + (1.0 - weight) * season
+            if games > 0 and total is not None else season
+        )
+        team_key = _norm_team_name(stats.get("Team")) if stats.get("Team") else None
+        if team_key in team_index:
+            blocked = (
+                str(stats.get("Team")).strip().casefold() in teams_out
+                or injury_status(row["player_name"], stats) in ("o", "out")
+            )
+            sim_players.append((owner, team_index[team_key], games, per_game, blocked))
+        else:
+            fixed_future[owner] += per_game * player_expected_games_remaining(row, data)
+
+    totals = np.tile(current_totals + fixed_future, (n_sims, 1))
+    if sim_players:
+        owner_idx = np.array([p[0] for p in sim_players])
+        team_idx = np.array([p[1] for p in sim_players])
+        games_done = np.array([p[2] for p in sim_players])
+        per_game = np.array([p[3] for p in sim_players])
+        blocked = np.array([p[4] for p in sim_players])
+        games_left = np.maximum(appearances[:, team_idx] - games_done[None, :], 0)
+        games_left = np.where(blocked[None, :], 0, games_left)
+        noise = rng.standard_normal(games_left.shape)
+        future = np.maximum(
+            games_left * per_game + GAME_FPTS_SPREAD * per_game * np.sqrt(games_left) * noise, 0.0
+        )
+        membership = np.zeros((len(sim_players), len(owners)))
+        membership[np.arange(len(sim_players)), owner_idx] = 1.0
+        totals = totals + future @ membership
+
+    order = np.argsort(-totals, axis=1, kind="stable")
+    places = np.empty_like(order)
+    places[rows, order] = np.arange(len(owners))[None, :]
+
+    cfg = data["payout_config"]
+    base = cfg["D2"]
+    last_pay, third_pay, second_pay = base * cfg["E2"], base * cfg["F2"], base * cfg["G2"]
+    first_pay = base * len(owners) - last_pay - third_pay - second_pay
+    payout_by_place = np.zeros(len(owners))
+    payout_by_place[0] = first_pay
+    if len(owners) > 1:
+        payout_by_place[1] = second_pay
+    if len(owners) > 2:
+        payout_by_place[2] = third_pay
+    if len(owners) > 3:
+        payout_by_place[-1] = last_pay
+    place_probs = np.stack([(places == k).mean(axis=0) for k in range(len(owners))])
+    expected_payout = payout_by_place @ place_probs
+
+    result = pd.DataFrame({
+        "Team Owner": owners,
+        "Draft Position": range(1, len(owners) + 1),
+        "Win %": place_probs[0] * 100,
+        "Top 3 %": place_probs[:3].sum(axis=0) * 100,
+        "Last Place %": place_probs[-1] * 100,
+        "Exp. Payout": [f"${value:,.2f}" for value in expected_payout],
+        "Avg. Final FPts": totals.mean(axis=0),
+    })
+    result = result.sort_values(["Win %", "Avg. Final FPts"], ascending=False, kind="stable").reset_index(drop=True)
+    result.insert(0, "Rank", range(1, len(result) + 1))
+    return result[["Rank", "Draft Position", "Team Owner", "Win %", "Top 3 %", "Last Place %", "Exp. Payout", "Avg. Final FPts"]]
+
+
+def simulate_win_probabilities(data, n_sims=WIN_PROB_SIMS, seed=2027):
+    """Monte Carlo finish odds per owner (cached on `data`); None if the bracket can't be simulated."""
+    if "_win_prob" not in data:
+        try:
+            data["_win_prob"] = _simulate_win_probabilities(data, n_sims, seed)
+        except Exception:
+            data["_win_prob"] = None
+    return data["_win_prob"]
+
+
 # ---------------------------------------------------------------------
 # Streamlit presentation helpers
 # ---------------------------------------------------------------------
@@ -2999,6 +3188,10 @@ def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, p
         "Total FPts",
         "MVP FPts",
         "Expected Games Remaining",
+        "Win %",
+        "Top 3 %",
+        "Last Place %",
+        "Avg. Final FPts",
     }
     format_map = {}
     for col in df.columns:
@@ -4491,6 +4684,32 @@ with tab1:
         },
         reverse_columns={"Draft Pos.": True},
     )
+
+    st.subheader("🎲 Win Probability")
+    win_prob = simulate_win_probabilities(data)
+    if win_prob is None:
+        st.info("Win probabilities need a complete bracket in the TeamList sheet.")
+    else:
+        st.caption(
+            f"Estimated from {WIN_PROB_SIMS:,} simulated tournaments. Game outcomes use seed-based win "
+            f"probabilities and real results so far; player scoring varies about {GAME_FPTS_SPREAD:.0%} "
+            "per game around the projected rate."
+        )
+        display_df(
+            win_prob.rename(columns={"Draft Position": "Draft Pos."}),
+            height=520,
+            rank_rwg=True,
+            zebra=True,
+            owner_links="winprob",
+            scale_columns={
+                "Draft Pos.": (win_prob["Draft Position"].min(), win_prob["Draft Position"].max()),
+                "Win %": (win_prob["Win %"].min(), win_prob["Win %"].max()),
+                "Top 3 %": (win_prob["Top 3 %"].min(), win_prob["Top 3 %"].max()),
+                "Last Place %": (win_prob["Last Place %"].min(), win_prob["Last Place %"].max()),
+                "Avg. Final FPts": (win_prob["Avg. Final FPts"].min(), win_prob["Avg. Final FPts"].max()),
+            },
+            reverse_columns={"Draft Pos.": True, "Last Place %": True},
+        )
 
 
 with tab2:
