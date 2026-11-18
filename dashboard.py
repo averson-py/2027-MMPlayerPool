@@ -2916,6 +2916,13 @@ def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, p
             return [f"background-color: {color}"] * len(row)
 
         styled = styled.apply(zebra_styles, axis=1)
+    my_team = st.session_state.get("my_team")
+    if my_team and "Team Owner" in df.columns:
+        def tint_my_row(row):
+            mine = str(row["Team Owner"]).casefold() == str(my_team).casefold()
+            return ["background-color: #FFF4E5" if mine else ""] * len(row)
+
+        styled = styled.apply(tint_my_row, axis=1)
     styled = styled.apply(apply_styles, axis=1)
 
     # Display numeric values cleanly.
@@ -2969,7 +2976,6 @@ def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, p
                     **{"background-color": bg}
                 )
 
-    my_team = st.session_state.get("my_team")
     if my_team and "Team Owner" in df.columns:
         def highlight_my_row(row):
             is_mine = str(row["Team Owner"]).casefold() == str(my_team).casefold()
@@ -4218,6 +4224,13 @@ with tab0:
 
             lines = base.mark_line()
             points = base.mark_point(filled=True, size=55)
+            my_team_name = st.session_state.get("my_team")
+            is_mine = f"datum['Team Owner'] == {json.dumps(my_team_name)}" if my_team_name else None
+            if is_mine:
+                lines = lines.encode(
+                    strokeWidth=alt.condition(is_mine, alt.value(5), alt.value(2)),
+                    opacity=alt.condition(is_mine, alt.value(1), alt.value(0.45)),
+                )
 
             # Put a small rounded label behind every point so the owner's name
             # is visible without having to hover. The label background uses
@@ -4230,6 +4243,11 @@ with tab0:
                 opacity=0.92,
                 strokeWidth=0,
             )
+            if is_mine:
+                label_bg = label_bg.encode(
+                    stroke=alt.condition(is_mine, alt.value("#F28C28"), alt.value("transparent")),
+                    strokeWidth=alt.condition(is_mine, alt.value(2.5), alt.value(0)),
+                )
             labels = base.mark_text(
                 fontSize=9,
                 fontWeight="bold",
