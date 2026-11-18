@@ -3021,11 +3021,35 @@ def _simulate_win_probabilities(data, n_sims, seed, pre_tournament=False):
     place_probs = np.stack([(places == k).mean(axis=0) for k in range(len(owners))])
     expected_payout = payout_by_place @ place_probs
 
+    avg_finish = (places + 1).mean(axis=0)
+    mean_score = totals.mean(axis=0)
+    low, high = np.percentile(totals, [10, 90], axis=0)
+    win_counts = (places == 0).sum(axis=0)
+    finish_tips = [
+        f"<b>Avg. Finish</b><br>Average place across {n_sims:,} simulated tournaments: {avg_finish[i]:.2f}.<br>"
+        f"1st: {place_probs[0][i] * 100:.1f}% · top 3: {place_probs[:3, i].sum() * 100:.1f}% "
+        f"· last: {place_probs[-1][i] * 100:.1f}%"
+        for i in range(len(owners))
+    ]
+    score_tips = [
+        f"<b>Projected Score</b><br>Average final FPts across the simulations: "
+        f"{current_totals[i]:.1f} scored so far + {mean_score[i] - current_totals[i]:.1f} still to come.<br>"
+        f"Middle 80% of outcomes: {low[i]:.0f} to {high[i]:.0f}."
+        for i in range(len(owners))
+    ]
+    win_tips = [
+        f"<b>Win %</b><br>Finished 1st in {win_counts[i]:,} of {n_sims:,} simulated tournaments.<br>"
+        f"Win % depends on the spread of outcomes, not just the average. Owners behind the leaders need a big "
+        f"run to win, so a wider range ({low[i]:.0f} to {high[i]:.0f}) can give a higher Win % than a higher "
+        "average score with a narrower range."
+        for i in range(len(owners))
+    ]
+
     result = pd.DataFrame({
         "Draft Position": range(1, len(owners) + 1),
         "Team Owner": owners,
-        "Avg. Finish": (places + 1).mean(axis=0),
-        "Projected Score": totals.mean(axis=0),
+        "Avg. Finish": avg_finish,
+        "Projected Score": mean_score,
         "Total FPts": current_totals,
         "Win %": place_probs[0] * 100,
         "Top 3 %": place_probs[:3].sum(axis=0) * 100,
@@ -3037,6 +3061,9 @@ def _simulate_win_probabilities(data, n_sims, seed, pre_tournament=False):
         ],
         "Games Played": games_played,
         "Expected Games Remaining": expected_games.round(1),
+        "_finish_tip": finish_tips,
+        "_score_tip": score_tips,
+        "_win_tip": win_tips,
     })
     result = result.sort_values(
         ["Avg. Finish", "Projected Score"], ascending=[True, False], kind="stable"
@@ -3079,6 +3106,8 @@ def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, p
         for col, (minimum, maximum) in scale_columns.items():
             if col in row.index:
                 value = row[col]
+                if isinstance(value, tuple):
+                    value = value[0]
                 bg = color_scale(
                     value, minimum, maximum,
                     reverse=reverse_columns.get(col, False)
@@ -3339,6 +3368,9 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
     for tip_key, tip_col in (
         ("_expected_tip", "Expected Games Remaining"),
         ("_projected_tip", "Projected FPts"),
+        ("_finish_tip", "Avg. Finish"),
+        ("_score_tip", "Projected Score"),
+        ("_win_tip", "Win %"),
     ):
         if tip_key in df.columns:
             if tip_col in df.columns:
@@ -3349,16 +3381,20 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
     if "_photo" in df.columns and "Player Name" in df.columns:
         photo_map = dict(zip(df["Player Name"], df["_photo"]))
         df = df.drop(columns=["_photo"])
-        # Photo tables only: pair each value with its tooltip text and where the popup fits.
-        if cell_tips:
-            df = df.copy()
-            for tip_col, tips in cell_tips.items():
-                if tip_col in df.columns:
-                    last = len(df) - 1
-                    df[tip_col] = [
-                        (value, tip, "above" if position >= 2 else ("below" if last - position >= 2 else "side"))
-                        for position, (value, tip) in enumerate(zip(df[tip_col], tips))
-                    ]
+
+    if photo_map is not None and owner_links is None and "Team Owner" in df.columns:
+        owner_links = _next_owner_table_key()
+    html_mode = photo_map is not None or bool(owner_links) or html
+    # HTML tables only: pair each value with its tooltip text and where the popup fits.
+    if html_mode and cell_tips:
+        df = df.copy()
+        for tip_col, tips in cell_tips.items():
+            if tip_col in df.columns:
+                last = len(df) - 1
+                df[tip_col] = [
+                    (value, tip, "above" if position >= 2 else ("below" if last - position >= 2 else "side"))
+                    for position, (value, tip) in enumerate(zip(df[tip_col], tips))
+                ]
 
     try:
         _style_sig = (
@@ -3371,9 +3407,6 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
     except Exception:
         _style_sig = None
     _style_cache = st.session_state.setdefault("_styled_cache", {})
-    if photo_map is not None and owner_links is None and "Team Owner" in df.columns:
-        owner_links = _next_owner_table_key()
-    html_mode = photo_map is not None or bool(owner_links) or html
     _cache_key = (selectable if isinstance(selectable, str) else None, html_mode, height)
     _hit = _style_cache.get(_cache_key)
     if _style_sig is not None and _hit and _hit[0] == _style_sig:
@@ -3431,18 +3464,24 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
 
             styled = styled.format(owner_cell, subset=["Team Owner"], escape=None)
         if cell_tips:
-            def tip_cell(value):
-                shown, tip, placement = value
-                if shown is None or pd.isna(shown):
-                    return ""
-                return (
-                    f'<span class="cell-tip {placement}" tabindex="0">'
-                    f'{float(shown):.1f}<span class="cell-tip-text">{tip}</span></span>'
-                )
+            def make_tip_cell(decimals):
+                def tip_cell(value):
+                    shown, tip, placement = value
+                    if shown is None or pd.isna(shown):
+                        return ""
+                    return (
+                        f'<span class="cell-tip {placement}" tabindex="0">'
+                        f'{float(shown):.{decimals}f}<span class="cell-tip-text">{tip}</span></span>'
+                    )
+
+                return tip_cell
 
             for tip_col in cell_tips:
                 if tip_col in df.columns:
-                    styled = styled.format(tip_cell, subset=[tip_col], escape=None)
+                    styled = styled.format(
+                        make_tip_cell(2 if tip_col == "Avg. Finish" else 1),
+                        subset=[tip_col], escape=None,
+                    )
         if "Team" in df.columns or "Next Opponent" in df.columns:
             def team_cell(value):
                 if value is None or (isinstance(value, float) and pd.isna(value)):
@@ -3514,7 +3553,6 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .cell-tip.above .cell-tip-text {bottom: 100%; margin-bottom: 6px;}
             .cell-tip.below .cell-tip-text {top: 100%; margin-top: 6px;}
             .cell-tip.side .cell-tip-text {right: 100%; top: 50%; transform: translateY(-50%); margin-right: 8px;}
-            .cell-tip:hover .cell-tip-text, .cell-tip:focus .cell-tip-text {display: block;}
             </style>
             """,
             unsafe_allow_html=True,
@@ -4077,7 +4115,8 @@ ratings = make_draft_ratings(data)
 pre_sim = simulate_win_probabilities(data, pre_tournament=True)
 if pre_sim is not None and not ratings.empty:
     ratings = pre_sim[
-        ["Rank", "Draft Position", "Team Owner", "Avg. Finish", "Projected Score", "Win %", "Top 3 %"]
+        ["Rank", "Draft Position", "Team Owner", "Avg. Finish", "Projected Score", "Win %", "Top 3 %",
+         "_finish_tip", "_score_tip", "_win_tip"]
     ].merge(ratings[["Team Owner", "Regions"]], on="Team Owner", how="left")
 
 # Top-line summary
@@ -4725,7 +4764,8 @@ with tab1:
             f"Estimated from {WIN_PROB_SIMS:,} simulated tournaments. Game outcomes use seed-based win "
             f"probabilities and real results so far; player scoring varies about {GAME_FPTS_SPREAD:.0%} "
             "per game around the projected rate. Rank orders owners by average simulated finishing place "
-            "(Avg. Finish); Projected Score is the average simulated final FPts."
+            "(Avg. Finish); Projected Score is the average simulated final FPts. "
+            "Hover over Avg. Finish, Projected Score or Win % for details."
         )
         display_df(
             win_prob.drop(columns=["FPts per game", "Games Played", "Exp. Payout", "Expected Games Remaining"]).rename(columns={"Draft Position": "Draft Pos."}),
@@ -5548,9 +5588,42 @@ components.html(
 # Player tables: once scrolled sideways, mark the table so the frozen name column can shrink.
 components.html(
     """<script>
+    const DARK = """ + json.dumps(bool(dark_mode)) + """;
     try {
         const p = window.parent, d = p.document;
         if (p.__mmFreezeOff) p.__mmFreezeOff();
+        // One shared tooltip on the page body, so no table scroll container can clip it.
+        let tip = d.getElementById('mm-cell-tip');
+        if (!tip) { tip = d.createElement('div'); tip.id = 'mm-cell-tip'; d.body.appendChild(tip); }
+        tip.style.cssText = 'position:fixed;display:none;z-index:99999;pointer-events:none;width:max-content;'
+            + 'min-width:200px;max-width:300px;white-space:normal;text-align:left;font-size:12px;font-weight:400;'
+            + 'line-height:1.4;border-radius:6px;padding:8px 10px;box-shadow:0 4px 12px rgba(0,0,0,0.3);'
+            + 'border:1px solid #4472C4;' + (DARK ? 'background:#1A2130;color:#E5E7EB;' : 'background:#FFFFFF;color:#000000;');
+        const hideTip = () => { tip.style.display = 'none'; };
+        const showTip = el => {
+            const src = el.querySelector('.cell-tip-text');
+            if (!src) return;
+            tip.innerHTML = src.innerHTML;
+            tip.style.display = 'block';
+            const r = el.getBoundingClientRect();
+            const tw = tip.offsetWidth, th = tip.offsetHeight, gap = 8;
+            let top = r.top - th - gap;
+            if (top < gap) top = r.bottom + gap;
+            if (top + th > p.innerHeight - gap) top = Math.max(gap, p.innerHeight - th - gap);
+            const left = Math.min(Math.max(gap, r.right - tw), p.innerWidth - tw - gap);
+            tip.style.top = top + 'px';
+            tip.style.left = left + 'px';
+        };
+        const onTipOver = e => { const el = e.target.closest && e.target.closest('.cell-tip'); if (el) showTip(el); };
+        const onTipOut = e => {
+            const el = e.target.closest && e.target.closest('.cell-tip');
+            if (el && !el.contains(e.relatedTarget)) hideTip();
+        };
+        d.addEventListener('mouseover', onTipOver);
+        d.addEventListener('mouseout', onTipOut);
+        d.addEventListener('focusin', onTipOver);
+        d.addEventListener('focusout', onTipOut);
+        d.addEventListener('scroll', hideTip, true);
         const onOwnerClick = e => {
             const a = e.target.closest && e.target.closest('a.owner-link');
             if (!a) return;
@@ -5578,6 +5651,11 @@ components.html(
         p.__mmFreezeOff = () => {
             d.removeEventListener('scroll', onScroll, true);
             d.removeEventListener('click', onOwnerClick, true);
+            d.removeEventListener('mouseover', onTipOver);
+            d.removeEventListener('mouseout', onTipOut);
+            d.removeEventListener('focusin', onTipOver);
+            d.removeEventListener('focusout', onTipOut);
+            d.removeEventListener('scroll', hideTip, true);
         };
     } catch (e) {}
     </script>""",
