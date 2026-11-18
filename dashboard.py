@@ -901,9 +901,17 @@ def build_final_four_brackets(regional_winners, final_four_config, teams_out=Non
     return rounds
 
 
-def render_regional_winner_card_html(region, winner, label=None):
+def render_regional_winner_card_html(region, winner, label=None, dark=False):
     """Render a winner card styled like the bracket game cards."""
     label = label or f"{region} REGIONAL WINNER"
+    dark_css = (
+        ".matchup-container {border-color: #374151; background-color: #1A2130;}"
+        ".game-label {background: #1F2937; color: #9CA3AF;}"
+        ".team-box {background: #1A2130;}"
+        ".team-name {color: #E5E7EB;}"
+        ".team-box.tbd, .team-box.tbd .team-seed, .team-box.tbd .team-name {color: #6B7280;}"
+        if dark else ""
+    )
     known = bool(winner) and "TBD" not in str(winner)
     seed = lookup_seed(winner, "") if known else ""
     name = str(winner) if known else "TBD"
@@ -960,6 +968,7 @@ def render_regional_winner_card_html(region, winner, label=None):
             .team-box.tbd {{ color: #999; font-style: italic; }}
             .team-box.tbd .team-seed, .team-box.tbd .team-name {{ color: #999; }}
             .team-box.winner .team-name {{ font-weight: 700; }}
+            {dark_css}
         </style>
     </head>
     <body>
@@ -1007,7 +1016,7 @@ def build_team_players(data):
     return result
 
 
-def render_bracket_html(rounds, region=None, team_players=None, my_team=None):
+def render_bracket_html(rounds, region=None, team_players=None, my_team=None, dark=False):
     team_players = team_players or {}
     regions_list = ["EAST", "WEST", "MIDWEST", "SOUTH", "FINAL_FOUR"]
 
@@ -1565,6 +1574,30 @@ def render_bracket_html(rounds, region=None, team_players=None, my_team=None):
     """
 
     html = html.replace("__MY_TEAM__", json.dumps(my_team or ""))
+    if dark:
+        dark_css = """<style>
+            .ncaa-bracket-wrapper {background: #141A25; box-shadow: none;}
+            .game-label {background: #1F2937; color: #9CA3AF;}
+            .bracket-column-title {color: #9CA3AF;}
+            .matchup-container {border-color: #374151; background-color: #1A2130;}
+            .team-box {background: #1A2130; border-bottom-color: #2D3748;}
+            .team-box:hover {background: #243044;}
+            .team-name {color: #E5E7EB;}
+            .team-score {color: #9CA3AF;}
+            .team-score.score-win {color: #F3F4F6;}
+            .team-score.score-loss {color: #6B7280;}
+            .team-box.tbd {background: #161C28; color: #6B7280;}
+            .team-box.tbd .team-seed, .team-box.tbd .team-score, .team-box.tbd .team-name,
+            .team-box.eliminated .team-name, .team-box.eliminated .team-seed {color: #6B7280;}
+            .connector-line, .vertical-connector {background: #4B5563;}
+            #player-modal .box {background: #1A2130; color: #E5E7EB;}
+            #player-modal h3 {color: #E5E7EB;}
+            #player-modal .row {border-bottom-color: #2D3748;}
+            #player-modal .row.me {background: #3B2E1A;}
+            #player-modal .owner, #player-modal .stats, #player-modal .close {color: #9CA3AF;}
+        </style>"""
+        html = html.replace('<div id="player-modal">', dark_css + '<div id="player-modal">', 1)
+        html = html.replace("'#d0d0d0'", "'#4B5563'")
     return html
 
 
@@ -3231,6 +3264,12 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             unsafe_allow_html=True,
         )
         table_html = styled.to_html().replace("\n", "")
+        if st.session_state.get("dark_mode"):
+            table_html = re.sub(
+                "([\U0001F300-\U0001FAFF\u26A0\u26D4\u2B50\u2705\u274C]\uFE0F?)",
+                r'<span class="emoji-fix">\1</span>',
+                table_html,
+            )
         # Side popups are taller than a one-row table, so leave room beneath it.
         room_style = ' style="padding-bottom: 48px;"' if "cell-tip side" in table_html else ""
         # Freeze the Player Name column so it stays visible while scrolling sideways.
@@ -3704,6 +3743,7 @@ if dark_mode:
         hr {border-color: #374151 !important;}
         .photo-table-wrap, [data-testid="stDataFrame"] {filter: invert(1) hue-rotate(180deg);}
         .photo-table-wrap img, .photo-table-wrap .player-photo, [data-testid="stDataFrame"] img {filter: invert(1) hue-rotate(180deg);}
+        .photo-table-wrap .emoji-fix {display: inline-block; filter: invert(1) hue-rotate(180deg);}
         </style>
         """,
         unsafe_allow_html=True,
@@ -4816,11 +4856,12 @@ with tab6:
     second_payout = buy_in * cfg["G2"]
     # First place gets whatever remains of the total pot.
     first_payout = buy_in * len(data["drafters"]) - last_payout - third_payout - second_payout
+    buy_in_bg, pot_bg = ("#16301F", "#12273F") if st.session_state.get("dark_mode") else ("#E6F4EA", "#E3F0FB")
     st.markdown(
         "<style>.st-key-buy_in_card div[data-testid='stMetric'] "
-        "{background-color: #E6F4EA; border-left-color: #2E8B57;}"
+        f"{{background-color: {buy_in_bg}; border-left-color: #2E8B57;}}"
         ".st-key-total_pot_card div[data-testid='stMetric'] "
-        "{background-color: #E3F0FB; border-left-color: #2F80C9;}</style>",
+        f"{{background-color: {pot_bg}; border-left-color: #2F80C9;}}</style>",
         unsafe_allow_html=True,
     )
     pc1, pc2, pc3, pc4, pc5, pc6 = st.columns(6)
@@ -4931,14 +4972,14 @@ with tab5:
                         col1, col2, col3 = st.columns([1.3, 1, 1.3])
                         with col2:
                             components.html(
-                                render_regional_winner_card_html(region, winner),
+                                render_regional_winner_card_html(region, winner, dark=bool(st.session_state.get("dark_mode"))),
                                 height=90,
                             )
 
                     st.markdown("---")
 
                     # Show bracket
-                    bracket_html = render_bracket_html(regional_rounds, region=region, team_players=build_team_players(data), my_team=st.session_state.get("my_team"))
+                    bracket_html = render_bracket_html(regional_rounds, region=region, team_players=build_team_players(data), my_team=st.session_state.get("my_team"), dark=bool(st.session_state.get("dark_mode")))
                     components.html(bracket_html, height=1200, scrolling=True)
             # Final Four tab - show only Final Four and Championship
             with region_tabs[4]:
@@ -4975,14 +5016,14 @@ with tab5:
                 with col2:
                     components.html(
                         render_regional_winner_card_html(
-                            "", champion, label="NATIONAL CHAMPION"
+                            "", champion, label="NATIONAL CHAMPION", dark=bool(st.session_state.get("dark_mode"))
                         ),
                         height=90,
                     )
 
                 st.markdown("---")
 
-                bracket_html = render_bracket_html(final_four_rounds, team_players=build_team_players(data), my_team=st.session_state.get("my_team"))
+                bracket_html = render_bracket_html(final_four_rounds, team_players=build_team_players(data), my_team=st.session_state.get("my_team"), dark=bool(st.session_state.get("dark_mode")))
                 components.html(bracket_html, height=550, scrolling=False)
         except Exception as e:
             st.error(f"Error rendering bracket: {str(e)}")
