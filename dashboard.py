@@ -2247,6 +2247,34 @@ def make_team_round_changes(data, owner):
     return result
 
 
+def team_round_fpts(data, owner):
+    """Return one owner's FPts per tournament round and their top scorer as (name, FPts)."""
+    totals = [0.0] * 6
+    best = (None, None)
+    for row in data["draft_rows"]:
+        if row["draftee"].casefold() != owner.casefold():
+            continue
+        pts = row.get("tourn_pts_rounds") or [None] * 6
+        reb = row.get("tourn_reb_rounds") or [None] * 6
+        ast = row.get("tourn_ast_rounds") or [None] * 6
+        for i in range(6):
+            value = weighted_fantasy_points(pts[i], reb[i], ast[i], data["fantasy_weights"])
+            if value is not None:
+                totals[i] += float(value)
+        total = player_total(row, data["fantasy_weights"])
+        if total is not None and (best[1] is None or float(total) > best[1]):
+            best = (row["player_name"], float(total))
+    return totals, best
+
+
+def owner_value(df, owner, column):
+    """One owner's numeric value from a per-owner table, or None."""
+    match = df[df["Team Owner"].astype(str).str.casefold() == owner.casefold()]
+    if match.empty or pd.isna(match.iloc[0][column]):
+        return None
+    return float(match.iloc[0][column])
+
+
 def make_standings(data):
     positions = {
         draftee.casefold(): position
@@ -2818,7 +2846,7 @@ def make_draft_ratings(data):
 # ---------------------------------------------------------------------
 # Streamlit presentation helpers
 # ---------------------------------------------------------------------
-def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, pink_last=False, rank_rwg=False, performance_gradient=None, column_colors=None, zebra=False):
+def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, pink_last=False, rank_rwg=False, performance_gradient=None, column_colors=None, zebra=False, cell_styles=None):
     scale_columns = scale_columns or {}
     reverse_columns = reverse_columns or {}
 
@@ -3021,6 +3049,10 @@ def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, p
 
         styled = styled.apply(highlight_my_row, axis=1)
 
+    for column, css_list in (cell_styles or {}).items():
+        if column in df.columns:
+            styled = styled.apply(lambda _col, css=css_list: css, subset=[column])
+
     return styled
 
 
@@ -3075,7 +3107,7 @@ def _next_owner_table_key():
     return f"t{_owner_table_count}"
 
 
-def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None, column_colors=None, selectable=False, zebra=False, center=False, owner_links=None, medal_rank=True):
+def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None, column_colors=None, selectable=False, zebra=False, center=False, owner_links=None, medal_rank=True, html=False, cell_styles=None):
     if df.empty:
         st.info("No data available yet.")
         return
@@ -3110,7 +3142,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             int(pd.util.hash_pandas_object(df.astype(str), index=True).sum()),
             tuple(df.columns),
             repr(scale_columns), repr(reverse_columns), pink_last, rank_rwg,
-            repr(performance_gradient), repr(column_colors), zebra,
+            repr(performance_gradient), repr(column_colors), zebra, repr(cell_styles),
             st.session_state.get("my_team") or "",
         )
     except Exception:
@@ -3118,7 +3150,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
     _style_cache = st.session_state.setdefault("_styled_cache", {})
     if photo_map is not None and owner_links is None and "Team Owner" in df.columns:
         owner_links = _next_owner_table_key()
-    html_mode = photo_map is not None or bool(owner_links)
+    html_mode = photo_map is not None or bool(owner_links) or html
     _cache_key = (selectable if isinstance(selectable, str) else None, html_mode, height)
     _hit = _style_cache.get(_cache_key)
     if _style_sig is not None and _hit and _hit[0] == _style_sig:
@@ -3134,6 +3166,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             column_colors=column_colors,
             zebra=zebra,
             medal_rank=medal_rank,
+            cell_styles=cell_styles,
         )
         if _style_sig is not None and isinstance(selectable, str):
             _style_cache[_cache_key] = (_style_sig, styled)
@@ -4810,6 +4843,142 @@ with tab3:
             else:
                 st.info("No tournament FPts recorded for this team yet.")
 
+            st.subheader("⚔️ Head-to-Head Compare")
+            rival = st.selectbox(
+                "Compare with",
+                [""] + [o for o in data["drafters"] if o.casefold() != selected_draftee.casefold()],
+                index=0,
+                key="h2h_rival",
+            )
+            if rival:
+                mine_totals, mine_best = team_round_fpts(data, selected_draftee)
+                rival_totals, rival_best = team_round_fpts(data, rival)
+
+                def edge(a, b, higher=True):
+                    if a is None or b is None:
+                        return "—"
+                    if a == b:
+                        return "Tie"
+                    return selected_draftee if (a > b) == higher else rival
+
+                compare_rows = []
+                for label, source, column, higher, fmt in (
+                    ("Pool Rank", standings, "Rank", False, "{:.0f}"),
+                    ("Total FPts", standings, "Total FPts", True, "{:.1f}"),
+                    ("Projected Rank", power, "Rank", False, "{:.0f}"),
+                    ("Projected Score", power, "Projected Score", True, "{:.1f}"),
+                    ("Draft Rating Rank", ratings, "Rank", False, "{:.0f}"),
+                    ("Active Players", standings, "Active Players", True, "{:.0f}"),
+                    ("Expected Games Remaining", power, "Expected Games Remaining", True, "{:.1f}"),
+                    ("FPts per Game", power, "FPts per game", True, "{:.1f}"),
+                ):
+                    a = owner_value(source, selected_draftee, column)
+                    b = owner_value(source, rival, column)
+                    compare_rows.append({
+                        "Stat": label,
+                        selected_draftee: fmt.format(a) if a is not None else "—",
+                        rival: fmt.format(b) if b is not None else "—",
+                        "Edge": edge(a, b, higher),
+                    })
+                compare_rows.append({
+                    "Stat": "Team MVP",
+                    selected_draftee: f"{mine_best[0]} ({mine_best[1]:.1f})" if mine_best[0] else "—",
+                    rival: f"{rival_best[0]} ({rival_best[1]:.1f})" if rival_best[0] else "—",
+                    "Edge": edge(mine_best[1], rival_best[1]),
+                })
+                compare_rows.append({
+                    "Stat": "Best Round",
+                    selected_draftee: f"{max(mine_totals):.1f}" if max(mine_totals) > 0 else "—",
+                    rival: f"{max(rival_totals):.1f}" if max(rival_totals) > 0 else "—",
+                    "Edge": edge(max(mine_totals) or None, max(rival_totals) or None),
+                })
+                my_team_name = (st.session_state.get("my_team") or "").casefold()
+                win_style = "background-color: #CDEBD3; font-weight: 700"
+                compare_styles = {selected_draftee: [], rival: [], "Edge": []}
+                for compare_row in compare_rows:
+                    leader = compare_row["Edge"]
+                    compare_styles[selected_draftee].append(win_style if leader == selected_draftee else "")
+                    compare_styles[rival].append(win_style if leader == rival else "")
+                    compare_styles["Edge"].append(
+                        "background-color: #FFE0B2; font-weight: 800"
+                        if my_team_name and leader.casefold() == my_team_name else ""
+                    )
+                wins = {selected_draftee: 0, rival: 0}
+                for compare_row in compare_rows:
+                    if compare_row["Edge"] in wins:
+                        wins[compare_row["Edge"]] += 1
+                st.caption(
+                    f"{selected_draftee} leads {wins[selected_draftee]} categor{'y' if wins[selected_draftee] == 1 else 'ies'}, "
+                    f"{rival} leads {wins[rival]}."
+                )
+                display_df(pd.DataFrame(compare_rows), height=420, zebra=True, html=True, cell_styles=compare_styles)
+
+                played = [i for i in range(6) if mine_totals[i] > 0 or rival_totals[i] > 0]
+                if played:
+                    last_played = max(played)
+                    rounds_shown = chart_rounds[: last_played + 1]
+                    cumulative = []
+                    for owner, totals in ((selected_draftee, mine_totals), (rival, rival_totals)):
+                        running = 0.0
+                        for i, round_name in enumerate(rounds_shown):
+                            running += totals[i]
+                            cumulative.append({"Round": round_name, "Owner": owner, "Cumulative FPts": running})
+                    cumulative_df = pd.DataFrame(cumulative)
+                    st.markdown("**Cumulative FPts by Round**")
+                    try:
+                        import altair as alt
+
+                        cumulative_chart = alt.Chart(cumulative_df).mark_line(point=True).encode(
+                            x=alt.X("Round:N", sort=chart_rounds, title=None, axis=alt.Axis(labelAngle=0)),
+                            y=alt.Y("Cumulative FPts:Q", title="Cumulative FPts"),
+                            color=alt.Color(
+                                "Owner:N",
+                                legend=alt.Legend(orient="bottom", title=None),
+                                scale=alt.Scale(domain=[selected_draftee, rival], range=["#4472C4", "#F28C28"]),
+                            ),
+                            tooltip=alt.value(None),
+                        ).properties(height=300)
+                        st.altair_chart(theme_chart(cumulative_chart), use_container_width=True)
+                    except ImportError:
+                        st.line_chart(cumulative_df.pivot(index="Round", columns="Owner", values="Cumulative FPts").reindex(rounds_shown))
+
+                    per_round_edges = [
+                        edge(mine_totals[i], rival_totals[i]) for i in range(last_played + 1)
+                    ]
+                    per_round_df = pd.DataFrame({
+                        "Round": rounds_shown,
+                        selected_draftee: [f"{mine_totals[i]:.1f}" for i in range(last_played + 1)],
+                        rival: [f"{rival_totals[i]:.1f}" for i in range(last_played + 1)],
+                        "Edge": per_round_edges,
+                    })
+                    per_round_styles = {
+                        selected_draftee: [win_style if e == selected_draftee else "" for e in per_round_edges],
+                        rival: [win_style if e == rival else "" for e in per_round_edges],
+                        "Edge": [
+                            "background-color: #FFE0B2; font-weight: 800"
+                            if my_team_name and e.casefold() == my_team_name else ""
+                            for e in per_round_edges
+                        ],
+                    }
+                    display_df(per_round_df, height=300, zebra=True, html=True, cell_styles=per_round_styles)
+
+                roster_columns = ["Player Name", "_photo", "Team", "Tourn. FPts", "Projected FPts", "_projected_tip", "_team_out"]
+                roster_cols = st.columns(2)
+                for roster_col, owner in zip(roster_cols, (selected_draftee, rival)):
+                    with roster_col:
+                        st.markdown(f"**{owner}**")
+                        roster_df = pd.DataFrame(make_team_rows(data, owner))
+                        if roster_df.empty:
+                            st.info("No drafted players.")
+                            continue
+                        roster_df = roster_df[roster_columns]
+                        roster_df["Tourn. FPts"] = roster_df["Tourn. FPts"].apply(
+                            lambda value: "" if pd.isna(value) else f"{float(value):.1f}"
+                        )
+                        display_df(roster_df, height=400, zebra=True)
+            else:
+                st.info("Pick a team owner above to compare against.")
+
 with tab4:
     st.subheader("Draft Ratings")
     st.caption(
@@ -5129,7 +5298,7 @@ components.html(
             if (!el || !el.classList || !el.classList.contains('photo-table-wrap')) return;
             const scrolled = el.classList.contains('scrolled');
             // Only shrink when there is plenty of sideways room; shrinking a barely-too-wide table removes its scroll range and flickers.
-            if (!scrolled && el.scrollLeft > 24 && el.scrollWidth - el.clientWidth > 200) el.classList.add('scrolled');
+            if (!scrolled && el.scrollLeft > 24 && el.scrollWidth - el.clientWidth > 110) el.classList.add('scrolled');
             else if (scrolled && el.scrollLeft < 4) el.classList.remove('scrolled');
             const heads = Array.from(el.querySelectorAll('thead th'));
             const nameTh = heads.find(h => h.textContent.trim() === 'Player Name');
