@@ -2855,7 +2855,7 @@ GAME_FPTS_SPREAD = 0.30
 BRACKET_SLOT_SEEDS = [1, 16, 8, 9, 5, 12, 4, 13, 6, 11, 3, 14, 7, 10, 2, 15]
 
 
-def _simulate_win_probabilities(data, n_sims, seed):
+def _simulate_win_probabilities(data, n_sims, seed, pre_tournament=False):
     import numpy as np
 
     regions = ["EAST", "WEST", "MIDWEST", "SOUTH"]
@@ -2864,7 +2864,7 @@ def _simulate_win_probabilities(data, n_sims, seed):
     if not bracket or not owners or not data["draft_rows"]:
         return None
     rng = np.random.default_rng(seed)
-    teams_out = data["teams_out"]
+    teams_out = {} if pre_tournament else data["teams_out"]
 
     team_names, team_seeds, team_index = [], [], {}
 
@@ -2947,6 +2947,9 @@ def _simulate_win_probabilities(data, n_sims, seed):
     weight = data["tournament_fpts_weight"]
     owner_pos = {name.casefold(): i for i, name in enumerate(owners)}
     current_totals = np.zeros(len(owners))
+    active_players = np.zeros(len(owners), dtype=int)
+    games_played = np.zeros(len(owners), dtype=int)
+    expected_games = np.zeros(len(owners))
     sim_players = []
     fixed_future = np.zeros(len(owners))
     for row in data["draft_rows"]:
@@ -2954,23 +2957,32 @@ def _simulate_win_probabilities(data, n_sims, seed):
         if owner is None:
             continue
         stats = data["player_stats"].get(row["player_name"].casefold(), {})
-        total = player_total(row, data["fantasy_weights"])
+        total = None if pre_tournament else player_total(row, data["fantasy_weights"])
         current_totals[owner] += float(total or 0.0)
         season = sum_existing_values([stats.get("Tot. FPts")]) or 0.0
-        games = row.get("games_played") or 0
+        games = 0 if pre_tournament else (row.get("games_played") or 0)
+        games_played[owner] += games
+        team_name = stats.get("Team")
+        if team_name is not None and str(team_name).strip().casefold() not in teams_out:
+            active_players[owner] += 1
         per_game = (
             weight * (float(total) / games) + (1.0 - weight) * season
             if games > 0 and total is not None else season
         )
         team_key = _norm_team_name(stats.get("Team")) if stats.get("Team") else None
         if team_key in team_index:
-            blocked = (
+            blocked = not pre_tournament and (
                 str(stats.get("Team")).strip().casefold() in teams_out
                 or injury_status(row["player_name"], stats) in ("o", "out")
             )
             sim_players.append((owner, team_index[team_key], games, per_game, blocked))
         else:
-            fixed_future[owner] += per_game * player_expected_games_remaining(row, data)
+            fixed_games = (
+                (average_games_for_seed(stats.get("Seed")) or 1.0) if pre_tournament
+                else player_expected_games_remaining(row, data)
+            )
+            expected_games[owner] += fixed_games
+            fixed_future[owner] += per_game * fixed_games
 
     totals = np.tile(current_totals + fixed_future, (n_sims, 1))
     if sim_players:
@@ -2988,6 +3000,7 @@ def _simulate_win_probabilities(data, n_sims, seed):
         membership = np.zeros((len(sim_players), len(owners)))
         membership[np.arange(len(sim_players)), owner_idx] = 1.0
         totals = totals + future @ membership
+        expected_games = expected_games + games_left.mean(axis=0) @ membership
 
     order = np.argsort(-totals, axis=1, kind="stable")
     places = np.empty_like(order)
@@ -3009,27 +3022,41 @@ def _simulate_win_probabilities(data, n_sims, seed):
     expected_payout = payout_by_place @ place_probs
 
     result = pd.DataFrame({
-        "Team Owner": owners,
         "Draft Position": range(1, len(owners) + 1),
+        "Team Owner": owners,
+        "Avg. Finish": (places + 1).mean(axis=0),
         "Win %": place_probs[0] * 100,
         "Top 3 %": place_probs[:3].sum(axis=0) * 100,
         "Last Place %": place_probs[-1] * 100,
         "Exp. Payout": [f"${value:,.2f}" for value in expected_payout],
-        "Avg. Final FPts": totals.mean(axis=0),
+        "Projected Score": totals.mean(axis=0),
+        "Total FPts": current_totals,
+        "Active Players": active_players,
+        "FPts per game": [
+            round(float(t) / g, 1) if g > 0 else None for t, g in zip(current_totals, games_played)
+        ],
+        "Games Played": games_played,
+        "Expected Games Remaining": expected_games.round(1),
     })
-    result = result.sort_values(["Win %", "Avg. Final FPts"], ascending=False, kind="stable").reset_index(drop=True)
+    result = result.sort_values(
+        ["Avg. Finish", "Projected Score"], ascending=[True, False], kind="stable"
+    ).reset_index(drop=True)
     result.insert(0, "Rank", range(1, len(result) + 1))
-    return result[["Rank", "Draft Position", "Team Owner", "Win %", "Top 3 %", "Last Place %", "Exp. Payout", "Avg. Final FPts"]]
+    return result
 
 
-def simulate_win_probabilities(data, n_sims=WIN_PROB_SIMS, seed=2027):
-    """Monte Carlo finish odds per owner (cached on `data`); None if the bracket can't be simulated."""
-    if "_win_prob" not in data:
+def simulate_win_probabilities(data, n_sims=WIN_PROB_SIMS, seed=2027, pre_tournament=False):
+    """Monte Carlo finish odds per owner (cached on `data`); None if the bracket can't be simulated.
+
+    pre_tournament ignores every game, result and injury entered so far.
+    """
+    cache_key = "_win_prob_pre" if pre_tournament else "_win_prob"
+    if cache_key not in data:
         try:
-            data["_win_prob"] = _simulate_win_probabilities(data, n_sims, seed)
+            data[cache_key] = _simulate_win_probabilities(data, n_sims, seed, pre_tournament)
         except Exception:
-            data["_win_prob"] = None
-    return data["_win_prob"]
+            data[cache_key] = None
+    return data[cache_key]
 
 
 # ---------------------------------------------------------------------
@@ -3193,9 +3220,12 @@ def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, p
         "Last Place %",
         "Avg. Final FPts",
     }
+    two_decimal_columns = {"Avg. Finish"}
     format_map = {}
     for col in df.columns:
-        if col in one_decimal_columns:
+        if col in two_decimal_columns:
+            format_map[col] = lambda value: "" if pd.isna(value) else f"{float(value):.2f}"
+        elif col in one_decimal_columns:
             format_map[col] = lambda value: "" if pd.isna(value) else f"{float(value):.1f}"
         elif pd.api.types.is_float_dtype(df[col]):
             format_map[col] = lambda value: "" if pd.isna(value) else f"{float(value):g}"
@@ -4036,10 +4066,19 @@ else:
 
 standings = make_standings(data)
 power = make_power_rankings(data)
+win_prob = simulate_win_probabilities(data)
+# Simulated projections when the bracket is complete; otherwise the seed-average rankings.
+projections = win_prob if win_prob is not None else power
 players, player_rows = make_player_rankings(data)
 over, over_rows = make_performers(data, True)
 under, under_rows = make_performers(data, False)
 ratings = make_draft_ratings(data)
+# Draft ratings use the simulation with no tournament games, results or injuries counted.
+pre_sim = simulate_win_probabilities(data, pre_tournament=True)
+if pre_sim is not None and not ratings.empty:
+    ratings = pre_sim[
+        ["Rank", "Draft Position", "Team Owner", "Avg. Finish", "Projected Score", "Win %", "Top 3 %"]
+    ].merge(ratings[["Team Owner", "Regions"]], on="Team Owner", how="left")
 
 # Top-line summary
 c1, c2, c3, c4 = st.columns(4)
@@ -4110,8 +4149,10 @@ with tab0:
             mvp_row = mvp_candidates.loc[mvp_candidates["MVP FPts"].idxmax()]
 
     projected_leader = None
-    if not power.empty and power["Projected Score"].notna().any():
-        projected_candidates = power[power["Projected Score"].notna()]
+    if not projections.empty and projections["Projected Score"].notna().any():
+        projected_candidates = projections[projections["Projected Score"].notna()].sort_values(
+            "Projected Score", ascending=False, kind="stable"
+        )
         if not projected_candidates.empty:
             projected_leader = projected_candidates.iloc[0]
     active_total = int(standings["Active Players"].sum()) if not standings.empty else 0
@@ -4214,7 +4255,15 @@ with tab0:
     else:
         c1.metric("🏆 Current Leader", "—")
     if projected_leader is not None:
-        c2.metric("🔮 Projected Leader", str(projected_leader["Team Owner"]), f"{float(projected_leader['Projected Score']):.1f} Proj. FPts")
+        c2.metric(
+            "🔮 Projected Leader",
+            str(projected_leader["Team Owner"]),
+            f"{float(projected_leader['Projected Score']):.1f} Proj. FPts"
+            + (
+                f" · {float(projected_leader['Win %']):.1f}% win"
+                if "Win %" in projected_leader.index and pd.notna(projected_leader["Win %"]) else ""
+            ),
+        )
     else:
         c2.metric("🔮 Projected Leader", "—")
     if mvp_row is not None:
@@ -4655,60 +4704,50 @@ with tab1:
 
     st.caption("Click a team owner's name to open their Team View.")
     st.session_state.pop("jump_to_team_view", None)
-    st.subheader("Projected Rankings")
-    display_df(
-        power.rename(columns={"Draft Position": "Draft Pos."}),
-        height=520,
-        rank_rwg=True,
-        zebra=True,
-        owner_links="power",
-        scale_columns={
-            "Draft Pos.": (
-                power["Draft Position"].min(),
-                power["Draft Position"].max(),
-            ),
-            "Active Players": (
-                power["Active Players"].min(),
-                power["Active Players"].max(),
-            ),
-            **{
-                col: (power[col].min(), power[col].max())
-                for col in [
-                    "Projected Score",
-                    "FPts per game",
-                    "Games Played",
-                    "Expected Games Remaining",
-                ]
-                if col in power.columns
-            },
-        },
-        reverse_columns={"Draft Pos.": True},
-    )
-
-    st.subheader("🎲 Win Probability")
-    win_prob = simulate_win_probabilities(data)
+    st.subheader("Projected Rankings & Win Probability")
     if win_prob is None:
-        st.info("Win probabilities need a complete bracket in the TeamList sheet.")
+        st.info("Win probabilities need a complete bracket in the TeamList sheet; showing seed-average projections.")
+        display_df(
+            power.rename(columns={"Draft Position": "Draft Pos."}),
+            height=520,
+            rank_rwg=True,
+            zebra=True,
+            owner_links="power",
+            scale_columns={
+                "Draft Pos.": (power["Draft Position"].min(), power["Draft Position"].max()),
+                "Active Players": (power["Active Players"].min(), power["Active Players"].max()),
+                **{
+                    col: (power[col].min(), power[col].max())
+                    for col in ["Projected Score", "FPts per game", "Games Played", "Expected Games Remaining"]
+                    if col in power.columns
+                },
+            },
+            reverse_columns={"Draft Pos.": True},
+        )
     else:
         st.caption(
             f"Estimated from {WIN_PROB_SIMS:,} simulated tournaments. Game outcomes use seed-based win "
             f"probabilities and real results so far; player scoring varies about {GAME_FPTS_SPREAD:.0%} "
-            "per game around the projected rate."
+            "per game around the projected rate. Rank orders owners by average simulated finishing place "
+            "(Avg. Finish); Projected Score is the average simulated final FPts."
         )
         display_df(
-            win_prob.rename(columns={"Draft Position": "Draft Pos."}),
+            win_prob.drop(columns=["FPts per game", "Games Played", "Exp. Payout"]).rename(columns={"Draft Position": "Draft Pos."}),
             height=520,
             rank_rwg=True,
             zebra=True,
             owner_links="winprob",
             scale_columns={
                 "Draft Pos.": (win_prob["Draft Position"].min(), win_prob["Draft Position"].max()),
-                "Win %": (win_prob["Win %"].min(), win_prob["Win %"].max()),
-                "Top 3 %": (win_prob["Top 3 %"].min(), win_prob["Top 3 %"].max()),
-                "Last Place %": (win_prob["Last Place %"].min(), win_prob["Last Place %"].max()),
-                "Avg. Final FPts": (win_prob["Avg. Final FPts"].min(), win_prob["Avg. Final FPts"].max()),
+                **{
+                    col: (win_prob[col].min(), win_prob[col].max())
+                    for col in [
+                        "Avg. Finish", "Win %", "Top 3 %", "Last Place %", "Projected Score", "Active Players",
+                        "Expected Games Remaining",
+                    ]
+                },
             },
-            reverse_columns={"Draft Pos.": True, "Last Place %": True},
+            reverse_columns={"Draft Pos.": True, "Avg. Finish": True, "Last Place %": True},
         )
 
 
@@ -5083,16 +5122,20 @@ with tab3:
                     return selected_draftee if (a > b) == higher else rival
 
                 compare_rows = []
-                for label, source, column, higher, fmt in (
+                compare_stats = [
                     ("Pool Rank", standings, "Rank", False, "{:.0f}"),
                     ("Total FPts", standings, "Total FPts", True, "{:.1f}"),
-                    ("Projected Rank", power, "Rank", False, "{:.0f}"),
-                    ("Projected Score", power, "Projected Score", True, "{:.1f}"),
+                ]
+                if win_prob is not None:
+                    compare_stats.append(("Win %", win_prob, "Win %", True, "{:.1f}%"))
+                compare_stats += [
+                    ("Projected Score", projections, "Projected Score", True, "{:.1f}"),
                     ("Draft Rating Rank", ratings, "Rank", False, "{:.0f}"),
                     ("Active Players", standings, "Active Players", True, "{:.0f}"),
-                    ("Expected Games Remaining", power, "Expected Games Remaining", True, "{:.1f}"),
-                    ("FPts per Game", power, "FPts per game", True, "{:.1f}"),
-                ):
+                    ("Expected Games Remaining", projections, "Expected Games Remaining", True, "{:.1f}"),
+                    ("FPts per Game", projections, "FPts per game", True, "{:.1f}"),
+                ]
+                for label, source, column, higher, fmt in compare_stats:
                     a = owner_value(source, selected_draftee, column)
                     b = owner_value(source, rival, column)
                     compare_rows.append({
@@ -5202,10 +5245,20 @@ with tab3:
 
 with tab4:
     st.subheader("Draft Ratings")
-    st.caption(
-        "Projected FPts = seed average games × season-average FPts, summed by draftee. "
-        "Click a team owner's name to open their Team View."
-    )
+    if "Avg. Finish" in ratings.columns:
+        st.caption(
+            f"Owners ranked by average finishing place across {WIN_PROB_SIMS:,} simulated tournaments that ignore "
+            "all games, results and injuries entered so far, so this is the draft-day baseline. "
+            "Click a team owner's name to open their Team View."
+        )
+    else:
+        st.caption(
+            "Projected FPts = seed average games × season-average FPts, summed by draftee. "
+            "Click a team owner's name to open their Team View."
+        )
+    rating_metric_columns = [
+        c for c in ("Avg. Finish", "Projected Score", "Win %", "Top 3 %", "Projected FPts") if c in ratings.columns
+    ]
     display_df(
         ratings.rename(columns={"Draft Position": "Draft Pos."}),
         height=520,
@@ -5217,12 +5270,9 @@ with tab4:
                 ratings["Draft Position"].min(),
                 ratings["Draft Position"].max(),
             ),
-            "Projected FPts": (
-                ratings["Projected FPts"].min(),
-                ratings["Projected FPts"].max(),
-            ),
+            **{col: (ratings[col].min(), ratings[col].max()) for col in rating_metric_columns},
         },
-        reverse_columns={"Draft Pos.": True},
+        reverse_columns={"Draft Pos.": True, "Avg. Finish": True},
     )
 
     st.subheader("Drafted Players")
