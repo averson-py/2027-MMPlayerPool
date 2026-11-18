@@ -3396,6 +3396,10 @@ st.markdown(
 
     .block-container,
     div[data-testid="stMainBlockContainer"] {padding-top: 0 !important; padding-bottom: 2rem;}
+    /* Keep the main tab bar pinned while scrolling; nested tab lists inside panels are excluded. */
+    .st-key-main_tabs [role="tablist"]:not([role="tabpanel"] *) {
+        position: sticky; top: 0; z-index: 999; background: #F4F6FA;
+    }
     /* Style-only markdown blocks above the tabs would otherwise add a flex gap above the header banner.
        Styler tables embed their own <style>, so tables and anything inside tabs are excluded. */
     div[data-testid="stElementContainer"]:has(style):not(:has(.pool-header, table, canvas)):not([data-testid="stTabs"] *) {display: none !important;}
