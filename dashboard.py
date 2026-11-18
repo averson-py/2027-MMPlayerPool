@@ -3712,6 +3712,30 @@ else:
         + data["updated_time"].strftime("%m/%d/%Y %I:%M %p")
     )
 
+# Restore the saved team and theme before rendering anything heavy, so the page draws once.
+_need_team = not st.session_state.get("my_team") and not st.query_params.get("my_team")
+_need_dark = "dark_mode" not in st.session_state and not st.query_params.get("dark_mode")
+if (_need_team or _need_dark) and not st.session_state.get("_my_team_restored"):
+    try:
+        from streamlit_js_eval import streamlit_js_eval
+        _saved = streamlit_js_eval(
+            js_expressions="(() => { try { return JSON.stringify({team: localStorage.getItem('mmpool_my_team') || '', dark: localStorage.getItem('mmpool_dark_mode') || ''}); } catch (e) { return '{}'; } })()",
+            key="restore_my_team",
+        )
+    except Exception:
+        _saved = "{}"
+    if _saved is None:
+        st.stop()
+    st.session_state["_my_team_restored"] = True
+    try:
+        _saved = json.loads(_saved or "{}")
+    except ValueError:
+        _saved = {}
+    if _need_team and _saved.get("team") in data["drafters"]:
+        st.session_state["my_team"] = _saved["team"]
+    if _need_dark and _saved.get("dark") == "1":
+        st.session_state["dark_mode"] = True
+
 updated_col, dark_col, refresh_col = st.columns([3, 1, 1], vertical_alignment="center")
 updated_col.caption(updated_text)
 dark_mode = dark_col.toggle("🌙 Dark mode", key="dark_mode", bind="query-params")
@@ -3754,23 +3778,6 @@ if refresh_col.button("🔄 Refresh Standings", key="refresh_data", use_containe
     download_onedrive_workbook_from_share.clear()
     st.session_state.pop("_data_cache", None)
     st.rerun()
-
-# Restore the saved team before rendering anything heavy, so the tables draw once with the highlight.
-if not st.session_state.get("my_team") and not st.query_params.get("my_team") \
-        and not st.session_state.get("_my_team_restored"):
-    try:
-        from streamlit_js_eval import streamlit_js_eval
-        _saved_team = streamlit_js_eval(
-            js_expressions="(() => { try { return localStorage.getItem('mmpool_my_team') || ''; } catch (e) { return ''; } })()",
-            key="restore_my_team",
-        )
-    except Exception:
-        _saved_team = ""
-    if _saved_team is None:
-        st.stop()
-    st.session_state["_my_team_restored"] = True
-    if _saved_team in data["drafters"]:
-        st.session_state["my_team"] = _saved_team
 
 standings = make_standings(data)
 power = make_power_rankings(data)
@@ -4548,7 +4555,7 @@ with tab2:
         performance_gradient="red",
     )
 
-    st.markdown("### <span style='color:#C62828; font-weight:800;'>↓</span> Biggest Draft Busts 💩", unsafe_allow_html=True)
+    st.markdown("### <span style='color:#C62828; font-weight:800;'>↓</span> Biggest Draft Busts 🦨", unsafe_allow_html=True)
     hide_injured_busts = st.checkbox("Hide Injured players", key="hide_unavailable_busts")
     display_df(
         make_draft_value(data, steals=False, exclude_unavailable=hide_injured_busts),
@@ -5056,8 +5063,11 @@ components.html(
     """<script>
     const KEY = 'mmpool_my_team';
     const current = """ + json.dumps(my_team_choice or "") + """;
+    const dark = """ + json.dumps(bool(dark_mode)) + """;
     try {
         const p = window.parent;
+        if (dark) p.localStorage.setItem('mmpool_dark_mode', '1');
+        else p.localStorage.removeItem('mmpool_dark_mode');
         if (current) {
             p.localStorage.setItem(KEY, current);
             p.__mmpoolLast = current;
