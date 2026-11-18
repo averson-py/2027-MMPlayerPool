@@ -3715,11 +3715,12 @@ else:
 # Restore the saved team and theme before rendering anything heavy, so the page draws once.
 _need_team = not st.session_state.get("my_team") and not st.query_params.get("my_team")
 _need_dark = "dark_mode" not in st.session_state and not st.query_params.get("dark_mode")
-if (_need_team or _need_dark) and not st.session_state.get("_my_team_restored"):
+_need_auto = "auto_refresh" not in st.session_state and not st.query_params.get("auto_refresh")
+if (_need_team or _need_dark or _need_auto) and not st.session_state.get("_my_team_restored"):
     try:
         from streamlit_js_eval import streamlit_js_eval
         _saved = streamlit_js_eval(
-            js_expressions="(() => { try { return JSON.stringify({team: localStorage.getItem('mmpool_my_team') || '', dark: localStorage.getItem('mmpool_dark_mode') || ''}); } catch (e) { return '{}'; } })()",
+            js_expressions="(() => { try { return JSON.stringify({team: localStorage.getItem('mmpool_my_team') || '', dark: localStorage.getItem('mmpool_dark_mode') || '', auto: localStorage.getItem('mmpool_auto_refresh') || ''}); } catch (e) { return '{}'; } })()",
             key="restore_my_team",
         )
     except Exception:
@@ -3735,10 +3736,22 @@ if (_need_team or _need_dark) and not st.session_state.get("_my_team_restored"):
         st.session_state["my_team"] = _saved["team"]
     if _need_dark and _saved.get("dark") == "1":
         st.session_state["dark_mode"] = True
+    if _need_auto and _saved.get("auto") == "1":
+        st.session_state["auto_refresh"] = True
 
-updated_col, dark_col, refresh_col = st.columns([3, 1, 1], vertical_alignment="center")
+AUTO_REFRESH_SECONDS = 150
+
+
+def _refresh_standings():
+    get_espn_tournament_games.clear()
+    download_onedrive_workbook_from_share.clear()
+    st.session_state.pop("_data_cache", None)
+
+
+updated_col, dark_col, auto_col, refresh_col = st.columns([2, 1, 1.2, 1.4], vertical_alignment="center")
 updated_col.caption(updated_text)
 dark_mode = dark_col.toggle("🌙 Dark mode", key="dark_mode", bind="query-params")
+auto_refresh = auto_col.toggle("⏱ Auto refresh", key="auto_refresh", bind="query-params")
 if dark_mode:
     # Tables, charts and images are dark via an inverting filter; images are inverted back so photos/logos look normal.
     st.markdown(
@@ -3774,10 +3787,24 @@ if dark_mode:
     )
 refresh_col.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
 if refresh_col.button("🔄 Refresh Standings", key="refresh_data", use_container_width=True):
-    get_espn_tournament_games.clear()
-    download_onedrive_workbook_from_share.clear()
-    st.session_state.pop("_data_cache", None)
+    _refresh_standings()
     st.rerun()
+
+if auto_refresh:
+    @st.fragment(run_every=AUTO_REFRESH_SECONDS)
+    def _auto_refresh_tick():
+        now = datetime.now().timestamp()
+        last = st.session_state.get("_auto_refresh_last")
+        if last is None:
+            st.session_state["_auto_refresh_last"] = now
+        elif now - last >= AUTO_REFRESH_SECONDS - 1:
+            st.session_state["_auto_refresh_last"] = now
+            _refresh_standings()
+            st.rerun()
+
+    _auto_refresh_tick()
+else:
+    st.session_state.pop("_auto_refresh_last", None)
 
 standings = make_standings(data)
 power = make_power_rankings(data)
@@ -5064,8 +5091,11 @@ components.html(
     const KEY = 'mmpool_my_team';
     const current = """ + json.dumps(my_team_choice or "") + """;
     const dark = """ + json.dumps(bool(dark_mode)) + """;
+    const auto = """ + json.dumps(bool(auto_refresh)) + """;
     try {
         const p = window.parent;
+        if (auto) p.localStorage.setItem('mmpool_auto_refresh', '1');
+        else p.localStorage.removeItem('mmpool_auto_refresh');
         if (dark) p.localStorage.setItem('mmpool_dark_mode', '1');
         else p.localStorage.removeItem('mmpool_dark_mode');
         if (current) {
