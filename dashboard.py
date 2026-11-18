@@ -3486,6 +3486,8 @@ st.markdown(
     .st-key-main_tabs [role="tablist"]:not([role="tabpanel"] *) {
         position: sticky; top: 0; z-index: 999; background: #F4F6FA;
     }
+    /* Keep the owner name close to its roster table in the head-to-head section. */
+    [class*="st-key-h2h_roster_"] {gap: 0.25rem !important;}
     /* Style-only markdown blocks above the tabs would otherwise add a flex gap above the header banner.
        Styler tables embed their own <style>, so tables and anything inside tabs are excluded. */
     div[data-testid="stElementContainer"]:has(style):not(:has(.pool-header, table, canvas)):not([data-testid="stTabs"] *) {display: none !important;}
@@ -4965,7 +4967,7 @@ with tab3:
                 roster_columns = ["Player Name", "_photo", "Team", "Tourn. FPts", "Projected FPts", "_projected_tip", "_team_out"]
                 roster_cols = st.columns(2)
                 for roster_col, owner in zip(roster_cols, (selected_draftee, rival)):
-                    with roster_col:
+                    with roster_col, st.container(key=f"h2h_roster_{'a' if owner == selected_draftee else 'b'}"):
                         st.markdown(f"**{owner}**")
                         roster_df = pd.DataFrame(make_team_rows(data, owner))
                         if roster_df.empty:
