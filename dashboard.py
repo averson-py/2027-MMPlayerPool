@@ -2089,7 +2089,7 @@ def make_team_rows(data, selected_draftee):
             "Projected FPts": player_projected_fpts(row, data),
             "_projected_tip": projected_fpts_explanation(row, data),
             "Poss. Games Remaining": row.get("possible_games_remaining", 0),
-            "Expected Games Remaining": round(player_expected_games_remaining(row, data), 1),
+            "Expected Games Remaining": round(player_expected_games_remaining(row, data), 2),
             "_expected_tip": expected_games_explanation(row, data),
             "_team_out": (
                 stats.get("Team") is not None
@@ -2443,7 +2443,7 @@ def make_power_rankings(data):
             **t,
             "Projected Score": round(team_projected_fpts, 1),
             "FPts per game": round(fpg, 1) if fpg is not None else None,
-            "Expected Games Remaining": round(expected_games_total, 1),
+            "Expected Games Remaining": round(expected_games_total, 2),
         })
 
     result.sort(key=lambda x: (
@@ -2466,8 +2466,8 @@ def make_power_rankings(data):
     return pd.DataFrame(result)[power_columns]
 
 
-def player_expected_games_remaining(row, data):
-    """Expected remaining games for one drafted player (0 if eliminated or at 6 games)."""
+def _formula_expected_games_remaining(row, data):
+    """Seed-average expected remaining games for one player (0 if eliminated or at 6 games)."""
     stats = data["player_stats"].get(row["player_name"].casefold(), {})
     team = stats.get("Team")
     team_is_active = (
@@ -2497,6 +2497,22 @@ def player_expected_games_remaining(row, data):
     return max(historical_avg_games - games_played, 1.0)
 
 
+def _simulated_player(data, row):
+    """This player's results from the 10,000-run simulation, or None if it isn't available."""
+    sim = data.get("_win_prob")
+    if sim is None:
+        return None
+    return sim.attrs.get("players", {}).get(row.get("draft_row"))
+
+
+def player_expected_games_remaining(row, data):
+    """Expected remaining games for one drafted player: simulated when possible, else seed averages."""
+    info = _simulated_player(data, row)
+    if info is not None:
+        return float(info["games"])
+    return _formula_expected_games_remaining(row, data)
+
+
 def expected_games_explanation(row, data):
     """HTML text describing how player_expected_games_remaining() got its value."""
     stats = data["player_stats"].get(row["player_name"].casefold(), {})
@@ -2524,6 +2540,14 @@ def expected_games_explanation(row, data):
         return "Team is eliminated, so 0 games are expected."
     if games_played >= 6:
         return "Player has played the maximum 6 games, so 0 games are expected."
+    info = _simulated_player(data, row)
+    if info is not None:
+        return (
+            "<b>Expected Games Remaining</b><br>"
+            f"Average number of more games this player's team plays across {WIN_PROB_SIMS:,} simulated "
+            f"tournaments: <b>{info['games']:.2f}</b>.<br>"
+            "Uses the real bracket and results so far, with seed-based odds for games not yet played."
+        )
     if avg_games is None:
         return "No average games found for this seed, so 1 game is assumed."
     remaining = avg_games - games_played
@@ -2537,12 +2561,14 @@ def expected_games_explanation(row, data):
 
 
 def player_projected_fpts(row, data):
-    """Tournament FPts so far plus (weighted FPts/game x expected games remaining).
+    """Projected final tournament FPts: the simulation average when available, else a seed-average formula.
 
-    FPts/game blends the tournament and season averages using Config!J2, the
-    same blend as the power rankings. With no tournament games played, the
-    season average is used on its own.
+    The formula is tournament FPts so far plus (weighted FPts/game x expected games remaining), where
+    FPts/game blends the tournament and season averages using Config!J2.
     """
+    info = _simulated_player(data, row)
+    if info is not None:
+        return round(info["projected"], 1)
     stats = data["player_stats"].get(row["player_name"].casefold(), {})
     season_per_game = sum_existing_values([stats.get("Tot. FPts")])
     if season_per_game is None:
@@ -2566,6 +2592,24 @@ def player_projected_fpts(row, data):
 
 def projected_fpts_explanation(row, data):
     """HTML text describing how player_projected_fpts() got its value."""
+    info = _simulated_player(data, row)
+    if info is not None:
+        text = (
+            "<b>Projected FPts</b><br>"
+            f"Average final FPts across {WIN_PROB_SIMS:,} simulated tournaments.<br>"
+        )
+        if info["games"] < 0.005:
+            text += (
+                f"No more games expected, so the {info['current']:.1f} FPts already scored is the projection.<br>"
+            )
+        else:
+            text += (
+                f"{info['current']:.1f} FPts scored so far + {info['future']:.1f} from "
+                f"{info['games']:.2f} expected more games (about {info['per_game']:.1f} FPts per game).<br>"
+            )
+            if info["low"] is not None:
+                text += f"Middle 80% of outcomes: {info['low']:.0f} to {info['high']:.0f}.<br>"
+        return text + f"<b>= {info['projected']:.1f}</b>"
     stats = data["player_stats"].get(row["player_name"].casefold(), {})
     season_per_game = sum_existing_values([stats.get("Tot. FPts")])
     if season_per_game is None:
@@ -2620,7 +2664,7 @@ def make_player_rankings(data, only_unavailable=False):
             "Team Owner": row["draftee"],
             "Games Played": row.get("games_played", 0),
             "Poss. Games Remaining": row.get("possible_games_remaining", 0),
-            "Expected Games Remaining": round(player_expected_games_remaining(row, data), 1),
+            "Expected Games Remaining": round(player_expected_games_remaining(row, data), 2),
             "_expected_tip": expected_games_explanation(row, data),
             "Projected FPts": player_projected_fpts(row, data),
             "_projected_tip": projected_fpts_explanation(row, data),
@@ -2685,7 +2729,7 @@ def make_performers(data, positive=True, exclude_unavailable=False):
             "Team Owner": row["draftee"],
             "Games Played": games,
             "Poss. Games Remaining": row.get("possible_games_remaining", 0),
-            "Expected Games Remaining": round(player_expected_games_remaining(row, data), 1),
+            "Expected Games Remaining": round(player_expected_games_remaining(row, data), 2),
             "_expected_tip": expected_games_explanation(row, data),
             "Projected FPts": player_projected_fpts(row, data),
             "_projected_tip": projected_fpts_explanation(row, data),
@@ -2753,7 +2797,7 @@ def make_draft_value(data, steals=True, exclude_unavailable=False):
             "Team Owner": row["draftee"],
             "Games Played": row.get("games_played", 0),
             "Poss. Games Remaining": row.get("possible_games_remaining", 0),
-            "Expected Games Remaining": round(player_expected_games_remaining(row, data), 1),
+            "Expected Games Remaining": round(player_expected_games_remaining(row, data), 2),
             "_expected_tip": expected_games_explanation(row, data),
             "Projected FPts": projected,
             "_projected_tip": projected_fpts_explanation(row, data),
@@ -2951,6 +2995,7 @@ def _simulate_win_probabilities(data, n_sims, seed, pre_tournament=False):
     games_played = np.zeros(len(owners), dtype=int)
     expected_games = np.zeros(len(owners))
     sim_players = []
+    player_info = {}
     fixed_future = np.zeros(len(owners))
     for row in data["draft_rows"]:
         owner = owner_pos.get(row["draftee"].casefold())
@@ -2975,14 +3020,21 @@ def _simulate_win_probabilities(data, n_sims, seed, pre_tournament=False):
                 str(stats.get("Team")).strip().casefold() in teams_out
                 or injury_status(row["player_name"], stats) in ("o", "out")
             )
-            sim_players.append((owner, team_index[team_key], games, per_game, blocked))
+            sim_players.append(
+                (owner, team_index[team_key], games, per_game, blocked, row.get("draft_row"), float(total or 0.0))
+            )
         else:
             fixed_games = (
                 (average_games_for_seed(stats.get("Seed")) or 1.0) if pre_tournament
-                else player_expected_games_remaining(row, data)
+                else _formula_expected_games_remaining(row, data)
             )
             expected_games[owner] += fixed_games
             fixed_future[owner] += per_game * fixed_games
+            player_info[row.get("draft_row")] = {
+                "projected": float(total or 0.0) + per_game * fixed_games, "games": fixed_games,
+                "current": float(total or 0.0), "future": per_game * fixed_games,
+                "per_game": per_game, "low": None, "high": None,
+            }
 
     totals = np.tile(current_totals + fixed_future, (n_sims, 1))
     if sim_players:
@@ -3001,6 +3053,16 @@ def _simulate_win_probabilities(data, n_sims, seed, pre_tournament=False):
         membership[np.arange(len(sim_players)), owner_idx] = 1.0
         totals = totals + future @ membership
         expected_games = expected_games + games_left.mean(axis=0) @ membership
+        future_mean = future.mean(axis=0)
+        games_mean = games_left.mean(axis=0)
+        future_low, future_high = np.percentile(future, [10, 90], axis=0)
+        for j, player in enumerate(sim_players):
+            current_fpts = player[6]
+            player_info[player[5]] = {
+                "projected": current_fpts + float(future_mean[j]), "games": float(games_mean[j]),
+                "current": current_fpts, "future": float(future_mean[j]), "per_game": float(per_game[j]),
+                "low": current_fpts + float(future_low[j]), "high": current_fpts + float(future_high[j]),
+            }
 
     order = np.argsort(-totals, axis=1, kind="stable")
     places = np.empty_like(order)
@@ -3060,7 +3122,7 @@ def _simulate_win_probabilities(data, n_sims, seed, pre_tournament=False):
             round(float(t) / g, 1) if g > 0 else None for t, g in zip(current_totals, games_played)
         ],
         "Games Played": games_played,
-        "Expected Games Remaining": expected_games.round(1),
+        "Expected Games Remaining": expected_games.round(2),
         "_finish_tip": finish_tips,
         "_score_tip": score_tips,
         "_win_tip": win_tips,
@@ -3069,6 +3131,7 @@ def _simulate_win_probabilities(data, n_sims, seed, pre_tournament=False):
         ["Avg. Finish", "Projected Score"], ascending=[True, False], kind="stable"
     ).reset_index(drop=True)
     result.insert(0, "Rank", range(1, len(result) + 1))
+    result.attrs["players"] = player_info
     return result
 
 
@@ -3249,7 +3312,7 @@ def style_table(df, scale_columns=None, reverse_columns=None, medal_rank=True, p
         "Last Place %",
         "Avg. Final FPts",
     }
-    two_decimal_columns = {"Avg. Finish"}
+    two_decimal_columns = {"Avg. Finish", "Expected Games Remaining"}
     format_map = {}
     for col in df.columns:
         if col in two_decimal_columns:
@@ -3479,7 +3542,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             for tip_col in cell_tips:
                 if tip_col in df.columns:
                     styled = styled.format(
-                        make_tip_cell(2 if tip_col == "Avg. Finish" else 1),
+                        make_tip_cell(2 if tip_col in ("Avg. Finish", "Expected Games Remaining") else 1),
                         subset=[tip_col], escape=None,
                     )
         if "Team" in df.columns or "Next Opponent" in df.columns:
@@ -4824,7 +4887,7 @@ with tab2:
                 "Projected FPts": player_projected_fpts(row, data),
                 "_projected_tip": projected_fpts_explanation(row, data),
                 "Poss. Games Remaining": row.get("possible_games_remaining", 0),
-                "Expected Games Remaining": round(player_expected_games_remaining(row, data), 1),
+                "Expected Games Remaining": round(player_expected_games_remaining(row, data), 2),
                 "_expected_tip": expected_games_explanation(row, data),
                 "_team_out": (
                     stats.get("Team") is not None
@@ -5167,7 +5230,7 @@ with tab3:
                     ("Projected Score", projections, "Projected Score", True, "{:.1f}"),
                     ("Draft Rating Rank", ratings, "Rank", False, "{:.0f}"),
                     ("Active Players", standings, "Active Players", True, "{:.0f}"),
-                    ("Expected Games Remaining", projections, "Expected Games Remaining", True, "{:.1f}"),
+                    ("Expected Games Remaining", projections, "Expected Games Remaining", True, "{:.2f}"),
                     ("FPts per Game", projections, "FPts per game", True, "{:.1f}"),
                 ]
                 for label, source, column, higher, fmt in compare_stats:
@@ -5386,50 +5449,39 @@ with tab6:
     pc6.metric("🦨 Last Place", f"${last_payout:,.0f}")
 
     st.markdown("### FPts Projection Calculations")
-    st.markdown(
-        "**DRAFT RATING = Sum of All Players' Pre-Tournament Projected FPts for Each Team Owner**"
-    )
-    st.markdown(
-        "**IN-TOURNAMENT FPTS PROJECTION = Sum of All Players' In-Tournament Projected FPts "
-        "for Each Team Owner**"
-    )
-    st.markdown("<div style='height: 2rem;'></div>", unsafe_allow_html=True)
-    st.markdown(
-        "**PLAYER PRE-TOURNAMENT FPTS PROJECTION = [ Player Season Avg. FPts ] x "
-        "[ Average Number of Games Played By Player's Seed ]**"
-    )
-    st.markdown(
-        "*Ex. Cameron Boozer - 1 Seed: [ 29.7 FPts Per Season Game ] x "
-        "[ 4.34 Avg. Games Played by 1 Seed ] = 128.9 FPts Projected Pre-Tournament*"
-    )
-    st.markdown(
-        "*Ex. Zuby Ejiofor - 5 Seed: [ 21.8 FPts / Game ] x "
-        "[ 2.14 Avg. Games Played by 5 Seed ] = 46.65 FPts Projected Pre-Tournament*"
-    )
     tourn_w = data["tournament_fpts_weight"]
-    st.markdown("<div style='height: 2rem;'></div>", unsafe_allow_html=True)
     st.markdown(
-        f"**PLAYER IN-TOURNAMENT FPTS PROJECTION = [ [ [ Player Season Avg. FPts x {1 - tourn_w:g} ] + "
-        f"[Player Tourn. Avg. FPts x {tourn_w:g}] ] x [ Expected Number of Games Remaining ] ] + [ FPts Already Scored ]**"
+        f"**PROJECTIONS = Average Results of {WIN_PROB_SIMS:,} Simulated Tournaments**"
     )
     st.markdown(
-        "**EXPECTED GAMES REMAINING = Maximum of [ Average Number of Games Played By Player's Seed "
-        " - Number of Games Already Played by Player ] and 1, ensuring that players always project "
-        "to have at least 1 game remaining until team is eliminated**"
+        "Each simulated tournament plays out the bracket game by game. Results already entered are locked in, "
+        "and games not yet played are decided with seed-based win probabilities."
     )
     st.markdown(
-        f"*Ex. Cameron Boozer - 1 Seed after 1 game: [ [ [ 29.7 FPts Per Season Game  x {1 - tourn_w:g} ] + "
-        f"[ 30 FPts per Tournament Game x {tourn_w:g}] ] x [ 4.34 Avg. Games Played by 1 Seed  - 1 Game "
-        "Already Played ] ] + [ 30 FPts Already Scored ] = 129.9 FPts Projected For Tournament "
-        "After 1 Game*"
+        f"Every player scores their blended FPts per game [ Season Avg. FPts x {1 - tourn_w:g} ] + "
+        f"[ Tourn. Avg. FPts x {tourn_w:g} ] in each game their team plays (season average alone before their "
+        f"first tournament game), with about {GAME_FPTS_SPREAD:.0%} game-to-game variation. Players listed as "
+        "out score no more FPts."
     )
     st.markdown(
-        f"*Ex. Zuby Ejiofor - 5 Seed after 2 games: [ [ [ 21.8 FPts Per Season Game x {1 - tourn_w:g} ] + "
-        f"[ 34.5 FPts per Tournament Game x {tourn_w:g}] ] x [ 2.14 Avg. Games Played by 5 Seed - 2 Game "
-        "Already Played ( = 0.14, so only expected to play 1 more game and lose ) ] ] + "
-        "[ 69 FPts Already Scored ] = 99.7 FPts Projected For Tournament After 2 Games*"
+        "**PLAYER PROJECTED FPTS** = FPts Already Scored + Average Simulated FPts Still To Come"
     )
-    st.caption("Average number of tournament games played by each seed.")
+    st.markdown(
+        "**EXPECTED GAMES REMAINING** = Average Number of Additional Games the Player's Team Plays in the Simulations"
+    )
+    st.markdown(
+        "**PROJECTED SCORE** = Average Final FPts for a Team Owner  \n"
+        "**AVG. FINISH** = Average Finishing Place  \n"
+        "**WIN %** = Share of Simulations Where the Owner Finished 1st"
+    )
+    st.markdown(
+        "**DRAFT RATINGS** use the same simulation with no tournament games, results or injuries counted, "
+        "so they show the draft-day baseline."
+    )
+    st.caption(
+        "Average number of tournament games played by each seed (historical; only used for teams that "
+        "aren't in the bracket)."
+    )
     seed_games_df = pd.DataFrame(
         [
             {"Seed": seed, "Avg. Games Played": f"{games:.2f}"}
