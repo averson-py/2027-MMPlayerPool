@@ -3013,6 +3013,20 @@ def _standings_cell_clicked(select_key="standings_select"):
             return
 
 
+def theme_chart(chart):
+    """Give an Altair chart dark-mode colours when dark mode is on."""
+    if not st.session_state.get("dark_mode"):
+        return chart
+    text, grid = "#E5E7EB", "#2D3748"
+    return (
+        chart.configure(background="transparent")
+        .configure_view(stroke=None)
+        .configure_axis(labelColor=text, titleColor=text, gridColor=grid, domainColor="#4B5563", tickColor="#4B5563")
+        .configure_legend(labelColor=text, titleColor=text)
+        .configure_text(color=text)
+    )
+
+
 def _owner_link_clicked(owner):
     st.session_state["team_owner"] = owner
     st.session_state["_goto_tab"] = "Team View"
@@ -3659,8 +3673,41 @@ else:
         + data["updated_time"].strftime("%m/%d/%Y %I:%M %p")
     )
 
-updated_col, refresh_col = st.columns([4, 1], vertical_alignment="center")
+updated_col, dark_col, refresh_col = st.columns([3, 1, 1], vertical_alignment="center")
 updated_col.caption(updated_text)
+dark_mode = dark_col.toggle("🌙 Dark mode", key="dark_mode", bind="query-params")
+if dark_mode:
+    # Tables, charts and images are dark via an inverting filter; images are inverted back so photos/logos look normal.
+    st.markdown(
+        """
+        <style>
+        .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] {background: #0E1117 !important;}
+        [data-testid="stMain"] :is(p, li, label, h1, h2, h3, h4, h5, h6, strong, em) {color: #E5E7EB;}
+        [data-testid="stMain"] h1, [data-testid="stMain"] h2, [data-testid="stMain"] h3 {color: #8DB8E8;}
+        [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] * {color: #9CA3AF !important;}
+        div[data-testid="stMetric"] {background-color: #1A2130; border-color: #2D3748; border-left-color: #4472C4;}
+        div[data-testid="stMetric"] :is([data-testid="stMetricLabel"], [data-testid="stMetricValue"]) * {color: #E5E7EB;}
+        [data-testid="stMarkdownContainer"] {color: #E5E7EB;}
+        .st-key-main_tabs [role="tablist"]:not([role="tabpanel"] *) {background: #0E1117 !important;}
+        [role="tab"] {color: #CBD5E1;}
+        [role="tab"][aria-selected="true"] {color: #4e9efd;}
+        [data-testid="stSelectbox"] [role="group"] {background-color: #1E2633 !important; border-color: #374151 !important;}
+        [data-testid="stSelectbox"] [role="group"] * {color: #E5E7EB !important;}
+        [data-testid="stSelectbox"] input::placeholder {color: #9CA3AF !important; opacity: 1;}
+        [role="listbox"], [role="listbox"] [role="option"], [data-testid="stSelectboxVirtualDropdown"] {background-color: #1E2633 !important; color: #E5E7EB !important;}
+        [role="listbox"] [role="option"]:hover, [role="listbox"] [aria-selected="true"] {background-color: #2B3647 !important;}
+        button[kind="secondary"], [data-testid="stBaseButton-secondary"] {background-color: #1E2633 !important; color: #E5E7EB !important; border-color: #374151 !important;}
+        [data-testid="stAlert"] {background-color: #1E2A3A !important;}
+        [data-testid="stAlert"] * {color: #E5E7EB !important;}
+        [data-testid="stExpander"] details {background-color: #141A25; border-color: #2D3748;}
+        [data-testid="stExpander"] summary * {color: #E5E7EB !important;}
+        hr {border-color: #374151 !important;}
+        .photo-table-wrap, [data-testid="stDataFrame"] {filter: invert(1) hue-rotate(180deg);}
+        .photo-table-wrap img, .photo-table-wrap .player-photo, [data-testid="stDataFrame"] img {filter: invert(1) hue-rotate(180deg);}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 refresh_col.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
 if refresh_col.button("🔄 Refresh Standings", key="refresh_data", use_container_width=True):
     get_espn_tournament_games.clear()
@@ -4262,7 +4309,7 @@ with tab0:
             )
 
             chart = alt.layer(lines, points, label_bg, labels).properties(height=500)
-            st.altair_chart(chart, use_container_width=True)
+            st.altair_chart(theme_chart(chart), use_container_width=True)
         except ImportError:
             # Fallback if Altair is unavailable in the deployment environment.
             st.line_chart(
@@ -4679,7 +4726,7 @@ with tab3:
                         tooltip=alt.value(None),
                     )
                     st.altair_chart(
-                        (round_chart + segment_labels + round_labels).properties(height=350),
+                        theme_chart((round_chart + segment_labels + round_labels).properties(height=350)),
                         use_container_width=True,
                     )
                 except ImportError:
