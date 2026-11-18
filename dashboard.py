@@ -3810,6 +3810,10 @@ st.markdown(
     .st-key-main_tabs [role="tablist"]:not([role="tabpanel"] *) {
         position: sticky; top: 0; z-index: 999; background: #F4F6FA;
     }
+    /* Bracket region tabs stick just below the main tab bar (40px tall). */
+    .st-key-region_tabs [role="tablist"] {
+        position: sticky; top: 40px; z-index: 998; background: #F4F6FA;
+    }
     /* Keep the owner name close to its roster table in the head-to-head section. */
     [class*="st-key-h2h_roster_"] {gap: 0.25rem !important;}
     /* Style-only markdown blocks above the tabs would otherwise add a flex gap above the header banner.
@@ -4124,6 +4128,7 @@ if dark_mode:
         div[data-testid="stMetric"] :is([data-testid="stMetricLabel"], [data-testid="stMetricValue"]) * {color: #E5E7EB;}
         [data-testid="stMarkdownContainer"] {color: #E5E7EB;}
         .st-key-main_tabs [role="tablist"]:not([role="tabpanel"] *) {background: #0E1117 !important;}
+        .st-key-region_tabs [role="tablist"] {background: #0E1117 !important;}
         [role="tab"] {color: #CBD5E1;}
         [role="tab"][aria-selected="true"] {color: #4e9efd;}
         [data-testid="stSelectbox"] [role="group"] {background-color: #1E2633 !important; border-color: #374151 !important;}
@@ -5502,7 +5507,7 @@ with tab5:
             rounds = build_tournament_bracket(data["bracket_teams"], data["teams_out"])
 
             # Create subtabs for regions and final four
-            region_tabs = st.tabs(["🔵 EAST", "🟤 WEST", "🟢 MIDWEST", "🟡 SOUTH", "🏆 FINAL FOUR"])
+            region_tabs = st.tabs(["🔵 EAST", "🟤 WEST", "🟢 MIDWEST", "🟡 SOUTH", "🏆 FINAL FOUR"], key="region_tabs")
 
             # Show each region's bracket (exclude Final Four and Championship)
             regions = ["EAST", "WEST", "MIDWEST", "SOUTH"]
