@@ -4098,7 +4098,7 @@ if (_need_team or _need_dark or _need_auto) and not st.session_state.get("_my_te
     if _need_auto and _saved.get("auto") == "1":
         st.session_state["auto_refresh"] = True
 
-AUTO_REFRESH_SECONDS = 150
+AUTO_REFRESH_SECONDS = 60
 
 
 def _refresh_standings():
