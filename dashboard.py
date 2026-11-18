@@ -3025,12 +3025,12 @@ def _simulate_win_probabilities(data, n_sims, seed, pre_tournament=False):
         "Draft Position": range(1, len(owners) + 1),
         "Team Owner": owners,
         "Avg. Finish": (places + 1).mean(axis=0),
+        "Projected Score": totals.mean(axis=0),
+        "Total FPts": current_totals,
         "Win %": place_probs[0] * 100,
         "Top 3 %": place_probs[:3].sum(axis=0) * 100,
         "Last Place %": place_probs[-1] * 100,
         "Exp. Payout": [f"${value:,.2f}" for value in expected_payout],
-        "Projected Score": totals.mean(axis=0),
-        "Total FPts": current_totals,
         "Active Players": active_players,
         "FPts per game": [
             round(float(t) / g, 1) if g > 0 else None for t, g in zip(current_totals, games_played)
@@ -4150,8 +4150,9 @@ with tab0:
 
     projected_leader = None
     if not projections.empty and projections["Projected Score"].notna().any():
+        sort_columns = [c for c in ("Win %", "Projected Score") if c in projections.columns]
         projected_candidates = projections[projections["Projected Score"].notna()].sort_values(
-            "Projected Score", ascending=False, kind="stable"
+            sort_columns, ascending=False, kind="stable"
         )
         if not projected_candidates.empty:
             projected_leader = projected_candidates.iloc[0]
@@ -4255,17 +4256,12 @@ with tab0:
     else:
         c1.metric("🏆 Current Leader", "—")
     if projected_leader is not None:
-        c2.metric(
-            "🔮 Projected Leader",
-            str(projected_leader["Team Owner"]),
-            f"{float(projected_leader['Projected Score']):.1f} Proj. FPts"
-            + (
-                f" · {float(projected_leader['Win %']):.1f}% win"
-                if "Win %" in projected_leader.index and pd.notna(projected_leader["Win %"]) else ""
-            ),
-        )
+        projected_pill = f"{float(projected_leader['Projected Score']):.1f} Proj. FPts"
+        if "Win %" in projected_leader.index and pd.notna(projected_leader["Win %"]):
+            projected_pill = f"{float(projected_leader['Win %']):.1f}% win · {projected_pill}"
+        c2.metric("🔮 Projected Winner", str(projected_leader["Team Owner"]), projected_pill)
     else:
-        c2.metric("🔮 Projected Leader", "—")
+        c2.metric("🔮 Projected Winner", "—")
     if mvp_row is not None:
         c3.metric("⭐ Pool MVP", str(mvp_row["MVP"]), f"{float(mvp_row['MVP FPts']):.1f} FPts")
         mvp_stats = data["player_stats"].get(str(mvp_row["MVP"]).casefold(), {})
@@ -4732,7 +4728,7 @@ with tab1:
             "(Avg. Finish); Projected Score is the average simulated final FPts."
         )
         display_df(
-            win_prob.drop(columns=["FPts per game", "Games Played", "Exp. Payout"]).rename(columns={"Draft Position": "Draft Pos."}),
+            win_prob.drop(columns=["FPts per game", "Games Played", "Exp. Payout", "Expected Games Remaining"]).rename(columns={"Draft Position": "Draft Pos."}),
             height=520,
             rank_rwg=True,
             zebra=True,
@@ -4743,7 +4739,6 @@ with tab1:
                     col: (win_prob[col].min(), win_prob[col].max())
                     for col in [
                         "Avg. Finish", "Win %", "Top 3 %", "Last Place %", "Projected Score", "Active Players",
-                        "Expected Games Remaining",
                     ]
                 },
             },
