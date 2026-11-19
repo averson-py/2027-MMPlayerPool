@@ -2,7 +2,9 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from pathlib import Path
 from datetime import datetime, timedelta
+import csv
 import difflib
+import io
 import json
 import random
 import os
@@ -810,6 +812,46 @@ def download_pool_images(workbook_path, progress=lambda text: None):
         len(manifest["teams"]), len(teams),
         len(manifest["players"]), len(drafted), missing,
     )
+
+
+TORVIK_CSV_URL = "https://barttorvik.com/{year}_team_results.csv"
+
+
+def download_torvik_ratings():
+    """Save Barttorvik adjusted offense, defense and tempo to assets/torvik_ratings.json.
+
+    The dashboard reads this file when Barttorvik blocks its live download (Streamlit Cloud).
+    Returns (team count, season year).
+    """
+    import requests
+
+    now = datetime.now()
+    year = now.year + 1 if now.month >= 10 else now.year
+    resp = requests.get(
+        TORVIK_CSV_URL.format(year=year),
+        headers={"User-Agent": "MM-Player-Pool-Dashboard (personal use; run occasionally)"},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    teams = {}
+    for row in csv.DictReader(io.StringIO(resp.text)):
+        try:
+            teams[row["team"]] = [
+                round(float(row["adjoe"]), 3), round(float(row["adjde"]), 3), round(float(row["adjt"]), 3),
+            ]
+        except (KeyError, TypeError, ValueError):
+            continue
+    if not teams:
+        raise ValueError("Barttorvik returned no team ratings.")
+    payload = {
+        "year": year,
+        "source": "https://barttorvik.com",
+        "fetched": now.isoformat(timespec="seconds"),
+        "teams": teams,
+    }
+    IMAGE_ASSETS_DIR.mkdir(exist_ok=True)
+    (IMAGE_ASSETS_DIR / "torvik_ratings.json").write_text(json.dumps(payload, indent=1), encoding="utf-8")
+    return len(teams), year
 
 
 def fetch_espn_team_index():
@@ -2359,6 +2401,17 @@ class DraftApp:
         )
         self.images_button.grid(
             row=3, column=0, columnspan=2, sticky="ew", padx=6, pady=6
+        )
+
+        self.torvik_button = ThemedButton(
+            actions,
+            text="\U0001F4C8  Fetch Torvik Team Ratings",
+            command=self.fetch_torvik,
+            font=(THEME["font"], 11, "bold"),
+            pady=10
+        )
+        self.torvik_button.grid(
+            row=4, column=0, columnspan=2, sticky="ew", padx=6, pady=6
         )
 
         drafters_card = tk.LabelFrame(body, text="Draft Order")
@@ -4364,6 +4417,37 @@ class DraftApp:
                     detail += f"\n...and {len(missing) - 25} more"
             detail += "\n\nNow commit and push the assets/ folder."
             messagebox.showinfo("Fetch Images", detail)
+
+    def fetch_torvik(self):
+        if not messagebox.askyesno(
+            "Fetch Torvik Ratings",
+            "Download current Barttorvik team ratings (adjusted offense, defense and tempo) "
+            "into assets/torvik_ratings.json?\n\nThe dashboard uses this file when the live "
+            "download is blocked on Streamlit Cloud. Commit and push assets/ afterward."
+        ):
+            return
+
+        self.torvik_button.config(state=tk.DISABLED)
+        self.root.config(cursor="watch")
+        self.status_label.config(text="Downloading Torvik ratings...")
+        self.root.update()
+
+        try:
+            count, year = download_torvik_ratings()
+        except Exception as error:
+            messagebox.showerror("Fetch Torvik Ratings", f"Torvik fetch failed: {error}")
+            count = None
+        finally:
+            self.root.config(cursor="")
+            self.torvik_button.config(state=tk.NORMAL)
+
+        if count:
+            self.status_label.config(text=f"Saved Torvik ratings for {count} teams ({year}).")
+            messagebox.showinfo(
+                "Fetch Torvik Ratings",
+                f"Saved ratings for {count} teams for the {year} season.\n\n"
+                "Now commit and push the assets/ folder."
+            )
 
     def find_team_list_sheet(self):
         if self.workbook is None:

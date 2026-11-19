@@ -2900,6 +2900,8 @@ GAME_FPTS_SPREAD = 0.30
 BRACKET_SLOT_SEEDS = [1, 16, 8, 9, 5, 12, 4, 13, 6, 11, 3, 14, 7, 10, 2, 15]
 
 TORVIK_CSV_URL = "https://barttorvik.com/{year}_team_results.csv"
+# Written by the commissioner app's Fetch Torvik Team Ratings button; used when the live download is blocked.
+TORVIK_SNAPSHOT = ASSETS_DIR / "torvik_ratings.json"
 GAME_MARGIN_SD = 11.0
 DEFAULT_TEMPO = 68.0
 # Workbook team names (normalised) whose Barttorvik names differ.
@@ -2941,11 +2943,25 @@ def _fetch_torvik_ratings(year):
 
 @st.cache_data(ttl=600, show_spinner=False)
 def get_torvik_ratings(year):
-    """(ratings, error): Barttorvik ratings, or ({}, reason) for 10 minutes if they can't be fetched."""
+    """(ratings, error, source): live Barttorvik ratings, else the repo snapshot, else nothing.
+
+    source is "live", "snapshot:<date>" or ""; error is the live fetch failure (if any).
+    """
     try:
-        return _fetch_torvik_ratings(year), ""
+        return _fetch_torvik_ratings(year), "", "live"
     except Exception as exc:
-        return {}, f"{type(exc).__name__}: {exc}"[:160]
+        reason = f"{type(exc).__name__}: {exc}"[:160]
+    try:
+        payload = json.loads(TORVIK_SNAPSHOT.read_text(encoding="utf-8"))
+        if payload.get("year") == year:
+            ratings = {
+                _torvik_key(name): tuple(float(v) for v in values)
+                for name, values in payload["teams"].items()
+            }
+            return ratings, reason, f"snapshot:{str(payload.get('fetched', ''))[:10]}"
+    except Exception:
+        pass
+    return {}, reason, ""
 
 
 def _team_win_matrix(team_names, team_seeds):
@@ -2957,7 +2973,7 @@ def _team_win_matrix(team_names, team_seeds):
     import numpy as np
 
     year = torvik_season_year()
-    ratings, error = get_torvik_ratings(year)
+    ratings, error, source = get_torvik_ratings(year)
     tempos = [r[2] for r in ratings.values()]
     avg_tempo = float(np.mean(tempos)) if tempos else DEFAULT_TEMPO
     n = len(team_names)
@@ -2976,7 +2992,10 @@ def _team_win_matrix(team_names, team_seeds):
     possessions = np.outer(tempo, tempo) / avg_tempo
     margin = (net[:, None] - net[None, :]) / 100.0 * possessions
     win = 0.5 * (1.0 + np.vectorize(math.erf)(margin / (GAME_MARGIN_SD * math.sqrt(2.0))))
-    return win, {"matched": matched, "total": n, "year": year, "error": error or ("no team names matched" if not matched else "")}
+    return win, {
+        "matched": matched, "total": n, "year": year, "source": source,
+        "error": error if not ratings else ("no team names matched" if not matched else ""),
+    }
 
 
 def _simulate_win_probabilities(data, n_sims, seed, pre_tournament=False):
@@ -4911,9 +4930,13 @@ with tab1:
     else:
         rating_info = win_prob.attrs.get("ratings") or {}
         if rating_info.get("matched"):
+            snapshot_note = (
+                f"; ratings snapshot from {rating_info['source'].split(':', 1)[1] or 'an earlier date'}"
+                if str(rating_info.get("source", "")).startswith("snapshot") else ""
+            )
             odds_text = (
                 f"Game odds use Barttorvik {rating_info['year']} adjusted offense, defense and tempo "
-                f"({rating_info['matched']} of {rating_info['total']} bracket teams matched)"
+                f"({rating_info['matched']} of {rating_info['total']} bracket teams matched{snapshot_note})"
             )
         else:
             reason = rating_info.get("error")
