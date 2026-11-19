@@ -2941,11 +2941,11 @@ def _fetch_torvik_ratings(year):
 
 @st.cache_data(ttl=600, show_spinner=False)
 def get_torvik_ratings(year):
-    """Barttorvik ratings, or {} for 10 minutes if they can't be fetched."""
+    """(ratings, error): Barttorvik ratings, or ({}, reason) for 10 minutes if they can't be fetched."""
     try:
-        return _fetch_torvik_ratings(year)
-    except Exception:
-        return {}
+        return _fetch_torvik_ratings(year), ""
+    except Exception as exc:
+        return {}, f"{type(exc).__name__}: {exc}"[:160]
 
 
 def _team_win_matrix(team_names, team_seeds):
@@ -2957,7 +2957,7 @@ def _team_win_matrix(team_names, team_seeds):
     import numpy as np
 
     year = torvik_season_year()
-    ratings = get_torvik_ratings(year)
+    ratings, error = get_torvik_ratings(year)
     tempos = [r[2] for r in ratings.values()]
     avg_tempo = float(np.mean(tempos)) if tempos else DEFAULT_TEMPO
     n = len(team_names)
@@ -2976,7 +2976,7 @@ def _team_win_matrix(team_names, team_seeds):
     possessions = np.outer(tempo, tempo) / avg_tempo
     margin = (net[:, None] - net[None, :]) / 100.0 * possessions
     win = 0.5 * (1.0 + np.vectorize(math.erf)(margin / (GAME_MARGIN_SD * math.sqrt(2.0))))
-    return win, {"matched": matched, "total": n, "year": year}
+    return win, {"matched": matched, "total": n, "year": year, "error": error or ("no team names matched" if not matched else "")}
 
 
 def _simulate_win_probabilities(data, n_sims, seed, pre_tournament=False):
@@ -4916,7 +4916,10 @@ with tab1:
                 f"({rating_info['matched']} of {rating_info['total']} bracket teams matched)"
             )
         else:
-            odds_text = "Game odds use seed-based win probabilities"
+            reason = rating_info.get("error")
+            odds_text = "Game odds use seed-based win probabilities" + (
+                f" (Barttorvik ratings unavailable: {reason})" if reason else ""
+            )
         st.caption(
             f"Estimated from {WIN_PROB_SIMS:,} simulated tournaments. {odds_text} and real results so far; "
             f"player scoring varies about {GAME_FPTS_SPREAD:.0%} "
