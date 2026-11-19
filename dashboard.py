@@ -1,5 +1,7 @@
 
 import colorsys
+import io
+import math
 import os
 import re
 import secrets
@@ -2546,7 +2548,7 @@ def expected_games_explanation(row, data):
             "<b>Expected Games Remaining</b><br>"
             f"Average number of more games this player's team plays across {WIN_PROB_SIMS:,} simulated "
             f"tournaments: <b>{info['games']:.2f}</b>.<br>"
-            "Uses the real bracket and results so far, with seed-based odds for games not yet played."
+            "Uses the real bracket and results so far, with modeled odds for games not yet played."
         )
     if avg_games is None:
         return "No average games found for this seed, so 1 game is assumed."
@@ -2887,16 +2889,94 @@ def make_draft_ratings(data):
     return pd.DataFrame(result)[ratings_columns]
 
 
-# Rough single-game team strength by seed; win probability is a logistic of the strength gap.
+# Seed-based single-game strength (points of margin), used only for teams without Barttorvik ratings.
 SEED_STRENGTH = {
     1: 25.0, 2: 21.0, 3: 18.0, 4: 16.0, 5: 14.0, 6: 13.0, 7: 11.5, 8: 10.0,
     9: 9.5, 10: 8.5, 11: 8.0, 12: 7.5, 13: 4.5, 14: 2.0, 15: 0.0, 16: -4.0,
 }
-STRENGTH_SCALE = 7.0
 WIN_PROB_SIMS = 10000
 GAME_FPTS_SPREAD = 0.30
 # Seeds in bracket order within a region: each adjacent pair plays in the first round.
 BRACKET_SLOT_SEEDS = [1, 16, 8, 9, 5, 12, 4, 13, 6, 11, 3, 14, 7, 10, 2, 15]
+
+TORVIK_CSV_URL = "https://barttorvik.com/{year}_team_results.csv"
+GAME_MARGIN_SD = 11.0
+DEFAULT_TEMPO = 68.0
+# Workbook team names (normalised) whose Barttorvik names differ.
+TORVIK_ALIASES = {
+    "longisland": "liu", "mcneese": "mcneesest", "miami": "miamifl", "olemiss": "mississippi",
+    "uconn": "connecticut", "pitt": "pittsburgh", "louisianast": "lsu", "northcarolinast": "ncst",
+    "brighamyoung": "byu", "southerncalifornia": "usc",
+}
+
+
+def _torvik_key(name):
+    text = str(name).casefold().replace("&", "and")
+    text = re.sub(r"[.'()]", "", text)
+    text = re.sub(r"\bsaint\b", "st", text)
+    text = re.sub(r"\bstate\b", "st", text)
+    return re.sub(r"[^a-z0-9]", "", text)
+
+
+def torvik_season_year():
+    now = datetime.now()
+    return now.year + 1 if now.month >= 10 else now.year
+
+
+@st.cache_data(ttl=21600, show_spinner=False)
+def _fetch_torvik_ratings(year):
+    """{normalised team: (adjoe, adjde, adjt)} from Barttorvik's season CSV, cached 6 hours."""
+    resp = requests.get(
+        TORVIK_CSV_URL.format(year=year),
+        headers={"User-Agent": "MM-Player-Pool-Dashboard (small private pool; cached 6 hours)"},
+        timeout=20,
+    )
+    resp.raise_for_status()
+    table = pd.read_csv(io.StringIO(resp.text), usecols=["team", "adjoe", "adjde", "adjt"])
+    return {
+        _torvik_key(row.team): (float(row.adjoe), float(row.adjde), float(row.adjt))
+        for row in table.itertuples()
+    }
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def get_torvik_ratings(year):
+    """Barttorvik ratings, or {} for 10 minutes if they can't be fetched."""
+    try:
+        return _fetch_torvik_ratings(year)
+    except Exception:
+        return {}
+
+
+def _team_win_matrix(team_names, team_seeds):
+    """Pairwise neutral-site win probabilities from Barttorvik adjusted offense, defense and tempo.
+
+    Expected margin = net rating gap per 100 possessions x expected possessions / 100; win probability
+    is a normal curve on that margin. Teams without ratings fall back to seed-based strength.
+    """
+    import numpy as np
+
+    year = torvik_season_year()
+    ratings = get_torvik_ratings(year)
+    tempos = [r[2] for r in ratings.values()]
+    avg_tempo = float(np.mean(tempos)) if tempos else DEFAULT_TEMPO
+    n = len(team_names)
+    net = np.zeros(n)
+    tempo = np.full(n, avg_tempo)
+    matched = 0
+    for i, (name, seed_value) in enumerate(zip(team_names, team_seeds)):
+        key = _torvik_key(name)
+        rating = ratings.get(key) or ratings.get(TORVIK_ALIASES.get(key, ""))
+        if rating:
+            net[i] = rating[0] - rating[1]
+            tempo[i] = rating[2]
+            matched += 1
+        else:
+            net[i] = SEED_STRENGTH.get(int(seed_value), 0.0) * 100.0 / avg_tempo
+    possessions = np.outer(tempo, tempo) / avg_tempo
+    margin = (net[:, None] - net[None, :]) / 100.0 * possessions
+    win = 0.5 * (1.0 + np.vectorize(math.erf)(margin / (GAME_MARGIN_SD * math.sqrt(2.0))))
+    return win, {"matched": matched, "total": n, "year": year}
 
 
 def _simulate_win_probabilities(data, n_sims, seed, pre_tournament=False):
@@ -2937,13 +3017,13 @@ def _simulate_win_probabilities(data, n_sims, seed, pre_tournament=False):
         if value is not None:
             lost_round = round_lost_index(value)
             lost[i] = lost_round if lost_round is not None else 99
-    strength = np.array([SEED_STRENGTH.get(int(s), 0.0) for s in team_seeds])
+    win_matrix, rating_info = _team_win_matrix(team_names, team_seeds)
 
     def play(a, b, rnd):
         a_out, b_out = lost[a] <= rnd, lost[b] <= rnd
         a_surv = (lost[a] > rnd) & (lost[a] < 99)
         b_surv = (lost[b] > rnd) & (lost[b] < 99)
-        p_a = 1.0 / (1.0 + np.exp(-(strength[a] - strength[b]) / STRENGTH_SCALE))
+        p_a = win_matrix[a, b]
         sampled = np.where(rng.random(a.shape) < p_a, a, b)
         # Real results win over the model: a known loser loses, a team known to play later advances.
         return np.where(
@@ -3132,6 +3212,7 @@ def _simulate_win_probabilities(data, n_sims, seed, pre_tournament=False):
     ).reset_index(drop=True)
     result.insert(0, "Rank", range(1, len(result) + 1))
     result.attrs["players"] = player_info
+    result.attrs["ratings"] = rating_info
     return result
 
 
@@ -4828,9 +4909,17 @@ with tab1:
             reverse_columns={"Draft Pos.": True},
         )
     else:
+        rating_info = win_prob.attrs.get("ratings") or {}
+        if rating_info.get("matched"):
+            odds_text = (
+                f"Game odds use Barttorvik {rating_info['year']} adjusted offense, defense and tempo "
+                f"({rating_info['matched']} of {rating_info['total']} bracket teams matched)"
+            )
+        else:
+            odds_text = "Game odds use seed-based win probabilities"
         st.caption(
-            f"Estimated from {WIN_PROB_SIMS:,} simulated tournaments. Game outcomes use seed-based win "
-            f"probabilities and real results so far; player scoring varies about {GAME_FPTS_SPREAD:.0%} "
+            f"Estimated from {WIN_PROB_SIMS:,} simulated tournaments. {odds_text} and real results so far; "
+            f"player scoring varies about {GAME_FPTS_SPREAD:.0%} "
             "per game around the projected rate. Rank orders owners by average simulated finishing place "
             "(Avg. Finish); Projected Score is the average simulated final FPts. "
             "Hover over Avg. Finish, Projected Score or Win % for details."
@@ -5459,8 +5548,24 @@ with tab6:
         f"**PROJECTIONS = Average Results of {WIN_PROB_SIMS:,} Simulated Tournaments**"
     )
     st.markdown(
-        "Each simulated tournament plays out the bracket game by game. Results already entered are locked in, "
-        "and games not yet played are decided with seed-based win probabilities."
+        "Each simulated tournament plays out the bracket game by game. Results already entered are locked in; "
+        "only games not yet played are simulated."
+    )
+    st.markdown("**HOW A GAME IS DECIDED** (Team ratings from [Barttorvik](https://barttorvik.com))")
+    st.markdown(
+        "1. **Net rating** = a team's Adjusted Offense minus Adjusted Defense, in points per 100 possessions.  \n"
+        "2. **Expected possessions** = the two teams' Adjusted Tempos multiplied together, divided by the "
+        "league-average tempo.  \n"
+        "3. **Expected margin** = [ Team A Net Rating - Team B Net Rating ] x [ Expected Possessions ] / 100. "
+        "Tournament games are at neutral sites, so there is no home-court adjustment.  \n"
+        f"4. **Win probability** = a normal curve on that margin, with a standard deviation of {GAME_MARGIN_SD:g} "
+        "points. A game is then decided by a random draw at that probability.  \n"
+        "5. Any team without a Barttorvik rating falls back to a rough seed-based strength."
+    )
+    st.markdown(
+        "*Ex. a team with a +10 net rating against a team with a +4 net rating over 68 expected possessions: "
+        f"[ 10 - 4 ] x 68 / 100 = +4.1 points, which is about a {0.5 * (1 + math.erf(4.08 / (GAME_MARGIN_SD * math.sqrt(2)))):.0%} "
+        "win probability.*"
     )
     st.markdown(
         f"Every player scores their blended FPts per game [ Season Avg. FPts x {1 - tourn_w:g} ] + "
@@ -5472,7 +5577,9 @@ with tab6:
         "**PLAYER PROJECTED FPTS** = FPts Already Scored + Average Simulated FPts Still To Come"
     )
     st.markdown(
-        "**EXPECTED GAMES REMAINING** = Average Number of Additional Games the Player's Team Plays in the Simulations"
+        "**EXPECTED GAMES REMAINING** = Average Number of Additional Games the Player's Team Plays in the Simulations "
+        "(so it depends on the team's simulated opponents and win probabilities above; 0 for players who are out "
+        "or whose team is eliminated)"
     )
     st.markdown(
         "**PROJECTED SCORE** = Average Final FPts for a Team Owner  \n"
