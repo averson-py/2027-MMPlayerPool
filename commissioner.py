@@ -14,7 +14,7 @@ import urllib.request
 
 from openpyxl import load_workbook
 
-from torvik_ratings import download_torvik_ratings, push_snapshot
+from torvik_ratings import download_torvik_ratings, push_paths, push_snapshot
 
 DRAFT_ORDER_SHEET = "DraftOrder"
 TEAM_DATA_SHEET = "TeamData"
@@ -731,7 +731,7 @@ def image_roster_photos(team_id):
     return photos
 
 
-def download_pool_images(workbook_path, progress=lambda text: None):
+def download_pool_images(workbook_path, progress=lambda text, done=None, total=None: None):
     """Save team logos and drafted-player headshots into assets/."""
     wb = load_workbook(workbook_path, read_only=True, data_only=True)
 
@@ -771,9 +771,10 @@ def download_pool_images(workbook_path, progress=lambda text: None):
 
     manifest = {"teams": {}, "players": {}}
     missing = []
+    total = len(teams) + len(drafted)
 
     for n, (key, name) in enumerate(sorted(teams.items()), 1):
-        progress(f"Logo {n}/{len(teams)}: {name}")
+        progress(f"Logo {n}/{len(teams)}: {name}", n - 1, total)
         team_id = ids.get(key)
         rel = f"logos/{team_id}.png" if team_id else None
         if rel and image_download(IMAGE_LOGO_URL.format(team_id), IMAGE_ASSETS_DIR / rel):
@@ -783,7 +784,7 @@ def download_pool_images(workbook_path, progress=lambda text: None):
 
     roster_cache = {}
     for n, player in enumerate(drafted, 1):
-        progress(f"Headshot {n}/{len(drafted)}: {player}")
+        progress(f"Headshot {n}/{len(drafted)}: {player}", len(teams) + n - 1, total)
         team = player_team.get(player.casefold())
         team_id = ids.get(image_norm_team(team)) if team else None
         if not team_id:
@@ -4344,23 +4345,54 @@ class DraftApp:
             "Fetch Images",
             "Download team logos and drafted-player headshots into the "
             "assets folder?\n\nSave the workbook first so drafted players "
-            "are included. Commit and push assets/ afterward."
+            "are included. The images are pushed to GitHub afterward."
         ):
             return
 
         self.images_button.config(state=tk.DISABLED)
         self.root.config(cursor="watch")
 
-        def progress(text):
+        progress_window = tk.Toplevel(self.root)
+        progress_window.title("Fetching Images")
+        progress_window.resizable(False, False)
+        progress_window.transient(self.root)
+        progress_window.protocol("WM_DELETE_WINDOW", lambda: None)
+        progress_label = tk.Label(progress_window, text="Starting...", anchor="w", width=50)
+        progress_label.pack(fill=tk.X, padx=16, pady=(14, 6))
+        progress_bar = ttk.Progressbar(
+            progress_window, orient=tk.HORIZONTAL, length=380, mode="determinate", maximum=1
+        )
+        progress_bar.pack(padx=16, pady=6)
+        percent_label = tk.Label(progress_window, text="", anchor="w", fg=THEME["muted"])
+        percent_label.pack(fill=tk.X, padx=16, pady=(0, 14))
+        progress_window.update_idletasks()
+        progress_window.geometry(f"+{self.root.winfo_rootx() + 60}+{self.root.winfo_rooty() + 120}")
+        progress_window.grab_set()
+
+        def progress(text, done=None, total=None):
             self.status_label.config(text=text)
+            progress_label.config(text=text)
+            if total:
+                progress_bar.config(maximum=total, value=done)
+                percent_label.config(text=f"{done * 100 // total}% complete ({done} of {total})")
             self.root.update()
 
+        push_error = None
+        pushed = None
         try:
             summary = download_pool_images(self.file_path, progress)
+            progress("Pushing images to GitHub...", 1, 1)
+            try:
+                pushed = push_paths(["assets"], "Update team logos and player headshots")
+            except Exception as error:
+                push_error = error
         except Exception as error:
+            progress_window.destroy()
             messagebox.showerror("Fetch Images", f"Image fetch failed: {error}")
             summary = None
         finally:
+            if progress_window.winfo_exists():
+                progress_window.destroy()
             self.root.config(cursor="")
             self.images_button.config(state=tk.NORMAL)
 
@@ -4375,7 +4407,10 @@ class DraftApp:
                 detail += "\n\nMissing:\n" + "\n".join(missing[:25])
                 if len(missing) > 25:
                     detail += f"\n...and {len(missing) - 25} more"
-            detail += "\n\nNow commit and push the assets/ folder."
+            if push_error:
+                detail += f"\n\nPush failed, so commit and push assets/ manually:\n{push_error}"
+            else:
+                detail += "\n\nPushed to GitHub." if pushed else "\n\nNo changes to push."
             messagebox.showinfo("Fetch Images", detail)
 
     def fetch_torvik(self):

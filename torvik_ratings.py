@@ -57,22 +57,26 @@ def download_torvik_ratings(year=None, path=SNAPSHOT_PATH):
     return len(teams), year
 
 
-def push_snapshot(path=SNAPSHOT_PATH):
-    """Commit and push only the snapshot file. Raises RuntimeError with git's message on failure."""
-    path = Path(path)
+def push_paths(paths, message, repo_dir=SNAPSHOT_PATH.parent.parent):
+    """Commit and push only `paths` (relative to the repo). Returns False if nothing changed; raises RuntimeError on git errors."""
 
     def git(*args):
-        result = subprocess.run(["git", *args], cwd=path.parent, capture_output=True, text=True)
+        result = subprocess.run(["git", *args], cwd=repo_dir, capture_output=True, text=True)
         if result.returncode:
             raise RuntimeError((result.stderr or result.stdout).strip() or f"git {args[0]} failed")
         return result.stdout
 
-    if not git("status", "--porcelain", "--", path.name).strip():
+    paths = [str(p) for p in paths]
+    if not git("status", "--porcelain", "--", *paths).strip():
         return False
-    git("add", "--", path.name)
-    git("commit", "-m", "Update Torvik ratings", "--", path.name)
+    git("add", "--", *paths)
+    git("commit", "-m", message, "--", *paths)
     git("push")
     return True
+
+
+def push_snapshot():
+    return push_paths(["assets/torvik_ratings.json"], "Update Torvik ratings")
 
 
 if __name__ == "__main__":
