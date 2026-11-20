@@ -20,7 +20,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from bracket_sim import (
-    DEFAULT_TEMPO, GAME_MARGIN_SD, SEED_STRENGTH, SIM_SEED, TORVIK_ALIASES,
+    DEFAULT_TEMPO, GAME_FPTS_SPREAD, GAME_MARGIN_SD, SEED_STRENGTH, SIM_SEED, TORVIK_ALIASES,
     WIN_PROB_SIMS, read_bracket_teams, read_final_four_config, run_bracket,
 )
 from bracket_sim import norm_team_name as _norm_team_name
@@ -2898,7 +2898,6 @@ def make_draft_ratings(data):
 
 
 # Odds constants and the bracket simulation live in bracket_sim.py (shared with the commissioner app).
-GAME_FPTS_SPREAD = 0.30
 
 TORVIK_CSV_URL = "https://barttorvik.com/{year}_team_results.csv"
 # Written by the commissioner app's Fetch Torvik Team Ratings button; used when the live download is blocked.

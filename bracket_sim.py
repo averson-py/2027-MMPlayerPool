@@ -14,6 +14,8 @@ SEED_STRENGTH = {
 }
 WIN_PROB_SIMS = 10000
 SIM_SEED = 2027
+# Game-to-game variation (standard deviation as a share of a player's average).
+GAME_FPTS_SPREAD = 0.30
 REGIONS = ["EAST", "WEST", "MIDWEST", "SOUTH"]
 # Seeds in bracket order within a region: each adjacent pair plays in the first round.
 BRACKET_SLOT_SEEDS = [1, 16, 8, 9, 5, 12, 4, 13, 6, 11, 3, 14, 7, 10, 2, 15]

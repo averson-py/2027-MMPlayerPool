@@ -14,7 +14,9 @@ import urllib.request
 
 from openpyxl import load_workbook
 
-from bracket_sim import norm_team_name, pre_tournament_expected_games, read_bracket_teams, read_final_four_config
+from bracket_sim import (
+    GAME_FPTS_SPREAD, norm_team_name, pre_tournament_expected_games, read_bracket_teams, read_final_four_config,
+)
 from torvik_ratings import download_torvik_ratings, load_ratings, push_paths, push_snapshot
 
 DRAFT_ORDER_SHEET = "DraftOrder"
@@ -903,6 +905,18 @@ def fetch_espn_team_top_players(
     return players[:count]
 
 
+def enable_fullscreen_toggle(window):
+    def toggle(_event=None):
+        window.attributes("-fullscreen", not window.attributes("-fullscreen"))
+
+    def leave(_event=None):
+        window.attributes("-fullscreen", False)
+
+    for sequence in ("<F11>", "<Command-Control-f>"):
+        window.bind(sequence, toggle)
+    window.bind("<Escape>", leave)
+
+
 def apply_theme(root):
     font = THEME["font"]
 
@@ -1059,6 +1073,7 @@ class PlayerSelectionDialog:
         self.sort_reverse = True
 
         self.window = tk.Toplevel(parent)
+        enable_fullscreen_toggle(self.window)
         self.pick_var = tk.IntVar(self.window, value=0)
         self.window.title("Select Player")
         width = min(1600, self.window.winfo_screenwidth() - 40)
@@ -2257,6 +2272,7 @@ class DraftApp:
             pass
         self.root.geometry("620x620")
         self.root.minsize(520, 520)
+        enable_fullscreen_toggle(self.root)
         apply_theme(self.root)
 
         self.file_path = None
@@ -3074,6 +3090,7 @@ class DraftApp:
 
         window = tk.Toplevel(self.root)
         self.game_results_window = window
+        enable_fullscreen_toggle(window)
 
         window.title("Input Game Results")
         window.geometry("900x780")
@@ -3624,15 +3641,34 @@ class DraftApp:
                 str(record.get("Status") or "").strip().casefold()
             for record in self.players
         }
+        averages_by_player = {
+            str(record.get("Player") or "").strip().casefold(): {
+                stat: self.numeric_value(record.get(stat)) for stat in ("PPG", "RPG", "APG")
+            }
+            for record in self.players
+        }
+
+        def swing(average):
+            # Same game-to-game variation the dashboard projections assume.
+            return max(0, round(random.gauss(average, GAME_FPTS_SPREAD * average)))
+
         simulated = 0
         out = 0
 
         for player_key, info in stats_entries.items():
             is_out = status_by_player.get(player_key) in ("out", "o")
+            averages = averages_by_player.get(player_key)
 
             if is_out:
                 values = {"PTS": 0, "REB": 0, "AST": 0}
                 out += 1
+            elif averages and any(averages.values()):
+                values = {
+                    "PTS": swing(averages["PPG"]),
+                    "REB": swing(averages["RPG"]),
+                    "AST": swing(averages["APG"])
+                }
+                simulated += 1
             else:
                 values = {
                     "PTS": random.randint(2, 32),
@@ -4997,6 +5033,7 @@ class DraftApp:
 
         window = tk.Toplevel(self.root)
         window.title("Update Player Statuses")
+        enable_fullscreen_toggle(window)
         window.geometry("760x620")
         window.transient(self.root)
         window.grab_set()
