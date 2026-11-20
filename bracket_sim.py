@@ -82,7 +82,7 @@ def read_bracket_teams(team_list_ws):
     return bracket
 
 
-NET_WEIGHT = 0.5
+NET_WEIGHT = 0.0
 # NCAA NET school names that need help matching Barttorvik's.
 NET_ALIASES = {
     "UNI": "Northern Iowa", "SFA": "Stephen F. Austin", "California Baptist": "Cal Baptist",
@@ -147,7 +147,7 @@ def blend_net_rankings(ratings, net_ranks, weight=NET_WEIGHT):
     team by Barttorvik; `weight` is how far to move toward it. The shift is split evenly between offense
     and defense. Returns (ratings, number of NET teams matched); teams without a NET match are unchanged.
     """
-    if not ratings or not net_ranks:
+    if not ratings or not net_ranks or weight <= 0:
         return ratings, 0
     ranked = net_ranks_by_key(ratings, net_ranks)
     ordered = sorted((r[0] - r[1] for r in ratings.values()), reverse=True)

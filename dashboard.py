@@ -4971,10 +4971,14 @@ with tab1:
             odds_text = "Game odds use seed-based win probabilities" + (
                 f" (Barttorvik ratings unavailable: {reason})" if reason else ""
             )
-        net_text = (
-            " The NCAA NET rankings are not yet being used because they have not been published yet."
-            if rating_info.get("matched") and not rating_info.get("net_matched") else ""
-        )
+        net_text = ""
+        if rating_info.get("matched") and not rating_info.get("net_matched"):
+            net_text = (
+                " The NCAA NET rankings are published but not used in these projections (they appear in the "
+                "League Info ratings table)."
+                if rating_info.get("net_through") else
+                " The NCAA NET rankings are not yet being used because they have not been published yet."
+            )
         st.caption(
             f"Estimated from {WIN_PROB_SIMS:,} simulated tournaments. {odds_text} and real results so far.{net_text} "
             f"Player scoring varies about {GAME_FPTS_SPREAD:.0%} "
