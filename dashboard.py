@@ -580,6 +580,29 @@ def _score_html(score, other):
     return f'<span class="{cls}">{score}</span>'
 
 
+def _win_prob_html(percent, favorite):
+    cls = "team-score win-prob fav" if favorite else "team-score win-prob"
+    return f'<span class="{cls}" title="Chance to win this game">{percent}%</span>'
+
+
+@st.cache_data(show_spinner=False)
+def _torvik_badge_css():
+    """Style block that draws the toRvik logo on bracket cards (inlined so the bracket frame needs no files)."""
+    import base64
+
+    try:
+        encoded = base64.b64encode((ASSETS_DIR / "torvik_logo.png").read_bytes()).decode()
+    except OSError:
+        return ""
+    return (
+        "<style>"
+        ".game-label {display: flex; align-items: center; justify-content: space-between; min-height: 16px;}"
+        ".torvik-badge {display: inline-block; width: 13px; height: 15px; "
+        f"background: url(data:image/png;base64,{encoded}) center / contain no-repeat;}}"
+        "</style>"
+    )
+
+
 def build_tournament_bracket(bracket_teams, teams_out=None):
     """
     Build tournament bracket structure from teams dict.
@@ -1194,6 +1217,8 @@ def render_bracket_html(rounds, region=None, team_players=None, my_team=None, da
 
             .team-score.score-win { font-weight: 800; color: #222; }
             .team-score.score-loss { color: #aaa; font-weight: 500; }
+            .team-score.win-prob { font-size: 12px; font-weight: 500; color: #4472C4; }
+            .team-score.win-prob.fav { font-weight: 700; }
 
             .team-box.tbd .team-seed {
                 color: #ccc;
@@ -1332,11 +1357,23 @@ def render_bracket_html(rounds, region=None, team_players=None, my_team=None, da
                 find_game_scores(team_a, team_b)
                 if is_eliminated_a or is_eliminated_b else None
             )
+            odds_badge = ""
             if game_scores:
                 score_html_a = _score_html(game_scores[0], game_scores[1])
                 score_html_b = _score_html(game_scores[1], game_scores[0])
             else:
                 score_html_a = score_html_b = _score_html(None, None)
+                # Unplayed game between two known teams: show each team's chance to win.
+                if not (is_tbd_a or is_tbd_b or winner or is_eliminated_a or is_eliminated_b):
+                    p_a = matchup_win_probability(team_a, seed_a, team_b, seed_b)
+                    if p_a is not None:
+                        percent_a = round(p_a * 100)
+                        score_html_a = _win_prob_html(percent_a, percent_a >= 50)
+                        score_html_b = _win_prob_html(100 - percent_a, percent_a < 50)
+                        odds_badge = (
+                            '<span class="torvik-badge" '
+                            'title="Win probabilities from Barttorvik ratings (barttorvik.com)"></span>'
+                        )
             feeds_to = matchup_idx // 2 if len(all_matchups) > 1 and round_name != "First Four" else -1
 
             align_to = -1
@@ -1370,7 +1407,7 @@ def render_bracket_html(rounds, region=None, team_players=None, my_team=None, da
 
             html += f"""
                     <div class="matchup-container" data-round="{round_idx}" data-index="{matchup_idx}" data-feeds-to="{feeds_to}" data-align-to="{align_to}" data-players="{players_attr}">
-                        <div class="game-label">G{game_num}</div>
+                        <div class="game-label">G{game_num}{odds_badge}</div>
                         <div class="team-box {classes_a}">
                             <div class="team-info">
                                 <span class="team-seed">{seed_a}</span>
@@ -1576,6 +1613,8 @@ def render_bracket_html(rounds, region=None, team_players=None, my_team=None, da
     """
 
     html = html.replace("__MY_TEAM__", json.dumps(my_team or ""))
+    if 'class="torvik-badge"' in html:
+        html = html.replace("</head>", _torvik_badge_css() + "</head>", 1)
     if dark:
         dark_css = """<style>
             .ncaa-bracket-wrapper {background: #141A25; box-shadow: none;}
@@ -1588,6 +1627,8 @@ def render_bracket_html(rounds, region=None, team_players=None, my_team=None, da
             .team-score {color: #9CA3AF;}
             .team-score.score-win {color: #F3F4F6;}
             .team-score.score-loss {color: #6B7280;}
+            .team-score.win-prob {color: #8DB8E8;}
+            .torvik-badge {filter: brightness(0) invert(0.85);}
             .team-box.tbd {background: #161C28; color: #6B7280;}
             .team-box.tbd .team-seed, .team-box.tbd .team-score, .team-box.tbd .team-name,
             .team-box.eliminated .team-name, .team-box.eliminated .team-seed {color: #6B7280;}
@@ -2996,6 +3037,29 @@ def _team_win_matrix(team_names, team_seeds):
         "matched": matched, "total": n, "year": year, "source": source,
         "error": error if not ratings else ("no team names matched" if not matched else ""),
     }
+
+
+def matchup_win_probability(team_a, seed_a, team_b, seed_b):
+    """Chance team A beats team B at a neutral site (Barttorvik ratings, seed fallback); None if unknown."""
+    ratings, _error, _source = get_torvik_ratings(torvik_season_year())
+    tempos = [r[2] for r in ratings.values()]
+    avg_tempo = sum(tempos) / len(tempos) if tempos else DEFAULT_TEMPO
+
+    def strength(name, seed_value):
+        key = _torvik_key(name)
+        rating = ratings.get(key) or ratings.get(TORVIK_ALIASES.get(key, ""))
+        if rating:
+            return rating[0] - rating[1], rating[2]
+        try:
+            return SEED_STRENGTH[int(seed_value)] * 100.0 / avg_tempo, avg_tempo
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    a, b = strength(team_a, seed_a), strength(team_b, seed_b)
+    if a is None or b is None:
+        return None
+    margin = (a[0] - b[0]) / 100.0 * a[1] * b[1] / avg_tempo
+    return 0.5 * (1.0 + math.erf(margin / (GAME_MARGIN_SD * math.sqrt(2.0))))
 
 
 def _simulate_win_probabilities(data, n_sims, seed, pre_tournament=False):
@@ -5632,7 +5696,10 @@ with tab6:
 
 with tab5:
     st.subheader("Tournament Bracket")
-    st.caption("March Madness tournament bracket based on teams entered in the TeamList sheet.")
+    st.caption(
+        "March Madness tournament bracket based on teams entered in the TeamList sheet. "
+        "Percentages show each team's chance to win games that haven't been played yet."
+    )
 
     if data["bracket_teams"]:
         try:
