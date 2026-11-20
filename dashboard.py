@@ -4855,7 +4855,7 @@ with tab0:
             )
 
 with tab1:
-    st.subheader("Tournament Standings")
+    st.subheader("🏆 Tournament Standings")
     standings_event = display_df(
         standings.rename(columns={"Draft Position": "Draft Pos."}),
         height=520,
@@ -4889,7 +4889,7 @@ with tab1:
 
     st.caption("Click a team owner's name to open their Team View.")
     st.session_state.pop("jump_to_team_view", None)
-    st.subheader("Projected Rankings & Win Probability")
+    st.subheader("🔮 Projected Rankings & Win Probability 🎲")
     if win_prob is None:
         st.info("Win probabilities need a complete bracket in the TeamList sheet; showing seed-average projections.")
         display_df(
