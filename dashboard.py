@@ -1364,6 +1364,7 @@ def render_bracket_html(rounds, region=None, team_players=None, my_team=None, da
             )
             odds_badge = ""
             win_pct = {}
+            spread = {}
             if game_scores:
                 score_html_a = _score_html(game_scores[0], game_scores[1])
                 score_html_b = _score_html(game_scores[1], game_scores[0])
@@ -1377,6 +1378,9 @@ def render_bracket_html(rounds, region=None, team_players=None, my_team=None, da
                         score_html_a = _win_prob_html(percent_a, percent_a >= 50)
                         score_html_b = _win_prob_html(100 - percent_a, percent_a < 50)
                         win_pct = {team_a: percent_a, team_b: 100 - percent_a}
+                        margin = matchup_margin(team_a, seed_a, team_b, seed_b)
+                        # Betting-line style: the favorite carries the negative number.
+                        spread = {team_a: round(-margin * 2) / 2 + 0.0, team_b: round(margin * 2) / 2 + 0.0}
                         odds_badge = (
                             '<span class="torvik-badge" '
                             'title="Win probabilities from Barttorvik ratings (barttorvik.com)"></span>'
@@ -1408,6 +1412,7 @@ def render_bracket_html(rounds, region=None, team_players=None, my_team=None, da
                         "logo": get_logo_url(t),
                         "players": team_players.get(_norm_team_name(t), []),
                         "pct": win_pct.get(t),
+                        "spread": spread.get(t),
                         "tv": torvik_team_info(t),
                     }
                     for t in (team_a, team_b) if "TBD" not in str(t)
@@ -1595,6 +1600,7 @@ def render_bracket_html(rounds, region=None, team_players=None, my_team=None, da
                         const logo = t.logo ? '<img src="' + esc(t.logo) + '" style="width:20px;height:20px;object-fit:contain;vertical-align:middle;margin-right:6px" onerror="this.remove()">' : '';
                         h += '<h4>' + logo + esc(t.team) + '</h4>';
                         if (t.pct !== null && t.pct !== undefined) h += '<div class="odds">Win probability: <b>' + t.pct + '%</b></div>';
+                        if (t.spread !== null && t.spread !== undefined) h += '<div class="odds">Predicted spread: <b>' + (t.spread > 0 ? '+' : '') + t.spread.toFixed(1) + '</b></div>';
                         if (t.tv) {
                             const net = t.tv.net;
                             h += '<div class="tv">Torvik' + (t.tv.rank ? ' #' + t.tv.rank : '')
@@ -2999,8 +3005,8 @@ def torvik_team_info(name):
     }
 
 
-def matchup_win_probability(team_a, seed_a, team_b, seed_b):
-    """Chance team A beats team B at a neutral site (Barttorvik ratings, seed fallback); None if unknown."""
+def matchup_margin(team_a, seed_a, team_b, seed_b):
+    """Predicted points margin for team A over team B at a neutral site (negative if B is favored); None if unknown."""
     ratings, _error, _source = get_torvik_ratings(torvik_season_year())
     tempos = [r[2] for r in ratings.values()]
     avg_tempo = sum(tempos) / len(tempos) if tempos else DEFAULT_TEMPO
@@ -3018,7 +3024,14 @@ def matchup_win_probability(team_a, seed_a, team_b, seed_b):
     a, b = strength(team_a, seed_a), strength(team_b, seed_b)
     if a is None or b is None:
         return None
-    margin = (a[0] - b[0]) / 100.0 * a[1] * b[1] / avg_tempo
+    return (a[0] - b[0]) / 100.0 * a[1] * b[1] / avg_tempo
+
+
+def matchup_win_probability(team_a, seed_a, team_b, seed_b):
+    """Chance team A beats team B at a neutral site (Barttorvik ratings, seed fallback); None if unknown."""
+    margin = matchup_margin(team_a, seed_a, team_b, seed_b)
+    if margin is None:
+        return None
     return 0.5 * (1.0 + math.erf(margin / (GAME_MARGIN_SD * math.sqrt(2.0))))
 
 
