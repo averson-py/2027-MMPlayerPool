@@ -3938,12 +3938,14 @@ st.markdown(
 
     /* Team owner dropdown: tap to choose only, no typing/keyboard */
     input[aria-label="Select a team owner"],
+    input[aria-label="Compare with"],
     input[aria-label^="👤 Choose your team"] {
         pointer-events: none !important;
         caret-color: transparent !important;
         user-select: none !important;
     }
     div[data-baseweb="select"]:has(input[aria-label="Select a team owner"]),
+    div[data-baseweb="select"]:has(input[aria-label="Compare with"]),
     div[data-baseweb="select"]:has(input[aria-label^="👤 Choose your team"]) {
         cursor: pointer;
     }
@@ -5669,7 +5671,7 @@ st.caption(
 components.html(
     """<script>
     const fixMyTeam = () => {
-        window.parent.document.querySelectorAll('input[aria-label^="👤 Choose your team"]').forEach(el => {
+        window.parent.document.querySelectorAll('input[aria-label^="👤 Choose your team"], input[aria-label="Compare with"]').forEach(el => {
             el.setAttribute('inputmode', 'none');
             el.setAttribute('readonly', 'readonly');
         });
