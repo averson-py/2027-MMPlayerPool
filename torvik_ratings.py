@@ -57,5 +57,8 @@ def download_torvik_ratings(year=None, path=SNAPSHOT_PATH):
 
 
 if __name__ == "__main__":
-    count, season = download_torvik_ratings(int(sys.argv[1]) if len(sys.argv) > 1 else None)
+    try:
+        count, season = download_torvik_ratings(int(sys.argv[1]) if len(sys.argv) > 1 else None)
+    except requests.RequestException as exc:
+        sys.exit(f"Barttorvik download failed: {exc}")
     print(f"Saved Torvik ratings for {count} teams ({season}) to {SNAPSHOT_PATH}")
