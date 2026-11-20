@@ -1959,7 +1959,7 @@ def _injury_team_key(team):
 
 @st.cache_data(ttl=10800, show_spinner=False)
 def get_covers_injuries():
-    """Return {(first initial, last name): [(team key, 'out'|'questionable')]} from Covers.com."""
+    """{(first initial, last name): [(team key, 'out'|'questionable', injury type, updated date, notes)]} from Covers.com."""
     injuries = {}
     try:
         resp = requests.get(COVERS_INJURIES_URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
@@ -1968,22 +1968,41 @@ def get_covers_injuries():
     except Exception:
         return injuries
 
+    def clean(text):
+        return re.sub(r"\s+", " ", html_lib.unescape(re.sub(r"<[^>]+>", " ", text or ""))).strip()
+
     sections = re.split(r'<a id="([^"]+)"></a>\s*<section>', html)
     for team, body in zip(sections[1::2], sections[2::2]):
-        for name, status in re.findall(
-            r"class='player-link'[^>]*>\s*([^<]+?)\s*</a>.*?<b>([^<]+)</b>", body, re.S
-        ):
-            status = status.strip().casefold()
-            if status.startswith("out"):
+        for chunk in re.split(r"(?=<a [^>]*class='player-link')", body)[1:]:
+            player = re.search(r"class='player-link'[^>]*>\s*([^<]+?)\s*</a>", chunk, re.S)
+            status = re.search(r"<b>([^<]+)</b>(?:\s*<br>\s*\(\s*([^)]*?)\s*\))?", chunk, re.S)
+            if not player or not status:
+                continue
+            notes = re.search(r'injuryCopy">\s*(.*?)\s*</div>', chunk, re.S)
+            status_text = clean(status.group(1))
+            lowered = status_text.casefold()
+            if lowered.startswith("out"):
                 level = "out"
-            elif status.startswith(("questionable", "doubtful", "day")):
+            elif lowered.startswith(("questionable", "doubtful", "day")):
                 level = "questionable"
             else:
                 continue
-            key = _injury_name_key(re.sub(r"\s+", " ", name))
+            key = _injury_name_key(re.sub(r"\s+", " ", player.group(1)))
             if key:
-                injuries.setdefault(key, []).append((_injury_team_key(team), level))
+                injury_type = status_text.split(" - ", 1)[1] if " - " in status_text else ""
+                injuries.setdefault(key, []).append((
+                    _injury_team_key(team), level, injury_type, clean(status.group(2)), clean(notes.group(1) if notes else ""),
+                ))
     return injuries
+
+
+def _covers_match(name, team):
+    key = _injury_name_key(name)
+    matches = get_covers_injuries().get(key, []) if key else []
+    if len(matches) > 1:
+        team_key = _injury_team_key(team or "")
+        matches = [m for m in matches if m[0] == team_key or m[0] in team_key or team_key in m[0]]
+    return matches[0] if len(matches) == 1 else None
 
 
 def injury_status(name, stats):
@@ -1991,12 +2010,23 @@ def injury_status(name, stats):
     status = str(stats.get("Status") or "").strip().casefold()
     if status:
         return status
-    key = _injury_name_key(name)
-    matches = get_covers_injuries().get(key, []) if key else []
-    if len(matches) > 1:
-        team = _injury_team_key(stats.get("Team") or "")
-        matches = [m for m in matches if m[0] == team or m[0] in team or team in m[0]]
-    return matches[0][1] if len(matches) == 1 else ""
+    match = _covers_match(name, stats.get("Team"))
+    return match[1] if match else ""
+
+
+def injury_tip_html(name, team, marker):
+    """Hover text for a player's out/questionable marker: injury type, report date and notes when known."""
+    label = "Out" if marker == "⛔" else "Questionable"
+    match = _covers_match(name, team)
+    if not match:
+        return f"<b>{label}</b><br>No injury details available."
+    _team, _level, injury_type, updated, notes = match
+    text = f"<b>{label}</b>" + (f" – {html_lib.escape(injury_type)}" if injury_type else "")
+    if updated:
+        text += f"<br>Updated {html_lib.escape(updated)}"
+    if notes:
+        text += f"<br>{html_lib.escape(notes)}"
+    return text
 
 
 def player_label(name, stats):
@@ -3537,10 +3567,20 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
                     'onerror="this.style.visibility=\'hidden\'">'
                     if url else '<span class="player-photo"></span>'
                 )
+                name, marker_html = str(value), ""
+                for marker in ("⚠️", "⛔"):
+                    if name.startswith(marker + " "):
+                        name = name[len(marker) + 1:]
+                        tip = injury_tip_html(name, team_by_player.get(value), marker)
+                        marker_html = (
+                            f'<span class="cell-tip injury-tip" tabindex="0">{marker}'
+                            f'<span class="cell-tip-text">{tip}</span></span> '
+                        )
+                        break
                 return (
                     '<div class="player-cell">' + logo + img
-                    + '<span class="name-wrap"><span class="name-full">' + html_lib.escape(str(value)) + '</span>'
-                    + '<span class="name-short">' + html_lib.escape(short_player_name(str(value))) + '</span></span></div>'
+                    + '<span class="name-wrap"><span class="name-full">' + marker_html + html_lib.escape(name) + '</span>'
+                    + '<span class="name-short">' + marker_html + html_lib.escape(short_player_name(name)) + '</span></span></div>'
                 )
 
             styled = styled.format(player_cell, subset=["Player Name"], escape=None)
@@ -3636,6 +3676,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .player-team-logo {position: absolute; left: 14px; top: 7px; width: 20px; height: 20px; object-fit: contain; opacity: 0; transition: opacity 0.25s ease; z-index: 2;}
             .photo-table-wrap.scrolled.team-passed .player-team-logo {opacity: 1;}
             .cell-tip {position: relative; display: inline-block; cursor: help; border-bottom: 1px dotted #888; outline: none;}
+            .cell-tip.injury-tip {border-bottom: none;}
             .cell-tip .cell-tip-text {
                 display: none; position: absolute; right: 0; z-index: 20; width: max-content; min-width: 200px; max-width: 300px;
                 white-space: normal; text-align: left; font-size: 12px; font-weight: 400;
