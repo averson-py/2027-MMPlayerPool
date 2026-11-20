@@ -98,7 +98,8 @@ def push_paths(paths, message, repo_dir=SNAPSHOT_PATH.parent.parent):
 
 
 def push_snapshot():
-    return push_paths(["assets/torvik_ratings.json"], "Update Torvik ratings")
+    paths = [p for p in ("assets/torvik_ratings.json", "assets/net_rankings.json") if (SNAPSHOT_PATH.parent.parent / p).exists()]
+    return push_paths(paths, "Update team ratings")
 
 
 if __name__ == "__main__":

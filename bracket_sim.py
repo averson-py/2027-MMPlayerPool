@@ -2,6 +2,7 @@
 
 Keeping one copy means the commissioner app's projected FPts always match the dashboard's.
 """
+import difflib
 import math
 import re
 
@@ -79,6 +80,69 @@ def read_bracket_teams(team_list_ws):
         except (TypeError, ValueError, IndexError):
             continue
     return bracket
+
+
+NET_WEIGHT = 0.5
+# NCAA NET school names that need help matching Barttorvik's.
+NET_ALIASES = {
+    "UNI": "Northern Iowa", "SFA": "Stephen F. Austin", "California Baptist": "Cal Baptist",
+    "UNCW": "UNC Wilmington", "UIC": "Illinois Chicago", "UTRGV": "UT Rio Grande Valley",
+    "ETSU": "East Tennessee St.", "Col. of Charleston": "Charleston", "LMU (CA)": "Loyola Marymount",
+    "CSUN": "Cal St. Northridge", "App State": "Appalachian St.", "UT Martin": "Tennessee Martin",
+    "Southern Miss.": "Southern Miss", "FGCU": "Florida Gulf Coast", "Lamar University": "Lamar",
+    "SIUE": "SIU Edwardsville", "Omaha": "Nebraska Omaha", "Boston U.": "Boston University",
+    "N.C. A&T": "North Carolina A&T", "UIW": "Incarnate Word", "Loyola Maryland": "Loyola MD",
+    "FDU": "Fairleigh Dickinson", "NIU": "Northern Illinois", "Army West Point": "Army",
+    "N.C. Central": "North Carolina Central", "UMES": "Maryland Eastern Shore", "ULM": "Louisiana Monroe",
+    "Kansas City": "UMKC",
+}
+_NET_ABBREVIATIONS = {
+    "ill": "illinois", "fla": "florida", "ky": "kentucky", "mich": "michigan", "tenn": "tennessee",
+    "colo": "colorado", "wash": "washington", "ark": "arkansas", "ga": "georgia", "ala": "alabama",
+    "mo": "missouri", "caro": "carolina", "ariz": "arizona", "ind": "indiana", "la": "louisiana",
+    "conn": "connecticut", "miss": "mississippi", "val": "valley", "col": "college", "so": "southern",
+}
+
+
+def _net_key(name):
+    text = re.sub(r"\s*\([^)]*\)", "", str(name))
+    words = [_NET_ABBREVIATIONS.get(w[:-1].casefold(), w) if w.endswith(".") else w for w in text.split()]
+    return torvik_key(" ".join(words))
+
+
+def net_rating_key(name, rating_keys):
+    """The ratings key for an NCAA NET school name, or None. Exact and alias matches first, then a close spelling."""
+    key = torvik_key(NET_ALIASES[name]) if name in NET_ALIASES else _net_key(name)
+    for candidate in (key, TORVIK_ALIASES.get(key, "")):
+        if candidate in rating_keys:
+            return candidate
+    close = difflib.get_close_matches(key, rating_keys, n=1, cutoff=0.8)
+    return close[0] if close else None
+
+
+def blend_net_rankings(ratings, net_ranks, weight=NET_WEIGHT):
+    """Pull each team's Barttorvik net rating toward the rating Barttorvik gives the team at its NET rank.
+
+    NET only publishes ranks, so a team ranked Nth by NET is credited with the net rating of the Nth-best
+    team by Barttorvik; `weight` is how far to move toward it. The shift is split evenly between offense
+    and defense. Returns (ratings, number of NET teams matched); teams without a NET match are unchanged.
+    """
+    if not ratings or not net_ranks:
+        return ratings, 0
+    keys = list(ratings)
+    ranked = {}
+    for name, rank in net_ranks.items():
+        key = net_rating_key(name, keys)
+        if key:
+            ranked[key] = rank
+    ordered = sorted((r[0] - r[1] for r in ratings.values()), reverse=True)
+    blended = dict(ratings)
+    for key, rank in ranked.items():
+        adjoe, adjde, *rest = ratings[key]
+        target = ordered[min(max(rank, 1), len(ordered)) - 1]
+        shift = weight * (target - (adjoe - adjde))
+        blended[key] = (adjoe + shift / 2, adjde - shift / 2, *rest)
+    return blended, len(ranked)
 
 
 def find_rating(ratings, name):

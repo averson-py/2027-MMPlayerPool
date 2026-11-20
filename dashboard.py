@@ -21,10 +21,11 @@ import streamlit.components.v1 as components
 
 from bracket_sim import (
     DEFAULT_TEMPO, GAME_FPTS_SPREAD, GAME_MARGIN_SD, SEED_STRENGTH, SIM_SEED, TORVIK_ALIASES,
-    WIN_PROB_SIMS, read_bracket_teams, read_final_four_config, run_bracket,
+    WIN_PROB_SIMS, blend_net_rankings, read_bracket_teams, read_final_four_config, run_bracket,
 )
 from bracket_sim import norm_team_name as _norm_team_name
 from bracket_sim import torvik_key as _torvik_key
+from net_rankings import load_net_ranks
 
 
 # ---------------------------------------------------------------------
@@ -2991,6 +2992,17 @@ def get_torvik_ratings(year):
     return {}, reason, ""
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def get_odds_ratings(year):
+    """(ratings for game odds, NET teams matched, NET data-through label).
+
+    Barttorvik ratings, blended with the NCAA NET rankings once they are published for this season.
+    """
+    net_ranks, through = load_net_ranks(year)
+    blended, matched = blend_net_rankings(get_torvik_ratings(year)[0], net_ranks)
+    return blended, matched, through
+
+
 def torvik_team_info(name):
     """Barttorvik rank, record and adjusted efficiency numbers for one team, or None."""
     ratings, _error, _source = get_torvik_ratings(torvik_season_year())
@@ -3007,7 +3019,7 @@ def torvik_team_info(name):
 
 def matchup_margin(team_a, seed_a, team_b, seed_b):
     """Predicted points margin for team A over team B at a neutral site (negative if B is favored); None if unknown."""
-    ratings, _error, _source = get_torvik_ratings(torvik_season_year())
+    ratings = get_odds_ratings(torvik_season_year())[0]
     tempos = [r[2] for r in ratings.values()]
     avg_tempo = sum(tempos) / len(tempos) if tempos else DEFAULT_TEMPO
 
@@ -3046,15 +3058,16 @@ def _simulate_win_probabilities(data, n_sims, seed, pre_tournament=False):
 
     year = torvik_season_year()
     ratings, rating_error, rating_source = get_torvik_ratings(year)
+    odds_ratings, net_matched, net_through = get_odds_ratings(year)
     lost_rounds = {name: round_lost_index(value) for name, value in teams_out.items()}
-    bracket_result = run_bracket(data["bracket_teams"], data["final_four_config"], ratings, n_sims, rng, lost_rounds)
+    bracket_result = run_bracket(data["bracket_teams"], data["final_four_config"], odds_ratings, n_sims, rng, lost_rounds)
     if bracket_result is None:
         return None
     appearances = bracket_result["appearances"]
     team_index = bracket_result["team_index"]
     rating_info = {
         "matched": bracket_result["matched"], "total": len(bracket_result["team_names"]),
-        "year": year, "source": rating_source,
+        "year": year, "source": rating_source, "net_matched": net_matched, "net_through": net_through,
         "error": rating_error if not ratings else ("no team names matched" if not bracket_result["matched"] else ""),
     }
     rows = np.arange(n_sims)[:, None]
@@ -4947,6 +4960,11 @@ with tab1:
                 f"Game odds use Barttorvik {rating_info['year']} adjusted offense, defense and tempo "
                 f"({rating_info['matched']} of {rating_info['total']} bracket teams matched{snapshot_note})"
             )
+            if rating_info.get("net_matched"):
+                odds_text += (
+                    f", blended with the NCAA NET rankings (through {rating_info.get('net_through') or 'latest games'}; "
+                    f"{rating_info['net_matched']} teams matched)"
+                )
         else:
             reason = rating_info.get("error")
             odds_text = "Game odds use seed-based win probabilities" + (

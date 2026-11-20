@@ -17,7 +17,8 @@ from openpyxl import load_workbook
 from bracket_sim import (
     GAME_FPTS_SPREAD, norm_team_name, pre_tournament_expected_games, read_bracket_teams, read_final_four_config,
 )
-from torvik_ratings import download_torvik_ratings, load_ratings, push_paths, push_snapshot
+from net_rankings import download_net_rankings, load_odds_ratings
+from torvik_ratings import download_torvik_ratings, push_paths, push_snapshot
 
 DRAFT_ORDER_SHEET = "DraftOrder"
 TEAM_DATA_SHEET = "TeamData"
@@ -2685,7 +2686,7 @@ class DraftApp:
         self.projection_note = "Proj. FPts use seed averages (no Torvik ratings or bracket)."
         try:
             team_list = self.find_team_list_sheet()
-            ratings = load_ratings()
+            ratings, net_matched, _through = load_odds_ratings()
             if team_list is None or not ratings:
                 return None
             games = pre_tournament_expected_games(
@@ -2694,7 +2695,9 @@ class DraftApp:
         except Exception:
             return None
         if games:
-            self.projection_note = "Proj. FPts use the Barttorvik simulation."
+            self.projection_note = "Proj. FPts use the Barttorvik simulation" + (
+                ", blended with NCAA NET." if net_matched else "."
+            )
         return games
 
     @staticmethod
@@ -4505,9 +4508,9 @@ class DraftApp:
     def fetch_torvik(self):
         if not messagebox.askyesno(
             "Fetch Torvik Ratings",
-            "Download current Barttorvik team ratings (adjusted offense, defense and tempo) "
-            "into assets/torvik_ratings.json and push it to GitHub?\n\nThe dashboard uses this "
-            "file when the live download is blocked on Streamlit Cloud."
+            "Download current Barttorvik team ratings (adjusted offense, defense and tempo) and the "
+            "NCAA NET rankings into assets/ and push them to GitHub?\n\nThe dashboard uses these "
+            "files for game odds, and the Barttorvik file when the live download is blocked on Streamlit Cloud."
         ):
             return
 
@@ -4518,9 +4521,23 @@ class DraftApp:
 
         pushed = None
         push_error = None
+        net_note = ""
         try:
             count, year = download_torvik_ratings()
-            self.status_label.config(text="Pushing Torvik ratings...")
+            self.status_label.config(text="Downloading NET rankings...")
+            self.root.update()
+            try:
+                net_count, net_season, net_through = download_net_rankings()
+                if net_season == year:
+                    net_note = f"NET rankings saved for {net_count} teams (through {net_through}).\n\n"
+                else:
+                    net_note = (
+                        f"NET rankings are still for the {net_season} season (through {net_through}), "
+                        "so they are not used yet.\n\n"
+                    )
+            except Exception as error:
+                net_note = f"NET rankings could not be fetched: {error}\n\n"
+            self.status_label.config(text="Pushing ratings...")
             self.root.update()
             try:
                 pushed = push_snapshot()
@@ -4535,7 +4552,7 @@ class DraftApp:
 
         if count:
             self.status_label.config(text=f"Saved Torvik ratings for {count} teams ({year}).")
-            saved = f"Saved ratings for {count} teams for the {year} season.\n\n"
+            saved = f"Saved ratings for {count} teams for the {year} season.\n\n{net_note}"
             if push_error:
                 messagebox.showwarning(
                     "Fetch Torvik Ratings", f"{saved}Push failed, so commit and push manually:\n{push_error}"
