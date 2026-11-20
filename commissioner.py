@@ -905,13 +905,26 @@ def fetch_espn_team_top_players(
     return players[:count]
 
 
-def enable_fullscreen_toggle(window):
+def enable_fullscreen_toggle(window, parent=None):
+    # macOS refuses full screen for transient windows, so only mark them transient elsewhere.
+    if parent is not None and window.tk.call("tk", "windowingsystem") != "aqua":
+        window.transient(parent)
+
+    def set_fullscreen(on):
+        if on and window.winfo_width() > 200:
+            window._windowed_geometry = window.geometry()
+        window.attributes("-fullscreen", on)
+        if not on:
+            fallback = f"{window.winfo_screenwidth() * 9 // 10}x{window.winfo_screenheight() * 8 // 10}+20+30"
+            window.after(300, lambda: window.geometry(getattr(window, "_windowed_geometry", fallback)))
+
     def toggle(_event=None):
-        window.attributes("-fullscreen", not window.attributes("-fullscreen"))
+        set_fullscreen(not window.attributes("-fullscreen"))
 
     def leave(_event=None):
-        window.attributes("-fullscreen", False)
+        set_fullscreen(False)
 
+    window.set_fullscreen = set_fullscreen
     for sequence in ("<F11>", "<Command-Control-f>"):
         window.bind(sequence, toggle)
     window.bind("<Escape>", leave)
@@ -1073,13 +1086,12 @@ class PlayerSelectionDialog:
         self.sort_reverse = True
 
         self.window = tk.Toplevel(parent)
-        enable_fullscreen_toggle(self.window)
+        enable_fullscreen_toggle(self.window, parent)
         self.pick_var = tk.IntVar(self.window, value=0)
         self.window.title("Select Player")
         width = min(1600, self.window.winfo_screenwidth() - 40)
         height = min(1000, self.window.winfo_screenheight() - 80)
         self.window.geometry(f"{width}x{height}+20+0")
-        self.window.transient(parent)
         self.window.grab_set()
 
         self.table_style = "Blue.Treeview"
@@ -1514,7 +1526,7 @@ class PlayerSelectionDialog:
     def zoom_window(self):
         try:
             if self.window.winfo_exists():
-                self.window.attributes("-fullscreen", True)
+                self.window.set_fullscreen(True)
         except tk.TclError:
             pass
 
@@ -3090,13 +3102,12 @@ class DraftApp:
 
         window = tk.Toplevel(self.root)
         self.game_results_window = window
-        enable_fullscreen_toggle(window)
+        enable_fullscreen_toggle(window, self.root)
 
         window.title("Input Game Results")
         window.geometry("900x780")
         window.minsize(760, 600)
         window.configure(bg=THEME["bg"])
-        window.transient(self.root)
         window.grab_set()
 
         round_var = tk.StringVar(
@@ -5033,9 +5044,8 @@ class DraftApp:
 
         window = tk.Toplevel(self.root)
         window.title("Update Player Statuses")
-        enable_fullscreen_toggle(window)
+        enable_fullscreen_toggle(window, self.root)
         window.geometry("760x620")
-        window.transient(self.root)
         window.grab_set()
 
         tk.Label(
