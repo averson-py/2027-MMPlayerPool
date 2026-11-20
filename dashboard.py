@@ -3716,7 +3716,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
         freeze_css, freeze_class = "", ""
         visible_columns = [c for c in df.columns if not str(c).startswith("_")]
         freeze_name = next(
-            (c for c in ("Player Name", "Team Owner") if c in visible_columns), None
+            (c for c in ("Player Name", "Team Owner", "Stat") if c in visible_columns), None
         )
         if freeze_name:
             name_col = visible_columns.index(freeze_name) + 1
