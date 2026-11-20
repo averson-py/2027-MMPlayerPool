@@ -3068,10 +3068,12 @@ def _simulate_win_probabilities(data, n_sims, seed, pre_tournament=False):
     sim_players = []
     player_info = {}
     fixed_future = np.zeros(len(owners))
+    owner_players = {}
     for row in data["draft_rows"]:
         owner = owner_pos.get(row["draftee"].casefold())
         if owner is None:
             continue
+        owner_players.setdefault(owner, []).append((row["player_name"], row.get("draft_row")))
         stats = data["player_stats"].get(row["player_name"].casefold(), {})
         total = None if pre_tournament else player_total(row, data["fantasy_weights"])
         current_totals[owner] += float(total or 0.0)
@@ -3164,12 +3166,36 @@ def _simulate_win_probabilities(data, n_sims, seed, pre_tournament=False):
         f"· last: {place_probs[-1][i] * 100:.1f}%"
         for i in range(len(owners))
     ]
-    score_tips = [
-        f"<b>Projected Score</b><br>Average final FPts across the simulations: "
-        f"{current_totals[i]:.1f} scored so far + {mean_score[i] - current_totals[i]:.1f} still to come.<br>"
-        f"Middle 80% of outcomes: {low[i]:.0f} to {high[i]:.0f}."
-        for i in range(len(owners))
-    ]
+    def score_tip(i):
+        per_player = sorted(
+            ((name, player_info[key]) for name, key in owner_players.get(i, []) if key in player_info),
+            key=lambda item: -item[1]["projected"],
+        )
+        lines = "<br>".join(f"{html_lib.escape(name)}: {info['projected']:.1f}" for name, info in per_player)
+        return (
+            f"<b>Projected Score</b><br>Average final FPts across the simulations: "
+            f"{current_totals[i]:.1f} scored so far + {mean_score[i] - current_totals[i]:.1f} still to come.<br>"
+            f"Middle 80% of outcomes: {low[i]:.0f} to {high[i]:.0f}."
+            + (f"<br>Projected FPts by player:<br>{lines}" if lines else "")
+        )
+
+    score_tips = [score_tip(i) for i in range(len(owners))]
+    def games_tip(i):
+        per_player = sorted(
+            ((name, player_info[key]) for name, key in owner_players.get(i, []) if key in player_info),
+            key=lambda item: -item[1]["games"],
+        )
+        lines = "<br>".join(
+            f"{html_lib.escape(name)}: {info['games']:.2f}" for name, info in per_player if info["games"] >= 0.005
+        )
+        return (
+            "<b>Expected Games Remaining</b><br>"
+            f"Total additional games this owner's players' teams play, averaged across {n_sims:,} simulated "
+            f"tournaments: <b>{expected_games[i]:.2f}</b>."
+            + (f"<br>{lines}" if lines else "<br>No players with games left.")
+        )
+
+    games_tips = [games_tip(i) for i in range(len(owners))]
     win_tips = [
         f"<b>Win %</b><br>Finished 1st in {win_counts[i]:,} of {n_sims:,} simulated tournaments.<br>"
         f"Win % depends on the spread of outcomes, not just the average. Owners behind the leaders need a big "
@@ -3197,6 +3223,7 @@ def _simulate_win_probabilities(data, n_sims, seed, pre_tournament=False):
         "_finish_tip": finish_tips,
         "_score_tip": score_tips,
         "_win_tip": win_tips,
+        "_expected_tip": games_tips,
     })
     result = result.sort_values(
         ["Avg. Finish", "Projected Score"], ascending=[True, False], kind="stable"
@@ -4933,7 +4960,7 @@ with tab1:
             "Hover over Avg. Finish, Projected Score or Win % for details."
         )
         display_df(
-            win_prob.drop(columns=["FPts per game", "Games Played", "Exp. Payout", "Expected Games Remaining"]).rename(columns={"Draft Position": "Draft Pos."}),
+            win_prob.drop(columns=["FPts per game", "Games Played", "Exp. Payout"]).rename(columns={"Draft Position": "Draft Pos."}),
             height=520,
             rank_rwg=True,
             zebra=True,
@@ -4944,6 +4971,7 @@ with tab1:
                     col: (win_prob[col].min(), win_prob[col].max())
                     for col in [
                         "Avg. Finish", "Win %", "Top 3 %", "Last Place %", "Projected Score", "Active Players",
+                        "Expected Games Remaining",
                     ]
                 },
             },
