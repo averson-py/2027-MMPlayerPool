@@ -2243,6 +2243,12 @@ class DraftApp:
     def __init__(self, root):
         self.root = root
         self.root.title("March Madness Player Pool — Commissioner")
+        try:
+            # Keep a reference so the image isn't garbage collected; this sets the Dock icon while running.
+            self.app_icon = tk.PhotoImage(file=str(IMAGE_ASSETS_DIR / "app_icon.png"))
+            self.root.iconphoto(True, self.app_icon)
+        except tk.TclError:
+            pass
         self.root.geometry("620x620")
         self.root.minsize(520, 520)
         apply_theme(self.root)

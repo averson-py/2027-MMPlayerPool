@@ -1,0 +1,5 @@
+#!/bin/bash
+# Finder launches apps with a minimal PATH, so add the usual Python locations.
+export PATH="/Library/Frameworks/Python.framework/Versions/Current/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+cd "$(dirname "$0")/../../.." || exit 1
+exec python3 commissioner.py >> /tmp/commissioner.log 2>&1
