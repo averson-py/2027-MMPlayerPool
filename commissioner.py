@@ -2,9 +2,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from pathlib import Path
 from datetime import datetime, timedelta
-import csv
 import difflib
-import io
 import json
 import random
 import os
@@ -15,6 +13,8 @@ import urllib.parse
 import urllib.request
 
 from openpyxl import load_workbook
+
+from torvik_ratings import download_torvik_ratings
 
 DRAFT_ORDER_SHEET = "DraftOrder"
 TEAM_DATA_SHEET = "TeamData"
@@ -812,47 +812,6 @@ def download_pool_images(workbook_path, progress=lambda text: None):
         len(manifest["teams"]), len(teams),
         len(manifest["players"]), len(drafted), missing,
     )
-
-
-TORVIK_CSV_URL = "https://barttorvik.com/{year}_team_results.csv"
-
-
-def download_torvik_ratings():
-    """Save Barttorvik adjusted offense, defense and tempo to assets/torvik_ratings.json.
-
-    The dashboard reads this file when Barttorvik blocks its live download (Streamlit Cloud).
-    Returns (team count, season year).
-    """
-    import requests
-
-    now = datetime.now()
-    year = now.year + 1 if now.month >= 10 else now.year
-    resp = requests.get(
-        TORVIK_CSV_URL.format(year=year),
-        headers={"User-Agent": "MM-Player-Pool-Dashboard (personal use; run occasionally)"},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    teams = {}
-    for row in csv.DictReader(io.StringIO(resp.text)):
-        try:
-            teams[row["team"]] = [
-                round(float(row["adjoe"]), 3), round(float(row["adjde"]), 3), round(float(row["adjt"]), 3),
-                int(float(row["rank"])), row["record"], row["conf"],
-            ]
-        except (KeyError, TypeError, ValueError):
-            continue
-    if not teams:
-        raise ValueError("Barttorvik returned no team ratings.")
-    payload = {
-        "year": year,
-        "source": "https://barttorvik.com",
-        "fetched": now.isoformat(timespec="seconds"),
-        "teams": teams,
-    }
-    IMAGE_ASSETS_DIR.mkdir(exist_ok=True)
-    (IMAGE_ASSETS_DIR / "torvik_ratings.json").write_text(json.dumps(payload, indent=1), encoding="utf-8")
-    return len(teams), year
 
 
 def fetch_espn_team_index():
