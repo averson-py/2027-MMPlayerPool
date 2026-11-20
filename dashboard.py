@@ -19,6 +19,13 @@ import requests
 import streamlit as st
 import streamlit.components.v1 as components
 
+from bracket_sim import (
+    DEFAULT_TEMPO, GAME_MARGIN_SD, SEED_STRENGTH, SIM_SEED, TORVIK_ALIASES,
+    WIN_PROB_SIMS, read_bracket_teams, read_final_four_config, run_bracket,
+)
+from bracket_sim import norm_team_name as _norm_team_name
+from bracket_sim import torvik_key as _torvik_key
+
 
 # ---------------------------------------------------------------------
 # Configuration
@@ -291,11 +298,6 @@ ESPN_SCOREBOARD_URL = (
     "https://site.api.espn.com/apis/site/v2/sports/basketball/"
     "mens-college-basketball/scoreboard"
 )
-
-
-def _norm_team_name(name):
-    name = str(name).casefold().replace("saint", "st")
-    return re.sub(r"[^a-z0-9]", "", name)
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
@@ -1714,23 +1716,7 @@ def load_data(file_path, updated_time=None):
         except (TypeError, ValueError):
             raise ValueError(f"Config!{cell} must contain a numeric payout value.")
 
-    # Final Four bracket configuration
-    final_four_config = {}
-    try:
-        # Semifinal 1: M2 vs M3
-        final_four_config["semifinal_1_region_1"] = str(config_ws["M2"].value).strip().upper() if config_ws["M2"].value else "EAST"
-        final_four_config["semifinal_1_region_2"] = str(config_ws["M3"].value).strip().upper() if config_ws["M3"].value else "WEST"
-        # Semifinal 2: N2 vs N3
-        final_four_config["semifinal_2_region_1"] = str(config_ws["N2"].value).strip().upper() if config_ws["N2"].value else "MIDWEST"
-        final_four_config["semifinal_2_region_2"] = str(config_ws["N3"].value).strip().upper() if config_ws["N3"].value else "SOUTH"
-    except (TypeError, AttributeError):
-        # Default configuration if not found
-        final_four_config = {
-            "semifinal_1_region_1": "EAST",
-            "semifinal_1_region_2": "WEST",
-            "semifinal_2_region_1": "MIDWEST",
-            "semifinal_2_region_2": "SOUTH",
-        }
+    final_four_config = read_final_four_config(config_ws)
     drafters = []
     seen = set()
     ws = workbook[DRAFT_ORDER_SHEET]
@@ -1922,44 +1908,9 @@ def load_data(file_path, updated_time=None):
                     }
                     break
 
-    # Tournament bracket teams (from TeamList sheet if available)
-    bracket_teams = {}  # {seed: {region: [teams]}}
-    if TEAM_LIST_SHEET in workbook.sheetnames:
-        ws = workbook[TEAM_LIST_SHEET]
-        header_values = next(
-            ws.iter_rows(min_row=1, max_row=1, values_only=True), ()
-        )
-        headers3 = {
-            str(value).strip(): index
-            for index, value in enumerate(header_values)
-            if value is not None
-        }
-
-        if "Seed" in headers3 and "Region" in headers3 and "Team" in headers3:
-            for values in ws.iter_rows(min_row=2, max_col=max(headers3.values()) + 1, values_only=True):
-                try:
-                    seed_value = values[headers3["Seed"]]
-                    if seed_value is None:
-                        continue
-
-                    # Handle seed values like "11 - FF" or "16 - FF" by extracting the number
-                    seed_str = str(seed_value).strip()
-                    # Extract just the numeric part before any " - " or other suffix
-                    if " - " in seed_str:
-                        seed_str = seed_str.split(" - ")[0].strip()
-
-                    seed = int(float(seed_str))
-                    region = str(values[headers3["Region"]]).strip().upper() if values[headers3["Region"]] else None
-                    team = str(values[headers3["Team"]]).strip() if values[headers3["Team"]] else None
-
-                    if seed and region and team and 1 <= seed <= 16:
-                        if seed not in bracket_teams:
-                            bracket_teams[seed] = {}
-                        if region not in bracket_teams[seed]:
-                            bracket_teams[seed][region] = []
-                        bracket_teams[seed][region].append(team)
-                except (TypeError, ValueError, IndexError):
-                    continue
+    bracket_teams = (
+        read_bracket_teams(workbook[TEAM_LIST_SHEET]) if TEAM_LIST_SHEET in workbook.sheetnames else {}
+    )
 
     return {
         "fantasy_weights": fantasy_weights,
@@ -2946,35 +2897,12 @@ def make_draft_ratings(data):
     return pd.DataFrame(result)[ratings_columns]
 
 
-# Seed-based single-game strength (points of margin), used only for teams without Barttorvik ratings.
-SEED_STRENGTH = {
-    1: 25.0, 2: 21.0, 3: 18.0, 4: 16.0, 5: 14.0, 6: 13.0, 7: 11.5, 8: 10.0,
-    9: 9.5, 10: 8.5, 11: 8.0, 12: 7.5, 13: 4.5, 14: 2.0, 15: 0.0, 16: -4.0,
-}
-WIN_PROB_SIMS = 10000
+# Odds constants and the bracket simulation live in bracket_sim.py (shared with the commissioner app).
 GAME_FPTS_SPREAD = 0.30
-# Seeds in bracket order within a region: each adjacent pair plays in the first round.
-BRACKET_SLOT_SEEDS = [1, 16, 8, 9, 5, 12, 4, 13, 6, 11, 3, 14, 7, 10, 2, 15]
 
 TORVIK_CSV_URL = "https://barttorvik.com/{year}_team_results.csv"
 # Written by the commissioner app's Fetch Torvik Team Ratings button; used when the live download is blocked.
 TORVIK_SNAPSHOT = ASSETS_DIR / "torvik_ratings.json"
-GAME_MARGIN_SD = 11.0
-DEFAULT_TEMPO = 68.0
-# Workbook team names (normalised) whose Barttorvik names differ.
-TORVIK_ALIASES = {
-    "longisland": "liu", "mcneese": "mcneesest", "miami": "miamifl", "olemiss": "mississippi",
-    "uconn": "connecticut", "pitt": "pittsburgh", "louisianast": "lsu", "northcarolinast": "ncst",
-    "brighamyoung": "byu", "southerncalifornia": "usc",
-}
-
-
-def _torvik_key(name):
-    text = str(name).casefold().replace("&", "and")
-    text = re.sub(r"[.'()]", "", text)
-    text = re.sub(r"\bsaint\b", "st", text)
-    text = re.sub(r"\bstate\b", "st", text)
-    return re.sub(r"[^a-z0-9]", "", text)
 
 
 def torvik_season_year():
@@ -3028,40 +2956,6 @@ def get_torvik_ratings(year):
     return {}, reason, ""
 
 
-def _team_win_matrix(team_names, team_seeds):
-    """Pairwise neutral-site win probabilities from Barttorvik adjusted offense, defense and tempo.
-
-    Expected margin = net rating gap per 100 possessions x expected possessions / 100; win probability
-    is a normal curve on that margin. Teams without ratings fall back to seed-based strength.
-    """
-    import numpy as np
-
-    year = torvik_season_year()
-    ratings, error, source = get_torvik_ratings(year)
-    tempos = [r[2] for r in ratings.values()]
-    avg_tempo = float(np.mean(tempos)) if tempos else DEFAULT_TEMPO
-    n = len(team_names)
-    net = np.zeros(n)
-    tempo = np.full(n, avg_tempo)
-    matched = 0
-    for i, (name, seed_value) in enumerate(zip(team_names, team_seeds)):
-        key = _torvik_key(name)
-        rating = ratings.get(key) or ratings.get(TORVIK_ALIASES.get(key, ""))
-        if rating:
-            net[i] = rating[0] - rating[1]
-            tempo[i] = rating[2]
-            matched += 1
-        else:
-            net[i] = SEED_STRENGTH.get(int(seed_value), 0.0) * 100.0 / avg_tempo
-    possessions = np.outer(tempo, tempo) / avg_tempo
-    margin = (net[:, None] - net[None, :]) / 100.0 * possessions
-    win = 0.5 * (1.0 + np.vectorize(math.erf)(margin / (GAME_MARGIN_SD * math.sqrt(2.0))))
-    return win, {
-        "matched": matched, "total": n, "year": year, "source": source,
-        "error": error if not ratings else ("no team names matched" if not matched else ""),
-    }
-
-
 def torvik_team_info(name):
     """Barttorvik rank, record and adjusted efficiency numbers for one team, or None."""
     ratings, _error, _source = get_torvik_ratings(torvik_season_year())
@@ -3102,91 +2996,26 @@ def matchup_win_probability(team_a, seed_a, team_b, seed_b):
 def _simulate_win_probabilities(data, n_sims, seed, pre_tournament=False):
     import numpy as np
 
-    regions = ["EAST", "WEST", "MIDWEST", "SOUTH"]
-    bracket = data["bracket_teams"]
     owners = data["drafters"]
-    if not bracket or not owners or not data["draft_rows"]:
+    if not data["bracket_teams"] or not owners or not data["draft_rows"]:
         return None
     rng = np.random.default_rng(seed)
     teams_out = {} if pre_tournament else data["teams_out"]
 
-    team_names, team_seeds, team_index = [], [], {}
-
-    def team_id(team, seed_value):
-        key = _norm_team_name(team)
-        if key not in team_index:
-            team_index[key] = len(team_names)
-            team_names.append(team)
-            team_seeds.append(seed_value)
-        return team_index[key]
-
-    region_slots = {}
-    for region in regions:
-        slots = []
-        for slot_seed in BRACKET_SLOT_SEEDS:
-            teams = bracket.get(slot_seed, {}).get(region, [])
-            if not teams or len(teams) > 2:
-                return None
-            slots.append([team_id(t, slot_seed) for t in teams])
-        region_slots[region] = slots
-
-    n_teams = len(team_names)
-    lost = np.full(n_teams, 99)
-    for i, name in enumerate(team_names):
-        value = teams_out.get(str(name).strip().casefold())
-        if value is not None:
-            lost_round = round_lost_index(value)
-            lost[i] = lost_round if lost_round is not None else 99
-    win_matrix, rating_info = _team_win_matrix(team_names, team_seeds)
-
-    def play(a, b, rnd):
-        a_out, b_out = lost[a] <= rnd, lost[b] <= rnd
-        a_surv = (lost[a] > rnd) & (lost[a] < 99)
-        b_surv = (lost[b] > rnd) & (lost[b] < 99)
-        p_a = win_matrix[a, b]
-        sampled = np.where(rng.random(a.shape) < p_a, a, b)
-        # Real results win over the model: a known loser loses, a team known to play later advances.
-        return np.where(
-            a_out & ~b_out, b,
-            np.where(b_out & ~a_out, a,
-                     np.where(a_surv & ~b_surv, a, np.where(b_surv & ~a_surv, b, sampled))),
-        )
-
+    year = torvik_season_year()
+    ratings, rating_error, rating_source = get_torvik_ratings(year)
+    lost_rounds = {name: round_lost_index(value) for name, value in teams_out.items()}
+    bracket_result = run_bracket(data["bracket_teams"], data["final_four_config"], ratings, n_sims, rng, lost_rounds)
+    if bracket_result is None:
+        return None
+    appearances = bracket_result["appearances"]
+    team_index = bracket_result["team_index"]
+    rating_info = {
+        "matched": bracket_result["matched"], "total": len(bracket_result["team_names"]),
+        "year": year, "source": rating_source,
+        "error": rating_error if not ratings else ("no team names matched" if not bracket_result["matched"] else ""),
+    }
     rows = np.arange(n_sims)[:, None]
-    appearances = np.zeros((n_sims, n_teams), dtype=np.int16)
-
-    def record(a, b):
-        appearances[rows, a] += 1
-        appearances[rows, b] += 1
-
-    def run_region(slots):
-        entrants = []
-        for slot in slots:
-            if len(slot) == 2:
-                entrants.append(play(np.full(n_sims, slot[0]), np.full(n_sims, slot[1]), -1))
-            else:
-                entrants.append(np.full(n_sims, slot[0]))
-        current = np.stack(entrants, axis=1)
-        for rnd in range(4):
-            a, b = current[:, 0::2], current[:, 1::2]
-            record(a, b)
-            current = play(a, b, rnd)
-        return current[:, 0]
-
-    winners = {region: run_region(region_slots[region]) for region in regions}
-    config = data["final_four_config"]
-    semi_pairs = [
-        (config["semifinal_1_region_1"], config["semifinal_1_region_2"]),
-        (config["semifinal_2_region_1"], config["semifinal_2_region_2"]),
-    ]
-    finalists = []
-    for first_region, second_region in semi_pairs:
-        if first_region not in winners or second_region not in winners:
-            return None
-        a, b = winners[first_region], winners[second_region]
-        record(a[:, None], b[:, None])
-        finalists.append(play(a, b, 4))
-    record(finalists[0][:, None], finalists[1][:, None])
 
     weight = data["tournament_fpts_weight"]
     owner_pos = {name.casefold(): i for i, name in enumerate(owners)}
@@ -3253,8 +3082,8 @@ def _simulate_win_probabilities(data, n_sims, seed, pre_tournament=False):
         membership[np.arange(len(sim_players)), owner_idx] = 1.0
         totals = totals + future @ membership
         expected_games = expected_games + games_left.mean(axis=0) @ membership
-        future_mean = future.mean(axis=0)
         games_mean = games_left.mean(axis=0)
+        future_mean = per_game * games_mean  # the noise averages out, so skip its sampling error here
         future_low, future_high = np.percentile(future, [10, 90], axis=0)
         for j, player in enumerate(sim_players):
             current_fpts = player[6]
@@ -3336,7 +3165,7 @@ def _simulate_win_probabilities(data, n_sims, seed, pre_tournament=False):
     return result
 
 
-def simulate_win_probabilities(data, n_sims=WIN_PROB_SIMS, seed=2027, pre_tournament=False):
+def simulate_win_probabilities(data, n_sims=WIN_PROB_SIMS, seed=SIM_SEED, pre_tournament=False):
     """Monte Carlo finish odds per owner (cached on `data`); None if the bracket can't be simulated.
 
     pre_tournament ignores every game, result and injury entered so far.
@@ -4279,12 +4108,11 @@ else:
 # Restore the saved team and theme before rendering anything heavy, so the page draws once.
 _need_team = not st.session_state.get("my_team") and not st.query_params.get("my_team")
 _need_dark = "dark_mode" not in st.session_state and not st.query_params.get("dark_mode")
-_need_auto = "auto_refresh" not in st.session_state and not st.query_params.get("auto_refresh")
-if (_need_team or _need_dark or _need_auto) and not st.session_state.get("_my_team_restored"):
+if (_need_team or _need_dark) and not st.session_state.get("_my_team_restored"):
     try:
         from streamlit_js_eval import streamlit_js_eval
         _saved = streamlit_js_eval(
-            js_expressions="(() => { try { return JSON.stringify({team: localStorage.getItem('mmpool_my_team') || '', dark: localStorage.getItem('mmpool_dark_mode') || '', auto: localStorage.getItem('mmpool_auto_refresh') || ''}); } catch (e) { return '{}'; } })()",
+            js_expressions="(() => { try { return JSON.stringify({team: localStorage.getItem('mmpool_my_team') || '', dark: localStorage.getItem('mmpool_dark_mode') || ''}); } catch (e) { return '{}'; } })()",
             key="restore_my_team",
         )
     except Exception:
@@ -4300,8 +4128,6 @@ if (_need_team or _need_dark or _need_auto) and not st.session_state.get("_my_te
         st.session_state["my_team"] = _saved["team"]
     if _need_dark and _saved.get("dark") == "1":
         st.session_state["dark_mode"] = True
-    if _need_auto and _saved.get("auto") == "1":
-        st.session_state["auto_refresh"] = True
 
 AUTO_REFRESH_SECONDS = 60
 
@@ -4315,7 +4141,7 @@ def _refresh_standings():
 updated_col, dark_col, auto_col, refresh_col = st.columns([2, 1, 1.2, 1.4], vertical_alignment="center")
 updated_col.caption(updated_text)
 dark_mode = dark_col.toggle("🌙 Dark mode", key="dark_mode", bind="query-params")
-auto_refresh = auto_col.toggle("⏱ Auto refresh", key="auto_refresh", bind="query-params")
+auto_refresh = auto_col.toggle("⏱ Auto refresh", key="auto_refresh")
 if dark_mode:
     # Tables, charts and images are dark via an inverting filter; images are inverted back so photos/logos look normal.
     st.markdown(
@@ -5860,11 +5686,9 @@ components.html(
     const KEY = 'mmpool_my_team';
     const current = """ + json.dumps(my_team_choice or "") + """;
     const dark = """ + json.dumps(bool(dark_mode)) + """;
-    const auto = """ + json.dumps(bool(auto_refresh)) + """;
     try {
         const p = window.parent;
-        if (auto) p.localStorage.setItem('mmpool_auto_refresh', '1');
-        else p.localStorage.removeItem('mmpool_auto_refresh');
+        p.localStorage.removeItem('mmpool_auto_refresh');
         if (dark) p.localStorage.setItem('mmpool_dark_mode', '1');
         else p.localStorage.removeItem('mmpool_dark_mode');
         if (current) {

@@ -14,7 +14,8 @@ import urllib.request
 
 from openpyxl import load_workbook
 
-from torvik_ratings import download_torvik_ratings, push_paths, push_snapshot
+from bracket_sim import norm_team_name, pre_tournament_expected_games, read_bracket_teams, read_final_four_config
+from torvik_ratings import download_torvik_ratings, load_ratings, push_paths, push_snapshot
 
 DRAFT_ORDER_SHEET = "DraftOrder"
 TEAM_DATA_SHEET = "TeamData"
@@ -2480,6 +2481,7 @@ class DraftApp:
             seed_average_games = self.read_seed_average_games(
                 config_sheet
             )
+            expected_games = self.read_expected_games(config_sheet)
 
             self.drafters = self.read_column_values(
                 draft_order_sheet,
@@ -2490,7 +2492,8 @@ class DraftApp:
             self.players = self.read_team_players(
                 team_data_sheet,
                 scoring_weights,
-                seed_average_games
+                seed_average_games,
+                expected_games
             )
 
             self.teams = self.read_unique_team_names(
@@ -2537,7 +2540,8 @@ class DraftApp:
 
                 draft_status = (
                     f"{len(self.drafters)} drafters loaded, "
-                    f"{len(self.players)} players loaded."
+                    f"{len(self.players)} players loaded. "
+                    f"{self.projection_note}"
                 )
 
             self.file_label.config(
@@ -2624,8 +2628,13 @@ class DraftApp:
         return int(match.group()) if match else None
 
     @staticmethod
-    def projected_fantasy_points(total_fpts, seed, seed_average_games):
+    def projected_fantasy_points(total_fpts, seed, seed_average_games, team=None, expected_games=None):
         total_fpts = DraftApp.numeric_value(total_fpts)
+        # Same projection as the dashboard: season FPts/game x simulated games for the team.
+        simulated = (expected_games or {}).get(norm_team_name(team)) if team else None
+        if simulated is not None:
+            return round(total_fpts * simulated, 1)
+
         average_games = seed_average_games.get(
             DraftApp.seed_number(seed)
         )
@@ -2634,6 +2643,26 @@ class DraftApp:
             return None
 
         return total_fpts * average_games
+
+    def read_expected_games(self, config_sheet):
+        """{normalised team: games} from the dashboard's Barttorvik bracket simulation, or None.
+
+        None (so projections fall back to seed averages) when ratings or the bracket are unavailable.
+        """
+        self.projection_note = "Proj. FPts use seed averages (no Torvik ratings or bracket)."
+        try:
+            team_list = self.find_team_list_sheet()
+            ratings = load_ratings()
+            if team_list is None or not ratings:
+                return None
+            games = pre_tournament_expected_games(
+                read_bracket_teams(team_list), read_final_four_config(config_sheet), ratings
+            )
+        except Exception:
+            return None
+        if games:
+            self.projection_note = "Proj. FPts use the Barttorvik simulation."
+        return games
 
     @staticmethod
     def read_pick_timer_seconds(worksheet):
@@ -2702,7 +2731,7 @@ class DraftApp:
         return seed_average_games
 
     @staticmethod
-    def read_team_players(worksheet, scoring_weights, seed_average_games):
+    def read_team_players(worksheet, scoring_weights, seed_average_games, expected_games=None):
         header_map = {}
 
         for column in range(
@@ -2763,7 +2792,9 @@ class DraftApp:
             record["Proj. FPts"] = DraftApp.projected_fantasy_points(
                 record["Tot. FPts"],
                 record.get("Seed"),
-                seed_average_games
+                seed_average_games,
+                record.get("Team"),
+                expected_games
             )
 
             record["Status"] = normalize_status(

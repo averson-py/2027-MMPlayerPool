@@ -16,6 +16,8 @@ from pathlib import Path
 
 import requests
 
+from bracket_sim import torvik_key
+
 TORVIK_CSV_URL = "https://barttorvik.com/{year}_team_results.csv"
 SNAPSHOT_PATH = Path(__file__).parent / "assets" / "torvik_ratings.json"
 
@@ -55,6 +57,26 @@ def download_torvik_ratings(year=None, path=SNAPSHOT_PATH):
     path.parent.mkdir(exist_ok=True)
     path.write_text(json.dumps(payload, indent=1), encoding="utf-8")
     return len(teams), year
+
+
+def load_ratings(year=None):
+    """{bracket_sim.torvik_key(team): (adjoe, adjde, adjt, rank, record, conf)} from the saved snapshot.
+
+    Empty if the snapshot is missing or is for a different season.
+    """
+    try:
+        payload = json.loads(SNAPSHOT_PATH.read_text(encoding="utf-8"))
+        if payload.get("year") != (year or season_year()):
+            return {}
+        ratings = {}
+        for name, values in payload["teams"].items():
+            values = list(values) + [None] * (6 - len(values))
+            ratings[torvik_key(name)] = (
+                float(values[0]), float(values[1]), float(values[2]), values[3], values[4], values[5],
+            )
+        return ratings
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}
 
 
 def push_paths(paths, message, repo_dir=SNAPSHOT_PATH.parent.parent):
