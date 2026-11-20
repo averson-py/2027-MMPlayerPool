@@ -1061,7 +1061,9 @@ class PlayerSelectionDialog:
         self.window = tk.Toplevel(parent)
         self.pick_var = tk.IntVar(self.window, value=0)
         self.window.title("Select Player")
-        self.window.geometry("1600x750")
+        width = min(1600, self.window.winfo_screenwidth() - 40)
+        height = min(1000, self.window.winfo_screenheight() - 80)
+        self.window.geometry(f"{width}x{height}+20+0")
         self.window.transient(parent)
         self.window.grab_set()
 
@@ -1157,24 +1159,27 @@ class PlayerSelectionDialog:
                 font=(THEME["font"], 9)
             ).pack(side=tk.LEFT, padx=(0, 8))
 
+        option_frame = tk.Frame(self.window)
+        option_frame.pack(fill=tk.X, padx=10, pady=(2, 0))
+
         self.show_hints_var = tk.BooleanVar(
             self.window,
             value=bool(load_settings().get("show_pick_hints", True))
         )
         tk.Checkbutton(
-            legend_frame,
+            option_frame,
             text="Show pick hints",
             variable=self.show_hints_var,
             command=self.toggle_hints
-        ).pack(side=tk.RIGHT)
+        ).pack(side=tk.LEFT)
 
         self.hide_injured_var = tk.BooleanVar(self.window, value=False)
         tk.Checkbutton(
-            legend_frame,
+            option_frame,
             text="Hide Out/Questionable players",
             variable=self.hide_injured_var,
             command=self.update_suggestions
-        ).pack(side=tk.RIGHT, padx=(0, 12))
+        ).pack(side=tk.LEFT, padx=(12, 0))
 
         content_frame = tk.Frame(self.window)
         content_frame.pack(
@@ -1203,7 +1208,7 @@ class PlayerSelectionDialog:
             history_frame,
             columns=history_ids,
             show="headings",
-            height=6,
+            height=3,
             style=self.table_style
         )
 
@@ -1343,7 +1348,7 @@ class PlayerSelectionDialog:
                 "Filter by player or statistic. Examples: "
                 "PPG>=20, RPG<8, Tot. FPts>=50, Proj. FPts>=100, FG%>=45"
             )
-        ).pack(pady=5)
+        ).pack(pady=(0, 0))
 
         self.player_var = tk.StringVar()
 
@@ -1352,7 +1357,7 @@ class PlayerSelectionDialog:
             textvariable=self.player_var,
             width=70
         )
-        self.player_entry.pack(pady=5)
+        self.player_entry.pack(pady=(0, 3))
         self.player_entry.focus_set()
 
         self.player_entry.bind(
