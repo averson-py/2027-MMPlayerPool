@@ -1,5 +1,6 @@
 
 import colorsys
+import csv
 import io
 import math
 import os
@@ -1279,6 +1280,8 @@ def render_bracket_html(rounds, region=None, team_players=None, my_team=None, da
                 box-shadow: 0 8px 24px rgba(0,0,0,0.25); font-family: sans-serif; font-size: 13px; }
             #player-modal h3 { margin: 0 0 8px; font-size: 15px; white-space: nowrap; }
             #player-modal h4 { margin: 12px 0 4px; font-size: 13px; color: #4472C4; }
+            #player-modal .odds { font-size: 12px; color: #4472C4; margin-bottom: 2px; }
+            #player-modal .tv { font-size: 12px; color: #555; margin-bottom: 6px; line-height: 1.4; }
             #player-modal .row { padding: 0; height: 60px; overflow: hidden; border-bottom: 1px solid #eee; display: flex; align-items: flex-end; gap: 8px; }
             #player-modal .pp { width: 76px; height: 76px; object-fit: contain; object-position: center bottom; flex-shrink: 0; display: block; }
             #player-modal .info { flex: 1; min-width: 0; align-self: center; }
@@ -1358,6 +1361,7 @@ def render_bracket_html(rounds, region=None, team_players=None, my_team=None, da
                 if is_eliminated_a or is_eliminated_b else None
             )
             odds_badge = ""
+            win_pct = {}
             if game_scores:
                 score_html_a = _score_html(game_scores[0], game_scores[1])
                 score_html_b = _score_html(game_scores[1], game_scores[0])
@@ -1370,6 +1374,7 @@ def render_bracket_html(rounds, region=None, team_players=None, my_team=None, da
                         percent_a = round(p_a * 100)
                         score_html_a = _win_prob_html(percent_a, percent_a >= 50)
                         score_html_b = _win_prob_html(100 - percent_a, percent_a < 50)
+                        win_pct = {team_a: percent_a, team_b: 100 - percent_a}
                         odds_badge = (
                             '<span class="torvik-badge" '
                             'title="Win probabilities from Barttorvik ratings (barttorvik.com)"></span>'
@@ -1400,6 +1405,8 @@ def render_bracket_html(rounds, region=None, team_players=None, my_team=None, da
                         "team": str(t),
                         "logo": get_logo_url(t),
                         "players": team_players.get(_norm_team_name(t), []),
+                        "pct": win_pct.get(t),
+                        "tv": torvik_team_info(t),
                     }
                     for t in (team_a, team_b) if "TBD" not in str(t)
                 ],
@@ -1585,6 +1592,14 @@ def render_bracket_html(rounds, region=None, team_players=None, my_team=None, da
                     info.teams.forEach(t => {
                         const logo = t.logo ? '<img src="' + esc(t.logo) + '" style="width:20px;height:20px;object-fit:contain;vertical-align:middle;margin-right:6px" onerror="this.remove()">' : '';
                         h += '<h4>' + logo + esc(t.team) + '</h4>';
+                        if (t.pct !== null && t.pct !== undefined) h += '<div class="odds">Win probability: <b>' + t.pct + '%</b></div>';
+                        if (t.tv) {
+                            const net = t.tv.net;
+                            h += '<div class="tv">Torvik' + (t.tv.rank ? ' #' + t.tv.rank : '')
+                              + (t.tv.record ? ' &middot; ' + esc(t.tv.record) : '')
+                              + ' &middot; Adj. O ' + t.tv.o + ' &middot; Adj. D ' + t.tv.d
+                              + ' &middot; Net ' + (net > 0 ? '+' : '') + net + ' &middot; Tempo ' + t.tv.t + '</div>';
+                        }
                         if (!t.players.length) h += '<div class="none">No drafted players</div>';
                         const fp = p => (info.ri >= 0 && p.f && typeof p.f[info.ri] === 'number') ? p.f[info.ri] : -1;
                         t.players.slice().sort((a, b) => fp(b) - fp(a)).forEach(p => {
@@ -1637,7 +1652,8 @@ def render_bracket_html(rounds, region=None, team_players=None, my_team=None, da
             #player-modal h3 {color: #E5E7EB;}
             #player-modal .row {border-bottom-color: #2D3748;}
             #player-modal .row.me {background: #3B2E1A;}
-            #player-modal .owner, #player-modal .stats, #player-modal .close {color: #9CA3AF;}
+            #player-modal .owner, #player-modal .stats, #player-modal .close, #player-modal .tv {color: #9CA3AF;}
+            #player-modal .odds, #player-modal h4 {color: #8DB8E8;}
         </style>"""
         html = html.replace('<div id="player-modal">', dark_css + '<div id="player-modal">', 1)
         html = html.replace("'#d0d0d0'", "'#4B5563'")
@@ -2968,18 +2984,23 @@ def torvik_season_year():
 
 @st.cache_data(ttl=21600, show_spinner=False)
 def _fetch_torvik_ratings(year):
-    """{normalised team: (adjoe, adjde, adjt)} from Barttorvik's season CSV, cached 6 hours."""
+    """{normalised team: (adjoe, adjde, adjt, rank, record, conf)} from Barttorvik's season CSV, cached 6 hours."""
     resp = requests.get(
         TORVIK_CSV_URL.format(year=year),
         headers={"User-Agent": "MM-Player-Pool-Dashboard (small private pool; cached 6 hours)"},
         timeout=20,
     )
     resp.raise_for_status()
-    table = pd.read_csv(io.StringIO(resp.text), usecols=["team", "adjoe", "adjde", "adjt"])
-    return {
-        _torvik_key(row.team): (float(row.adjoe), float(row.adjde), float(row.adjt))
-        for row in table.itertuples()
-    }
+    ratings = {}
+    for row in csv.DictReader(io.StringIO(resp.text)):
+        try:
+            ratings[_torvik_key(row["team"])] = (
+                float(row["adjoe"]), float(row["adjde"]), float(row["adjt"]),
+                int(float(row["rank"])), row["record"], row["conf"],
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+    return ratings
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -2995,10 +3016,12 @@ def get_torvik_ratings(year):
     try:
         payload = json.loads(TORVIK_SNAPSHOT.read_text(encoding="utf-8"))
         if payload.get("year") == year:
-            ratings = {
-                _torvik_key(name): tuple(float(v) for v in values)
-                for name, values in payload["teams"].items()
-            }
+            ratings = {}
+            for name, values in payload["teams"].items():
+                values = list(values) + [None] * (6 - len(values))
+                ratings[_torvik_key(name)] = (
+                    float(values[0]), float(values[1]), float(values[2]), values[3], values[4], values[5],
+                )
             return ratings, reason, f"snapshot:{str(payload.get('fetched', ''))[:10]}"
     except Exception:
         pass
@@ -3036,6 +3059,20 @@ def _team_win_matrix(team_names, team_seeds):
     return win, {
         "matched": matched, "total": n, "year": year, "source": source,
         "error": error if not ratings else ("no team names matched" if not matched else ""),
+    }
+
+
+def torvik_team_info(name):
+    """Barttorvik rank, record and adjusted efficiency numbers for one team, or None."""
+    ratings, _error, _source = get_torvik_ratings(torvik_season_year())
+    key = _torvik_key(name)
+    rating = ratings.get(key) or ratings.get(TORVIK_ALIASES.get(key, ""))
+    if not rating:
+        return None
+    return {
+        "rank": rating[3], "record": rating[4],
+        "o": round(rating[0], 1), "d": round(rating[1], 1), "t": round(rating[2], 1),
+        "net": round(rating[0] - rating[1], 1),
     }
 
 

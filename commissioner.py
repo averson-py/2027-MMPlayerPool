@@ -838,6 +838,7 @@ def download_torvik_ratings():
         try:
             teams[row["team"]] = [
                 round(float(row["adjoe"]), 3), round(float(row["adjde"]), 3), round(float(row["adjt"]), 3),
+                int(float(row["rank"])), row["record"], row["conf"],
             ]
         except (KeyError, TypeError, ValueError):
             continue
