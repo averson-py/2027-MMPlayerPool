@@ -9,6 +9,7 @@ Used by the commissioner app's button and the scheduled GitHub Action:
 import csv
 import io
 import json
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -56,9 +57,30 @@ def download_torvik_ratings(year=None, path=SNAPSHOT_PATH):
     return len(teams), year
 
 
+def push_snapshot(path=SNAPSHOT_PATH):
+    """Commit and push only the snapshot file. Raises RuntimeError with git's message on failure."""
+    path = Path(path)
+
+    def git(*args):
+        result = subprocess.run(["git", *args], cwd=path.parent, capture_output=True, text=True)
+        if result.returncode:
+            raise RuntimeError((result.stderr or result.stdout).strip() or f"git {args[0]} failed")
+        return result.stdout
+
+    if not git("status", "--porcelain", "--", path.name).strip():
+        return False
+    git("add", "--", path.name)
+    git("commit", "-m", "Update Torvik ratings", "--", path.name)
+    git("push")
+    return True
+
+
 if __name__ == "__main__":
+    args = [a for a in sys.argv[1:] if a != "--push"]
     try:
-        count, season = download_torvik_ratings(int(sys.argv[1]) if len(sys.argv) > 1 else None)
-    except requests.RequestException as exc:
-        sys.exit(f"Barttorvik download failed: {exc}")
-    print(f"Saved Torvik ratings for {count} teams ({season}) to {SNAPSHOT_PATH}")
+        count, season = download_torvik_ratings(int(args[0]) if args else None)
+        print(f"Saved Torvik ratings for {count} teams ({season}) to {SNAPSHOT_PATH}")
+        if "--push" in sys.argv:
+            print("Pushed." if push_snapshot() else "No changes to push.")
+    except (requests.RequestException, RuntimeError) as exc:
+        sys.exit(f"Failed: {exc}")

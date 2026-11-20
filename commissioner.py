@@ -14,7 +14,7 @@ import urllib.request
 
 from openpyxl import load_workbook
 
-from torvik_ratings import download_torvik_ratings
+from torvik_ratings import download_torvik_ratings, push_snapshot
 
 DRAFT_ORDER_SHEET = "DraftOrder"
 TEAM_DATA_SHEET = "TeamData"
@@ -4382,8 +4382,8 @@ class DraftApp:
         if not messagebox.askyesno(
             "Fetch Torvik Ratings",
             "Download current Barttorvik team ratings (adjusted offense, defense and tempo) "
-            "into assets/torvik_ratings.json?\n\nThe dashboard uses this file when the live "
-            "download is blocked on Streamlit Cloud. Commit and push assets/ afterward."
+            "into assets/torvik_ratings.json and push it to GitHub?\n\nThe dashboard uses this "
+            "file when the live download is blocked on Streamlit Cloud."
         ):
             return
 
@@ -4392,8 +4392,16 @@ class DraftApp:
         self.status_label.config(text="Downloading Torvik ratings...")
         self.root.update()
 
+        pushed = None
+        push_error = None
         try:
             count, year = download_torvik_ratings()
+            self.status_label.config(text="Pushing Torvik ratings...")
+            self.root.update()
+            try:
+                pushed = push_snapshot()
+            except Exception as error:
+                push_error = error
         except Exception as error:
             messagebox.showerror("Fetch Torvik Ratings", f"Torvik fetch failed: {error}")
             count = None
@@ -4403,11 +4411,16 @@ class DraftApp:
 
         if count:
             self.status_label.config(text=f"Saved Torvik ratings for {count} teams ({year}).")
-            messagebox.showinfo(
-                "Fetch Torvik Ratings",
-                f"Saved ratings for {count} teams for the {year} season.\n\n"
-                "Now commit and push the assets/ folder."
-            )
+            saved = f"Saved ratings for {count} teams for the {year} season.\n\n"
+            if push_error:
+                messagebox.showwarning(
+                    "Fetch Torvik Ratings", f"{saved}Push failed, so commit and push manually:\n{push_error}"
+                )
+            else:
+                messagebox.showinfo(
+                    "Fetch Torvik Ratings",
+                    saved + ("Pushed to GitHub." if pushed else "No changes to push."),
+                )
 
     def find_team_list_sheet(self):
         if self.workbook is None:
