@@ -21,7 +21,8 @@ import streamlit.components.v1 as components
 
 from bracket_sim import (
     DEFAULT_TEMPO, GAME_FPTS_SPREAD, GAME_MARGIN_SD, SEED_STRENGTH, SIM_SEED, TORVIK_ALIASES,
-    WIN_PROB_SIMS, blend_net_rankings, read_bracket_teams, read_final_four_config, run_bracket,
+    WIN_PROB_SIMS, blend_net_rankings, net_ranks_by_key, rating_key, read_bracket_teams, read_final_four_config,
+    run_bracket,
 )
 from bracket_sim import norm_team_name as _norm_team_name
 from bracket_sim import torvik_key as _torvik_key
@@ -4970,9 +4971,13 @@ with tab1:
             odds_text = "Game odds use seed-based win probabilities" + (
                 f" (Barttorvik ratings unavailable: {reason})" if reason else ""
             )
+        net_text = (
+            " The NCAA NET rankings are not yet being used because they have not been published yet."
+            if rating_info.get("matched") and not rating_info.get("net_matched") else ""
+        )
         st.caption(
-            f"Estimated from {WIN_PROB_SIMS:,} simulated tournaments. {odds_text} and real results so far; "
-            f"player scoring varies about {GAME_FPTS_SPREAD:.0%} "
+            f"Estimated from {WIN_PROB_SIMS:,} simulated tournaments. {odds_text} and real results so far.{net_text} "
+            f"Player scoring varies about {GAME_FPTS_SPREAD:.0%} "
             "per game around the projected rate. Rank orders owners by average simulated finishing place "
             "(Avg. Finish); Projected Score is the average simulated final FPts. "
             "Hover over Avg. Finish, Projected Score or Win % for details."
@@ -5657,6 +5662,46 @@ with tab6:
     seed_table_col, _seed_spacer = st.columns([1, 2])
     with seed_table_col:
         display_df(seed_games_df, height=620, center=True)
+
+    if data["bracket_teams"]:
+        st.markdown("### Team Ratings: Barttorvik & NCAA NET")
+        rating_year = torvik_season_year()
+        torvik_ratings, _torvik_error, torvik_source = get_torvik_ratings(rating_year)
+        net_ranks, net_through = load_net_ranks(rating_year)
+        net_by_key = net_ranks_by_key(torvik_ratings, net_ranks)
+        rating_rows = []
+        for seed, region_teams in data["bracket_teams"].items():
+            for region, teams in region_teams.items():
+                for team in teams:
+                    info = torvik_team_info(team)
+                    net_rank = net_by_key.get(rating_key(torvik_ratings, team))
+                    rating_rows.append({
+                        "_sort": info["rank"] if info and info["rank"] else 9999,
+                        "Seed": seed, "Region": region.title(), "Team": team,
+                        "Torvik Rank": info["rank"] if info else "—",
+                        "Record": info["record"] if info and info["record"] else "—",
+                        "Adj. O": f"{info['o']:.1f}" if info else "—",
+                        "Adj. D": f"{info['d']:.1f}" if info else "—",
+                        "Net": f"{info['net']:+.1f}" if info else "—",
+                        "Tempo": f"{info['t']:.1f}" if info else "—",
+                        "NET Rank": net_rank if net_rank else "—",
+                    })
+        if rating_rows:
+            ratings_df = pd.DataFrame(rating_rows).sort_values(["_sort", "Seed"]).drop(columns="_sort")
+            source_note = (
+                f"Barttorvik ratings snapshot from {torvik_source.split(':', 1)[1] or 'an earlier date'}"
+                if torvik_source.startswith("snapshot") else "Barttorvik ratings (live)"
+            ) if torvik_source else "Barttorvik ratings unavailable"
+            net_note = (
+                f"NCAA NET rankings through {net_through}." if net_ranks else
+                f"The {rating_year} NCAA NET rankings haven't been published yet; the NET column fills in once "
+                "they are released and fetched."
+            )
+            st.caption(
+                f"Bracket teams ordered by Torvik rank. {source_note}: Adj. O and Adj. D are points per 100 "
+                f"possessions, Net = Adj. O - Adj. D, Tempo = possessions per game. {net_note}"
+            )
+            display_df(ratings_df.reset_index(drop=True), height=620, zebra=True, center=True, html=True)
 
 with tab5:
     st.subheader("Tournament Bracket")

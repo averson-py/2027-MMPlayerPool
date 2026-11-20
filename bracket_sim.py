@@ -120,6 +120,26 @@ def net_rating_key(name, rating_keys):
     return close[0] if close else None
 
 
+def rating_key(ratings, name):
+    """The key under which `ratings` stores a workbook team name, or None."""
+    key = torvik_key(name)
+    for candidate in (key, TORVIK_ALIASES.get(key, "")):
+        if candidate in ratings:
+            return candidate
+    return None
+
+
+def net_ranks_by_key(ratings, net_ranks):
+    """{ratings key: NCAA NET rank} for the NET schools that match a rated team."""
+    keys = list(ratings)
+    ranked = {}
+    for name, rank in net_ranks.items():
+        key = net_rating_key(name, keys)
+        if key:
+            ranked[key] = rank
+    return ranked
+
+
 def blend_net_rankings(ratings, net_ranks, weight=NET_WEIGHT):
     """Pull each team's Barttorvik net rating toward the rating Barttorvik gives the team at its NET rank.
 
@@ -129,12 +149,7 @@ def blend_net_rankings(ratings, net_ranks, weight=NET_WEIGHT):
     """
     if not ratings or not net_ranks:
         return ratings, 0
-    keys = list(ratings)
-    ranked = {}
-    for name, rank in net_ranks.items():
-        key = net_rating_key(name, keys)
-        if key:
-            ranked[key] = rank
+    ranked = net_ranks_by_key(ratings, net_ranks)
     ordered = sorted((r[0] - r[1] for r in ratings.values()), reverse=True)
     blended = dict(ratings)
     for key, rank in ranked.items():
