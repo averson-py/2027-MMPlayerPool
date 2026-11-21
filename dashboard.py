@@ -5617,7 +5617,7 @@ with tab6:
         "Each simulated tournament plays out the bracket game by game. Results already entered are locked in; "
         "only games not yet played are simulated."
     )
-    st.markdown("**HOW A GAME IS DECIDED** (Team ratings from [Barttorvik](https://barttorvik.com))")
+    st.markdown("**HOW A GAME IS DECIDED** (Team ratings from [BartTorvik](https://barttorvik.com))")
     st.markdown(
         "1. **Net rating** = a team's Adjusted Offense minus Adjusted Defense, in points per 100 possessions.  \n"
         "2. **Expected possessions** = the two teams' Adjusted Tempos multiplied together, divided by the "
