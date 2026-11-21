@@ -3930,6 +3930,8 @@ st.markdown(
 
     .block-container,
     div[data-testid="stMainBlockContainer"] {padding-top: 0 !important; padding-bottom: 2rem;}
+    /* Phones leave safe-area margins outside the page; give them the page colour instead of white. */
+    html, body {background: #F4F6FA;}
     /* Keep the main tab bar pinned while scrolling; nested tab lists inside panels are excluded. */
     .st-key-main_tabs [role="tablist"]:not([role="tabpanel"] *) {
         position: sticky; top: 0; z-index: 999; background: #F4F6FA;
@@ -4245,6 +4247,7 @@ if dark_mode:
     st.markdown(
         """
         <style>
+        html, body {background: #0E1117 !important;}
         .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] {background: #0E1117 !important;}
         [data-testid="stMain"] :is(p, li, label, h1, h2, h3, h4, h5, h6, strong, em) {color: #E5E7EB;}
         [data-testid="stMain"] h1, [data-testid="stMain"] h2, [data-testid="stMain"] h3 {color: #8DB8E8;}
