@@ -4008,14 +4008,16 @@ st.markdown(
        below ~900px two per row is also too narrow, so use 1 per row. */
     @media (min-width: 901px) and (max-width: 1650px) {
         div[data-testid="stHorizontalBlock"]:has(.mvp-photo-float) > div[data-testid="stColumn"],
-        div[data-testid="stHorizontalBlock"]:has(.logo-float) > div[data-testid="stColumn"] {
+        div[data-testid="stHorizontalBlock"]:has(.logo-float) > div[data-testid="stColumn"],
+        .st-key-team_summary div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
             flex: 1 1 calc(50% - 1rem) !important;
             min-width: calc(50% - 1rem) !important;
         }
     }
     @media (min-width: 641px) and (max-width: 900px) {
         div[data-testid="stHorizontalBlock"]:has(.mvp-photo-float) > div[data-testid="stColumn"],
-        div[data-testid="stHorizontalBlock"]:has(.logo-float) > div[data-testid="stColumn"] {
+        div[data-testid="stHorizontalBlock"]:has(.logo-float) > div[data-testid="stColumn"],
+        .st-key-team_summary div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
             flex: 1 1 100% !important;
             min-width: 100% !important;
         }
@@ -5256,8 +5258,9 @@ with tab3:
                         str(best_player["Player Name"]),
                         f"{float(best_player['Tourn. FPts']):.1f} FPts",
                     )
-                    best_stats = data["player_stats"].get(str(best_player["Player Name"]).casefold(), {})
-                    best_photo = get_player_photo_url(best_player["Player Name"], best_stats.get("Team"))
+                    best_name = re.sub(r"^(?:⚠️|⛔)\s*", "", str(best_player["Player Name"]))
+                    best_stats = data["player_stats"].get(best_name.casefold(), {})
+                    best_photo = get_player_photo_url(best_name, best_stats.get("Team"))
                     if best_photo:
                         sc3.markdown(
                             f'<img class="mvp-photo-float" src="{html_lib.escape(best_photo)}" '
