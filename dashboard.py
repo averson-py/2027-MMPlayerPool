@@ -4133,7 +4133,7 @@ if LOGO_PATH.is_file():
             background:#4e9efd;padding:0.75rem 1rem;
         }}
         {font_face_css}
-        @media (min-width: 1000px) {{
+        @media (min-width: 800px) {{
             .pool-header-text {{
                 display:block;margin-left:1.5rem;
                 font-family:'Freshman','Alfa Slab One','Rockwell Extra Bold','Georgia',serif;
