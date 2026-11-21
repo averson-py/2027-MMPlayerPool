@@ -4086,6 +4086,27 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# Runs before any data loads so the outer page's safe-area margins turn grey as early as possible;
+# the script at the bottom of the page applies the same colour again from the dark-mode toggle.
+components.html(
+    """<script>
+    try {
+        const query = new URLSearchParams(window.parent.location.search).get('dark_mode');
+        const dark = query ? ['true', '1'].includes(query) : window.parent.localStorage.getItem('mmpool_dark_mode') === '1';
+        const pageBg = dark ? '#0E1117' : '#F4F6FA';
+        let outer = window;
+        while (outer !== outer.parent) {
+            outer = outer.parent;
+            try {
+                outer.document.documentElement.style.background = pageBg;
+                outer.document.body.style.background = pageBg;
+            } catch (e) { break; }
+        }
+    } catch (e) {}
+    </script>""",
+    height=0,
+)
+
 LOGO_PATH = ASSETS_DIR / "logo.png"
 if LOGO_PATH.is_file():
     import base64
