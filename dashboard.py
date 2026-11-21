@@ -4028,7 +4028,8 @@ st.markdown(
     /* Zero-height script frames: take them out of the layout flow so they
        do not add blank gaps between elements. */
     div[data-testid="stElementContainer"]:has(> iframe[height="0"]),
-    div[data-testid="stElementContainer"]:has(iframe[height="0"]) {
+    div[data-testid="stElementContainer"]:has(iframe[height="0"]),
+    div[data-testid="stElementContainer"][height="0px"]:has(> iframe) {
         position: absolute !important;
         height: 0 !important;
         margin: 0 !important;
