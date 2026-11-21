@@ -1385,7 +1385,7 @@ def render_bracket_html(rounds, region=None, team_players=None, my_team=None, da
                         spread = {team_a: round(-margin * 2) / 2 + 0.0, team_b: round(margin * 2) / 2 + 0.0}
                         odds_badge = (
                             '<span class="torvik-badge" '
-                            'title="Win probabilities from Barttorvik ratings (barttorvik.com)"></span>'
+                            'title="Win probabilities from BartTorvik ratings (barttorvik.com)"></span>'
                         )
             feeds_to = matchup_idx // 2 if len(all_matchups) > 1 and round_name != "First Four" else -1
 
@@ -2970,7 +2970,7 @@ def _fetch_torvik_ratings(year):
 
 @st.cache_data(ttl=600, show_spinner=False)
 def get_torvik_ratings(year):
-    """(ratings, error, source): live Barttorvik ratings, else the repo snapshot, else nothing.
+    """(ratings, error, source): live BartTorvik ratings, else the repo snapshot, else nothing.
 
     source is "live", "snapshot:<date>" or ""; error is the live fetch failure (if any).
     """
@@ -2997,7 +2997,7 @@ def get_torvik_ratings(year):
 def get_odds_ratings(year):
     """(ratings for game odds, NET teams matched, NET data-through label).
 
-    Barttorvik ratings, blended with the NCAA NET rankings once they are published for this season.
+    BartTorvik ratings, blended with the NCAA NET rankings once they are published for this season.
     """
     net_ranks, through = load_net_ranks(year)
     blended, matched = blend_net_rankings(get_torvik_ratings(year)[0], net_ranks)
@@ -3005,7 +3005,7 @@ def get_odds_ratings(year):
 
 
 def torvik_team_info(name):
-    """Barttorvik rank, record and adjusted efficiency numbers for one team, or None."""
+    """BartTorvik rank, record and adjusted efficiency numbers for one team, or None."""
     ratings, _error, _source = get_torvik_ratings(torvik_season_year())
     key = _torvik_key(name)
     rating = ratings.get(key) or ratings.get(TORVIK_ALIASES.get(key, ""))
@@ -3041,7 +3041,7 @@ def matchup_margin(team_a, seed_a, team_b, seed_b):
 
 
 def matchup_win_probability(team_a, seed_a, team_b, seed_b):
-    """Chance team A beats team B at a neutral site (Barttorvik ratings, seed fallback); None if unknown."""
+    """Chance team A beats team B at a neutral site (BartTorvik ratings, seed fallback); None if unknown."""
     margin = matchup_margin(team_a, seed_a, team_b, seed_b)
     if margin is None:
         return None
@@ -4985,7 +4985,7 @@ with tab1:
                 if str(rating_info.get("source", "")).startswith("snapshot") else ""
             )
             odds_text = (
-                f"Game odds use Barttorvik {rating_info['year']} adjusted offense, defense and tempo "
+                f"Game odds use BartTorvik {rating_info['year']} adjusted offense, defense and tempo "
                 f"({rating_info['matched']} of {rating_info['total']} bracket teams matched{snapshot_note})"
             )
             if rating_info.get("net_matched"):
@@ -4996,7 +4996,7 @@ with tab1:
         else:
             reason = rating_info.get("error")
             odds_text = "Game odds use seed-based win probabilities" + (
-                f" (Barttorvik ratings unavailable: {reason})" if reason else ""
+                f" (BartTorvik ratings unavailable: {reason})" if reason else ""
             )
         net_text = ""
         if rating_info.get("matched") and not rating_info.get("net_matched"):
@@ -5651,7 +5651,7 @@ with tab6:
         "Tournament games are at neutral sites, so there is no home-court adjustment.  \n"
         f"4. **Win probability** = a normal curve on that margin, with a standard deviation of {GAME_MARGIN_SD:g} "
         "points. A game is then decided by a random draw at that probability.  \n"
-        "5. Any team without a Barttorvik rating falls back to a rough seed-based strength."
+        "5. Any team without a BartTorvik rating falls back to a rough seed-based strength."
     )
     st.markdown(
         "*Ex. a team with a +10 net rating against a team with a +4 net rating over 68 expected possessions: "
@@ -5696,7 +5696,7 @@ with tab6:
         display_df(seed_games_df, height=620, center=True)
 
     if data["bracket_teams"]:
-        st.markdown("### Team Ratings: Barttorvik & NCAA NET")
+        st.markdown("### Team Ratings: BartTorvik & NCAA NET")
         rating_year = torvik_season_year()
         torvik_ratings, _torvik_error, torvik_source = get_torvik_ratings(rating_year)
         net_ranks, net_through = load_net_ranks(rating_year)
@@ -5721,9 +5721,9 @@ with tab6:
         if rating_rows:
             ratings_df = pd.DataFrame(rating_rows).sort_values(["_sort", "Seed"]).drop(columns="_sort")
             source_note = (
-                f"Barttorvik ratings snapshot from {torvik_source.split(':', 1)[1] or 'an earlier date'}"
-                if torvik_source.startswith("snapshot") else "Barttorvik ratings (live)"
-            ) if torvik_source else "Barttorvik ratings unavailable"
+                f"BartTorvik ratings snapshot from {torvik_source.split(':', 1)[1] or 'an earlier date'}"
+                if torvik_source.startswith("snapshot") else "BartTorvik ratings (live)"
+            ) if torvik_source else "BartTorvik ratings unavailable"
             net_note = (
                 f"NCAA NET rankings through {net_through}." if net_ranks else
                 f"The {rating_year} NCAA NET rankings haven't been published yet; the NET column fills in once "
