@@ -5855,6 +5855,16 @@ components.html(
             p.__mmpoolLast = '';
         }
     } catch (e) {}
+    // On Streamlit Cloud the app sits in an outer page that paints the phone's safe-area margins white.
+    const pageBg = dark ? '#0E1117' : '#F4F6FA';
+    let outer = window;
+    while (outer !== outer.parent) {
+        outer = outer.parent;
+        try {
+            outer.document.documentElement.style.background = pageBg;
+            outer.document.body.style.background = pageBg;
+        } catch (e) { break; }
+    }
     </script>""",
     height=0,
 )
