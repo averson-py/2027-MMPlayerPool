@@ -567,7 +567,7 @@ def get_espn_tournament_games():
 
 @st.cache_data(ttl=60, show_spinner=False)
 def get_todays_games(team_names):
-    """Today's (Eastern time) NCAA games where both teams are in `team_names`, as [{away, home, time, network}] by start."""
+    """Today's (Eastern time) NCAA games where both teams are in `team_names`, as [{away, home, time, networks: [(name, logo URL)]}] by start."""
     try:
         eastern = ZoneInfo("America/New_York")
     except Exception:
@@ -604,11 +604,17 @@ def get_todays_games(team_names):
                 when = start.strftime("%I:%M %p").lstrip("0") + " ET"
             else:
                 when = status.get("shortDetail", "")
-            networks = list(dict.fromkeys(
-                name for broadcast in event["competitions"][0].get("broadcasts", []) for name in broadcast.get("names", [])
+            competition = event["competitions"][0]
+            names = list(dict.fromkeys(
+                name for broadcast in competition.get("broadcasts", []) for name in broadcast.get("names", [])
             ))
+            logos = {
+                geo.get("media", {}).get("shortName"): geo.get("media", {}).get("logo")
+                for geo in competition.get("geoBroadcasts", [])
+            }
             games.append({
-                "away": sides["away"], "home": sides["home"], "time": when, "network": ", ".join(networks) or "—",
+                "away": sides["away"], "home": sides["home"], "time": when,
+                "networks": [(name, logos.get(name) or "") for name in names],
             })
         except Exception:
             continue
@@ -3775,11 +3781,15 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             styled = styled.format(matchup_cell, subset=["Matchup"], escape=None)
         if "Network" in df.columns:
             def network_cell(value):
-                network, when = value
-                return (
-                    f'{html_lib.escape(network)}&nbsp; '
-                    f'<span style="color:#888;font-style:italic">{html_lib.escape(when)}</span>'
-                )
+                networks, when = value
+                shown = ''.join(
+                    '<span class="net-item">'
+                    + (f'<img src="{html_lib.escape(logo)}" class="net-logo" loading="lazy" '
+                       'onerror="this.style.display=\'none\'">' if logo else '')
+                    + f'<span>{html_lib.escape(name)}</span></span>'
+                    for name, logo in networks
+                ) or '—'
+                return f'{shown}&nbsp; <span style="color:#888;font-style:italic">{html_lib.escape(when)}</span>'
 
             styled = styled.format(network_cell, subset=["Network"], escape=None)
         if "Torvik Spread" in df.columns:
@@ -3846,6 +3856,8 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .team-cell.matchup-line .mu-text {overflow: hidden; max-width: 14rem; padding-right: 4px; transition: max-width 0.25s ease, margin-left 0.25s ease, padding-right 0.25s ease;}
             .photo-table-wrap.scrolled .matchup-line .mu-text {max-width: 0; margin-left: 0; padding-right: 0;}
             .team-logo-sm {width: 36px; height: 36px; object-fit: contain; flex-shrink: 0; display: inline-block;}
+            .net-item {display: inline-flex; align-items: center; gap: 6px; margin-right: 6px; vertical-align: middle;}
+            .net-logo {width: 56px; height: 26px; object-fit: contain; flex-shrink: 0;}
             .player-photo {
                 position: absolute; left: 0; bottom: 0; top: auto; height: 60px; width: auto; max-width: 84px;
                 object-fit: cover; object-position: center bottom;
@@ -4936,7 +4948,7 @@ with tab0:
                     (game["away"], team_seeds.get(game["away"]), game["home"], team_seeds.get(game["home"]))
                     for game in todays_games
                 ],
-                "Network": [(game["network"], game["time"]) for game in todays_games],
+                "Network": [(game["networks"], game["time"]) for game in todays_games],
                 "Torvik Spread": [
                     predict_game(game["away"], team_seeds.get(game["away"]), game["home"], team_seeds.get(game["home"]))
                     for game in todays_games
