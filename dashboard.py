@@ -3830,8 +3830,8 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .team-cell.matchup-line {gap: 0; transition: min-width 0.25s ease;}
             .matchup-line > * {margin-left: 8px;}
             .matchup-line > :first-child {margin-left: 0;}
-            .team-cell.matchup-line .mu-text {overflow: hidden; max-width: 11rem; transition: max-width 0.25s ease, margin-left 0.25s ease;}
-            .photo-table-wrap.scrolled .matchup-line .mu-text {max-width: 0; margin-left: 0;}
+            .team-cell.matchup-line .mu-text {overflow: hidden; max-width: 14rem; padding-right: 4px; transition: max-width 0.25s ease, margin-left 0.25s ease, padding-right 0.25s ease;}
+            .photo-table-wrap.scrolled .matchup-line .mu-text {max-width: 0; margin-left: 0; padding-right: 0;}
             .team-logo-sm {width: 36px; height: 36px; object-fit: contain; flex-shrink: 0; display: inline-block;}
             .player-photo {
                 position: absolute; left: 0; bottom: 0; top: auto; height: 60px; width: auto; max-width: 84px;
