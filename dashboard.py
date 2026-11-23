@@ -3753,8 +3753,8 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             def matchup_cell(value):
                 away, home = value
                 return (
-                    '<div class="team-cell">' + team_with_logo(away) + '<span>vs.</span>'
-                    + team_with_logo(home) + '</div>'
+                    '<div class="matchup-cell"><div class="side">' + team_with_logo(away)
+                    + '</div><span class="vs">vs.</span><div class="side">' + team_with_logo(home) + '</div></div>'
                 )
 
             styled = styled.format(matchup_cell, subset=["Matchup"], escape=None)
@@ -3813,6 +3813,11 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             [class*="st-key-ownerlinks_"] {display: none;}
             .team-cell {display: flex; align-items: center; gap: 8px; min-width: 160px; padding-left: 10px;}
             .team-cell span {white-space: normal; min-width: 0; overflow-wrap: anywhere;}
+            .matchup-cell {display: grid; grid-template-columns: 11rem auto 11rem; align-items: center; column-gap: 10px; justify-content: center; padding: 0 10px;}
+            .matchup-cell .side {display: flex; align-items: center; gap: 8px; text-align: left;}
+            .matchup-cell .side:first-child {justify-content: flex-end; text-align: right;}
+            .matchup-cell .side span:last-child {white-space: normal; min-width: 0; overflow-wrap: anywhere;}
+            .matchup-cell .vs {text-align: center;}
             .team-logo-sm {width: 36px; height: 36px; object-fit: contain; flex-shrink: 0; display: inline-block;}
             .player-photo {
                 position: absolute; left: 0; bottom: 0; top: auto; height: 60px; width: auto; max-width: 84px;
