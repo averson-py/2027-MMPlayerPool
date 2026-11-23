@@ -3832,13 +3832,10 @@ def get_onedrive_share_url():
         else:
             url = st.secrets.get("ONEDRIVE_SHARE_URL")
     except (KeyError, AttributeError, FileNotFoundError):
-        # No secrets file found - return None to use local mode
-        return None
+        # No secrets file found; hosts without one (e.g. Render) use an environment variable.
+        url = None
 
-    if not url:
-        return None
-
-    url = str(url).strip()
+    url = str(url or os.environ.get("ONEDRIVE_SHARE_URL") or "").strip()
     return url or None
 
 
@@ -3929,7 +3926,11 @@ st.markdown(
     }
 
     .block-container,
-    div[data-testid="stMainBlockContainer"] {padding-top: 0 !important; padding-bottom: 2rem; padding-left: 1rem !important; padding-right: 1rem !important;}
+    div[data-testid="stMainBlockContainer"] {
+        padding-top: 0 !important; padding-bottom: max(2rem, env(safe-area-inset-bottom));
+        padding-left: max(1rem, env(safe-area-inset-left)) !important;
+        padding-right: max(1rem, env(safe-area-inset-right)) !important;
+    }
     /* Phones leave safe-area margins outside the page; give them the page colour instead of white. */
     html, body {background: #F4F6FA;}
     /* Keep the main tab bar pinned while scrolling; nested tab lists inside panels are excluded. */
