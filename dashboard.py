@@ -3740,21 +3740,26 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
                         subset=[tip_col], escape=None,
                     )
         if "Matchup" in df.columns or "Pred. Spread" in df.columns:
-            def team_with_logo(team, label_html=None):
+            def team_with_logo(team, label_html=None, text_class=""):
                 url = get_logo_url(team)
                 img = (
                     f'<img src="{html_lib.escape(str(url))}" class="team-logo-sm" '
                     'loading="lazy" onerror="this.style.visibility=\'hidden\'">'
                     if url else '<span class="team-logo-sm"></span>'
                 )
-                return img + '<span>' + (label_html or html_lib.escape(str(team))) + '</span>'
+                label = label_html or html_lib.escape(str(team))
+                if text_class:
+                    label = f'<span class="{text_class}"><span>{label}</span></span>'
+                    return img + label
+                return img + '<span>' + label + '</span>'
 
         if "Matchup" in df.columns:
             def matchup_cell(value):
-                away, home = value
+                away, home, when = value
                 return (
-                    '<div class="matchup-cell"><div class="side">' + team_with_logo(away)
-                    + '</div><span class="vs">vs.</span><div class="side">' + team_with_logo(home) + '</div></div>'
+                    '<div class="team-cell matchup-line">' + team_with_logo(away, text_class="mu-text") + '<span>vs.</span>'
+                    + team_with_logo(home, text_class="mu-text")
+                    + f'<span class="mu-text" style="color:#888;font-style:italic"><span>{html_lib.escape(when)}</span></span></div>'
                 )
 
             styled = styled.format(matchup_cell, subset=["Matchup"], escape=None)
@@ -3813,11 +3818,14 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             [class*="st-key-ownerlinks_"] {display: none;}
             .team-cell {display: flex; align-items: center; gap: 8px; min-width: 160px; padding-left: 10px;}
             .team-cell span {white-space: normal; min-width: 0; overflow-wrap: anywhere;}
-            .matchup-cell {display: grid; grid-template-columns: 11rem auto 11rem; align-items: center; column-gap: 10px; justify-content: center; padding: 0 10px;}
-            .matchup-cell .side {display: flex; align-items: center; gap: 8px; text-align: left;}
-            .matchup-cell .side:first-child {justify-content: flex-end; text-align: right;}
-            .matchup-cell .side span:last-child {white-space: normal; min-width: 0; overflow-wrap: anywhere;}
-            .matchup-cell .vs {text-align: center;}
+            .team-cell.matchup-line span {white-space: nowrap; min-width: auto; overflow-wrap: normal;}
+            .photo-table-wrap.scrolled .matchup-line {min-width: 0;}
+            .photo-table-wrap.scrolled:has(.matchup-line) table {min-width: calc(100% + 14px);}
+            .team-cell.matchup-line {gap: 0; transition: min-width 0.25s ease;}
+            .matchup-line > * {margin-left: 8px;}
+            .matchup-line > :first-child {margin-left: 0;}
+            .team-cell.matchup-line .mu-text {overflow: hidden; max-width: 9rem; transition: max-width 0.25s ease, margin-left 0.25s ease;}
+            .photo-table-wrap.scrolled .matchup-line .mu-text {max-width: 0; margin-left: 0;}
             .team-logo-sm {width: 36px; height: 36px; object-fit: contain; flex-shrink: 0; display: inline-block;}
             .player-photo {
                 position: absolute; left: 0; bottom: 0; top: auto; height: 60px; width: auto; max-width: 84px;
@@ -3866,7 +3874,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
         freeze_css, freeze_class = "", ""
         visible_columns = [c for c in df.columns if not str(c).startswith("_")]
         freeze_name = next(
-            (c for c in ("Player Name", "Team Owner", "Stat") if c in visible_columns), None
+            (c for c in ("Player Name", "Team Owner", "Stat", "Matchup") if c in visible_columns), None
         )
         if freeze_name:
             name_col = visible_columns.index(freeze_name) + 1
@@ -4905,8 +4913,7 @@ with tab0:
         }
         display_df(
             pd.DataFrame({
-                "Time": [game["time"] for game in todays_games],
-                "Matchup": [(game["away"], game["home"]) for game in todays_games],
+                "Matchup": [(game["away"], game["home"], game["time"]) for game in todays_games],
                 "Pred. Spread": [
                     predict_game(game["away"], team_seeds.get(game["away"]), game["home"], team_seeds.get(game["home"]))
                     for game in todays_games
@@ -6083,8 +6090,11 @@ components.html(
             const el = e.target;
             if (!el || !el.classList || !el.classList.contains('photo-table-wrap')) return;
             const scrolled = el.classList.contains('scrolled');
+            // The Matchup table shrinks until it fits, so it keeps a small scroll range (see CSS) and needs a lower trigger.
+            const matchupTable = !!el.querySelector('.matchup-line');
+            const trigger = matchupTable ? 12 : 24;
             // Only shrink when there is plenty of sideways room; shrinking a barely-too-wide table removes its scroll range and flickers.
-            if (!scrolled && el.scrollLeft > 24 && el.scrollWidth - el.clientWidth > 110) el.classList.add('scrolled');
+            if (!scrolled && el.scrollLeft > trigger && (matchupTable || el.scrollWidth - el.clientWidth > 110)) el.classList.add('scrolled');
             else if (scrolled && el.scrollLeft < 4) el.classList.remove('scrolled');
             const heads = Array.from(el.querySelectorAll('thead th'));
             const nameTh = heads.find(h => h.textContent.trim() === 'Player Name');
