@@ -567,7 +567,7 @@ def get_espn_tournament_games():
 
 @st.cache_data(ttl=60, show_spinner=False)
 def get_todays_games(team_names):
-    """Today's (Eastern time) NCAA games where both teams are in `team_names`, as [{away, home, time, networks: [(name, logo URL)]}] by start."""
+    """Today's (Eastern time) NCAA games where both teams are in `team_names`, as [{away, home, time, networks: [(name, logo URL)], score: (away, home, is_live) or None}] by start."""
     try:
         eastern = ZoneInfo("America/New_York")
     except Exception:
@@ -588,6 +588,7 @@ def get_todays_games(team_names):
     for event in sorted(events, key=lambda e: e.get("date", "")):
         try:
             sides = {}
+            scores = {}
             for competitor in event["competitions"][0]["competitors"]:
                 team = competitor.get("team", {})
                 aliases = {
@@ -596,6 +597,7 @@ def get_todays_games(team_names):
                     if team.get(key)
                 }
                 sides[competitor["homeAway"]] = next((wanted[a] for a in aliases if a in wanted), None)
+                scores[competitor["homeAway"]] = competitor.get("score")
             if not sides.get("away") or not sides.get("home"):
                 continue
             status = event["status"]["type"]
@@ -615,6 +617,10 @@ def get_todays_games(team_names):
             games.append({
                 "away": sides["away"], "home": sides["home"], "time": when,
                 "networks": [(name, logos.get(name) or "") for name in names],
+                "score": (
+                    (int(scores["away"]), int(scores["home"]), status["state"] == "in")
+                    if status["state"] != "pre" else None
+                ),
             })
         except Exception:
             continue
@@ -3779,6 +3785,16 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
                 )
 
             styled = styled.format(matchup_cell, subset=["Matchup"], escape=None)
+        if "Score" in df.columns:
+            def score_cell(value):
+                if value is None or isinstance(value, float):
+                    return '<span style="color:#888">—</span>'
+                away, home, live = value
+                dot = '<span style="color:#D32F2F">&#9679;</span> ' if live else ''
+                shown = [f'<b>{mine}</b>' if mine > other else str(mine) for mine, other in ((away, home), (home, away))]
+                return f'{dot}{shown[0]} &ndash; {shown[1]}'
+
+            styled = styled.format(score_cell, subset=["Score"], escape=None)
         if "Network" in df.columns:
             def network_cell(value):
                 networks, when = value
@@ -4960,6 +4976,7 @@ with tab0:
                     (game["away"], team_seeds.get(game["away"]), game["home"], team_seeds.get(game["home"]))
                     for game in todays_games
                 ],
+                "Score": [game["score"] for game in todays_games],
                 "Active Players": [
                     drafted_by_team.get(_norm_team_name(game["away"]), 0) + drafted_by_team.get(_norm_team_name(game["home"]), 0)
                     for game in todays_games
