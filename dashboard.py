@@ -11,6 +11,7 @@ import html as html_lib
 import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 
 import openpyxl
@@ -559,6 +560,51 @@ def get_espn_tournament_games():
                 scores.append(int(float(c.get("score", 0) or 0)))
             if len(teams) == 2:
                 games.append({"teams": teams, "scores": scores})
+        except Exception:
+            continue
+    return games
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def get_todays_games(team_names):
+    """Today's (Eastern time) NCAA games where both teams are in `team_names`, as [{away, home, time}] by start."""
+    try:
+        eastern = ZoneInfo("America/New_York")
+    except Exception:
+        eastern = None
+    try:
+        resp = requests.get(
+            ESPN_SCOREBOARD_URL,
+            params={"dates": datetime.now(eastern).strftime("%Y%m%d"), "groups": 50, "limit": 500},
+            timeout=8,
+        )
+        resp.raise_for_status()
+        events = resp.json().get("events", [])
+    except Exception:
+        return []
+
+    wanted = {_norm_team_name(name): name for name in team_names}
+    games = []
+    for event in sorted(events, key=lambda e: e.get("date", "")):
+        try:
+            sides = {}
+            for competitor in event["competitions"][0]["competitors"]:
+                team = competitor.get("team", {})
+                aliases = {
+                    _norm_team_name(team[key])
+                    for key in ("location", "shortDisplayName", "displayName", "name")
+                    if team.get(key)
+                }
+                sides[competitor["homeAway"]] = next((wanted[a] for a in aliases if a in wanted), None)
+            if not sides.get("away") or not sides.get("home"):
+                continue
+            status = event["status"]["type"]
+            if status["state"] == "pre":
+                start = datetime.fromisoformat(event["date"].replace("Z", "+00:00")).astimezone(eastern)
+                when = start.strftime("%I:%M %p").lstrip("0") + " ET"
+            else:
+                when = status.get("shortDetail", "")
+            games.append({"away": sides["away"], "home": sides["home"], "time": when})
         except Exception:
             continue
     return games
@@ -3061,6 +3107,18 @@ def matchup_win_probability(team_a, seed_a, team_b, seed_b):
     return 0.5 * (1.0 + math.erf(margin / (GAME_MARGIN_SD * math.sqrt(2.0))))
 
 
+def predict_game(team_a, seed_a, team_b, seed_b):
+    """(favored team, spread line, win chance %) in betting-line style, or None if the teams can't be rated."""
+    margin = matchup_margin(team_a, seed_a, team_b, seed_b)
+    if margin is None:
+        return None
+    win_a = matchup_win_probability(team_a, seed_a, team_b, seed_b)
+    favorite = team_a if margin > 0 else team_b
+    spread = round(abs(margin) * 2) / 2
+    line = "PK" if spread == 0 else f"-{spread:.1f}"
+    return favorite, line, f"{round(max(win_a, 1 - win_a) * 100)}%"
+
+
 def _simulate_win_probabilities(data, n_sims, seed, pre_tournament=False):
     import numpy as np
 
@@ -3681,6 +3739,39 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
                         make_tip_cell(2 if tip_col in ("Avg. Finish", "Expected Games Remaining") else 1),
                         subset=[tip_col], escape=None,
                     )
+        if "Matchup" in df.columns or "Pred. Spread" in df.columns:
+            def team_with_logo(team, label_html=None):
+                url = get_logo_url(team)
+                img = (
+                    f'<img src="{html_lib.escape(str(url))}" class="team-logo-sm" '
+                    'loading="lazy" onerror="this.style.visibility=\'hidden\'">'
+                    if url else '<span class="team-logo-sm"></span>'
+                )
+                return img + '<span>' + (label_html or html_lib.escape(str(team))) + '</span>'
+
+        if "Matchup" in df.columns:
+            def matchup_cell(value):
+                away, home = value
+                return (
+                    '<div class="team-cell">' + team_with_logo(away) + '<span>vs.</span>'
+                    + team_with_logo(home) + '</div>'
+                )
+
+            styled = styled.format(matchup_cell, subset=["Matchup"], escape=None)
+        if "Pred. Spread" in df.columns:
+            def spread_cell(value):
+                if value is None or isinstance(value, float):
+                    return ""
+                winner, line, percent = value
+                return (
+                    '<div class="team-cell">' + team_with_logo(
+                        winner,
+                        f'{html_lib.escape(winner)} <b style="color:#2E8B57">{html_lib.escape(line)}</b> '
+                        f'(<b style="color:#4472C4">{html_lib.escape(percent)}</b> Win Chance)',
+                    ) + '</div>'
+                )
+
+            styled = styled.format(spread_cell, subset=["Pred. Spread"], escape=None)
         if "Team" in df.columns or "Next Opponent" in df.columns:
             def team_cell(value):
                 if value is None or (isinstance(value, float) and pd.isna(value)):
@@ -4792,6 +4883,147 @@ with tab0:
         else:
             st.info("No drafted players appeared in the most recent game.")
 
+    st.subheader("📅 Today's Games")
+    team_list_names = tuple(sorted({
+        team for region_teams in data["bracket_teams"].values()
+        for teams in region_teams.values() for team in teams
+    }))
+    todays_games = get_todays_games(team_list_names) if team_list_names else []
+    if todays_games:
+        st.caption(
+            "Predicted spreads use "
+            "BartTorvik ratings at a neutral site, so home-court advantage is not included."
+        )
+        team_seeds = {
+            team: seed for seed, region_teams in data["bracket_teams"].items()
+            for teams in region_teams.values() for team in teams
+        }
+        display_df(
+            pd.DataFrame({
+                "Time": [game["time"] for game in todays_games],
+                "Matchup": [(game["away"], game["home"]) for game in todays_games],
+                "Pred. Spread": [
+                    predict_game(game["away"], team_seeds.get(game["away"]), game["home"], team_seeds.get(game["home"]))
+                    for game in todays_games
+                ],
+            }),
+            height=min(80 + 38 * len(todays_games), 600),
+            zebra=True,
+            html=True,
+        )
+    else:
+        st.info("No games today between two teams on the TeamList sheet.")
+
+with tab1:
+    st.subheader("🏆 Tournament Standings")
+    standings_event = display_df(
+        standings.rename(columns={"Draft Position": "Draft Pos."}),
+        height=520,
+        pink_last=True,
+        zebra=True,
+        owner_links="standings",
+        scale_columns={
+            "Draft Pos.": (
+                standings["Draft Position"].min(),
+                standings["Draft Position"].max(),
+            ),
+            "Total FPts": (
+                standings["Total FPts"].min(),
+                standings["Total FPts"].max(),
+            ),
+            "Active Players": (
+                standings["Active Players"].min(),
+                standings["Active Players"].max(),
+            ),
+            "Poss. Games Remaining": (
+                standings["Poss. Games Remaining"].min(),
+                standings["Poss. Games Remaining"].max(),
+            ),
+            "MVP FPts": (
+                standings["MVP FPts"].min(),
+                standings["MVP FPts"].max(),
+            ),
+        },
+        reverse_columns={"Draft Pos.": True},
+    )
+
+    st.caption("Click a team owner's name to open their Team View.")
+    st.session_state.pop("jump_to_team_view", None)
+    st.subheader("🔮 Projected Rankings & Win Probability 🎲")
+    if win_prob is None:
+        st.info("Win probabilities need a complete bracket in the TeamList sheet; showing seed-average projections.")
+        display_df(
+            power.rename(columns={"Draft Position": "Draft Pos."}),
+            height=520,
+            rank_rwg=True,
+            zebra=True,
+            owner_links="power",
+            scale_columns={
+                "Draft Pos.": (power["Draft Position"].min(), power["Draft Position"].max()),
+                "Active Players": (power["Active Players"].min(), power["Active Players"].max()),
+                **{
+                    col: (power[col].min(), power[col].max())
+                    for col in ["Projected Score", "FPts per game", "Games Played", "Expected Games Remaining"]
+                    if col in power.columns
+                },
+            },
+            reverse_columns={"Draft Pos.": True},
+        )
+    else:
+        rating_info = win_prob.attrs.get("ratings") or {}
+        if rating_info.get("matched"):
+            snapshot_note = (
+                f"; ratings snapshot from {rating_info['source'].split(':', 1)[1] or 'an earlier date'}"
+                if str(rating_info.get("source", "")).startswith("snapshot") else ""
+            )
+            odds_text = (
+                f"Game odds use BartTorvik {rating_info['year']} adjusted offense, defense and tempo "
+                f"({rating_info['matched']} of {rating_info['total']} bracket teams matched{snapshot_note})"
+            )
+            if rating_info.get("net_matched"):
+                odds_text += (
+                    f", blended with the NCAA NET rankings (through {rating_info.get('net_through') or 'latest games'}; "
+                    f"{rating_info['net_matched']} teams matched)"
+                )
+        else:
+            reason = rating_info.get("error")
+            odds_text = "Game odds use seed-based win probabilities" + (
+                f" (BartTorvik ratings unavailable: {reason})" if reason else ""
+            )
+        net_text = ""
+        if rating_info.get("matched") and not rating_info.get("net_matched"):
+            net_text = (
+                " The NCAA NET rankings are published but not used in these projections (they appear in the "
+                "League Info ratings table)."
+                if rating_info.get("net_through") else
+                " The NCAA NET rankings are not yet being used because they have not been published yet."
+            )
+        st.caption(
+            f"Estimated from {WIN_PROB_SIMS:,} simulated tournaments. {odds_text} and real results so far.{net_text} "
+            f"Player scoring varies about {GAME_FPTS_SPREAD:.0%} "
+            "per game around the projected rate. Rank orders owners by average simulated finishing place "
+            "(Avg. Finish); Projected Score is the average simulated final FPts. "
+            "Hover over Avg. Finish, Projected Score or Win % for details."
+        )
+        display_df(
+            win_prob.drop(columns=["FPts per game", "Games Played", "Exp. Payout"]).rename(columns={"Draft Position": "Draft Pos."}),
+            height=520,
+            rank_rwg=True,
+            zebra=True,
+            owner_links="winprob",
+            scale_columns={
+                "Draft Pos.": (win_prob["Draft Position"].min(), win_prob["Draft Position"].max()),
+                **{
+                    col: (win_prob[col].min(), win_prob[col].max())
+                    for col in [
+                        "Avg. Finish", "Win %", "Top 3 %", "Last Place %", "Projected Score", "Active Players",
+                        "Expected Games Remaining",
+                    ]
+                },
+            },
+            reverse_columns={"Draft Pos.": True, "Avg. Finish": True, "Last Place %": True},
+        )
+
     st.subheader("🚀 Standings Progression")
     st.caption("League ranking after each tournament round.")
     standings_history = make_standings_round_history(data)
@@ -4935,116 +5167,6 @@ with tab0:
                 height=450,
                 use_container_width=True,
             )
-
-with tab1:
-    st.subheader("🏆 Tournament Standings")
-    standings_event = display_df(
-        standings.rename(columns={"Draft Position": "Draft Pos."}),
-        height=520,
-        pink_last=True,
-        zebra=True,
-        owner_links="standings",
-        scale_columns={
-            "Draft Pos.": (
-                standings["Draft Position"].min(),
-                standings["Draft Position"].max(),
-            ),
-            "Total FPts": (
-                standings["Total FPts"].min(),
-                standings["Total FPts"].max(),
-            ),
-            "Active Players": (
-                standings["Active Players"].min(),
-                standings["Active Players"].max(),
-            ),
-            "Poss. Games Remaining": (
-                standings["Poss. Games Remaining"].min(),
-                standings["Poss. Games Remaining"].max(),
-            ),
-            "MVP FPts": (
-                standings["MVP FPts"].min(),
-                standings["MVP FPts"].max(),
-            ),
-        },
-        reverse_columns={"Draft Pos.": True},
-    )
-
-    st.caption("Click a team owner's name to open their Team View.")
-    st.session_state.pop("jump_to_team_view", None)
-    st.subheader("🔮 Projected Rankings & Win Probability 🎲")
-    if win_prob is None:
-        st.info("Win probabilities need a complete bracket in the TeamList sheet; showing seed-average projections.")
-        display_df(
-            power.rename(columns={"Draft Position": "Draft Pos."}),
-            height=520,
-            rank_rwg=True,
-            zebra=True,
-            owner_links="power",
-            scale_columns={
-                "Draft Pos.": (power["Draft Position"].min(), power["Draft Position"].max()),
-                "Active Players": (power["Active Players"].min(), power["Active Players"].max()),
-                **{
-                    col: (power[col].min(), power[col].max())
-                    for col in ["Projected Score", "FPts per game", "Games Played", "Expected Games Remaining"]
-                    if col in power.columns
-                },
-            },
-            reverse_columns={"Draft Pos.": True},
-        )
-    else:
-        rating_info = win_prob.attrs.get("ratings") or {}
-        if rating_info.get("matched"):
-            snapshot_note = (
-                f"; ratings snapshot from {rating_info['source'].split(':', 1)[1] or 'an earlier date'}"
-                if str(rating_info.get("source", "")).startswith("snapshot") else ""
-            )
-            odds_text = (
-                f"Game odds use BartTorvik {rating_info['year']} adjusted offense, defense and tempo "
-                f"({rating_info['matched']} of {rating_info['total']} bracket teams matched{snapshot_note})"
-            )
-            if rating_info.get("net_matched"):
-                odds_text += (
-                    f", blended with the NCAA NET rankings (through {rating_info.get('net_through') or 'latest games'}; "
-                    f"{rating_info['net_matched']} teams matched)"
-                )
-        else:
-            reason = rating_info.get("error")
-            odds_text = "Game odds use seed-based win probabilities" + (
-                f" (BartTorvik ratings unavailable: {reason})" if reason else ""
-            )
-        net_text = ""
-        if rating_info.get("matched") and not rating_info.get("net_matched"):
-            net_text = (
-                " The NCAA NET rankings are published but not used in these projections (they appear in the "
-                "League Info ratings table)."
-                if rating_info.get("net_through") else
-                " The NCAA NET rankings are not yet being used because they have not been published yet."
-            )
-        st.caption(
-            f"Estimated from {WIN_PROB_SIMS:,} simulated tournaments. {odds_text} and real results so far.{net_text} "
-            f"Player scoring varies about {GAME_FPTS_SPREAD:.0%} "
-            "per game around the projected rate. Rank orders owners by average simulated finishing place "
-            "(Avg. Finish); Projected Score is the average simulated final FPts. "
-            "Hover over Avg. Finish, Projected Score or Win % for details."
-        )
-        display_df(
-            win_prob.drop(columns=["FPts per game", "Games Played", "Exp. Payout"]).rename(columns={"Draft Position": "Draft Pos."}),
-            height=520,
-            rank_rwg=True,
-            zebra=True,
-            owner_links="winprob",
-            scale_columns={
-                "Draft Pos.": (win_prob["Draft Position"].min(), win_prob["Draft Position"].max()),
-                **{
-                    col: (win_prob[col].min(), win_prob[col].max())
-                    for col in [
-                        "Avg. Finish", "Win %", "Top 3 %", "Last Place %", "Projected Score", "Active Players",
-                        "Expected Games Remaining",
-                    ]
-                },
-            },
-            reverse_columns={"Draft Pos.": True, "Avg. Finish": True, "Last Place %": True},
-        )
 
 
 with tab2:
