@@ -567,7 +567,7 @@ def get_espn_tournament_games():
 
 @st.cache_data(ttl=60, show_spinner=False)
 def get_todays_games(team_names):
-    """Today's (Eastern time) NCAA games where both teams are in `team_names`, as [{away, home, time}] by start."""
+    """Today's (Eastern time) NCAA games where both teams are in `team_names`, as [{away, home, time, network}] by start."""
     try:
         eastern = ZoneInfo("America/New_York")
     except Exception:
@@ -604,7 +604,12 @@ def get_todays_games(team_names):
                 when = start.strftime("%I:%M %p").lstrip("0") + " ET"
             else:
                 when = status.get("shortDetail", "")
-            games.append({"away": sides["away"], "home": sides["home"], "time": when})
+            networks = list(dict.fromkeys(
+                name for broadcast in event["competitions"][0].get("broadcasts", []) for name in broadcast.get("names", [])
+            ))
+            games.append({
+                "away": sides["away"], "home": sides["home"], "time": when, "network": ", ".join(networks) or "—",
+            })
         except Exception:
             continue
     return games
@@ -3755,7 +3760,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
 
         if "Matchup" in df.columns:
             def matchup_cell(value):
-                away, away_seed, home, home_seed, when = value
+                away, away_seed, home, home_seed = value
 
                 def team_label(team, seed):
                     seed_html = f'<b style="color:#4472C4">{html_lib.escape(str(seed))}</b> ' if seed is not None else ""
@@ -3764,11 +3769,19 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
                 return (
                     '<div class="team-cell matchup-line">'
                     + team_with_logo(away, team_label(away, away_seed), text_class="mu-text") + '<span>vs.</span>'
-                    + team_with_logo(home, team_label(home, home_seed), text_class="mu-text")
-                    + f'<span class="mu-text" style="color:#888;font-style:italic"><span>{html_lib.escape(when)}</span></span></div>'
+                    + team_with_logo(home, team_label(home, home_seed), text_class="mu-text") + '</div>'
                 )
 
             styled = styled.format(matchup_cell, subset=["Matchup"], escape=None)
+        if "Network" in df.columns:
+            def network_cell(value):
+                network, when = value
+                return (
+                    f'{html_lib.escape(network)}&nbsp; '
+                    f'<span style="color:#888;font-style:italic">{html_lib.escape(when)}</span>'
+                )
+
+            styled = styled.format(network_cell, subset=["Network"], escape=None)
         if "Torvik Spread" in df.columns:
             def spread_cell(value):
                 if value is None or isinstance(value, float):
@@ -4920,9 +4933,10 @@ with tab0:
         display_df(
             pd.DataFrame({
                 "Matchup": [
-                    (game["away"], team_seeds.get(game["away"]), game["home"], team_seeds.get(game["home"]), game["time"])
+                    (game["away"], team_seeds.get(game["away"]), game["home"], team_seeds.get(game["home"]))
                     for game in todays_games
                 ],
+                "Network": [(game["network"], game["time"]) for game in todays_games],
                 "Torvik Spread": [
                     predict_game(game["away"], team_seeds.get(game["away"]), game["home"], team_seeds.get(game["home"]))
                     for game in todays_games
