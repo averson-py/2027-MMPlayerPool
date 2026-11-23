@@ -26,7 +26,7 @@ from bracket_sim import (
 )
 from bracket_sim import norm_team_name as _norm_team_name
 from bracket_sim import torvik_key as _torvik_key
-from net_rankings import load_net_ranks
+from net_rankings import NET_SNAPSHOT_PATH, load_net_ranks
 
 
 # ---------------------------------------------------------------------
@@ -2968,12 +2968,21 @@ def _fetch_torvik_ratings(year):
     return ratings
 
 
-@st.cache_data(ttl=600, show_spinner=False)
+def _snapshot_stamp():
+    """Changes whenever a pushed ratings snapshot file is replaced, so cached ratings refresh at once."""
+    return tuple(p.stat().st_mtime_ns if p.exists() else 0 for p in (TORVIK_SNAPSHOT, NET_SNAPSHOT_PATH))
+
+
 def get_torvik_ratings(year):
     """(ratings, error, source): live BartTorvik ratings, else the repo snapshot, else nothing.
 
     source is "live", "snapshot:<date>" or ""; error is the live fetch failure (if any).
     """
+    return _load_torvik_ratings(year, _snapshot_stamp())
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _load_torvik_ratings(year, stamp):
     try:
         return _fetch_torvik_ratings(year), "", "live"
     except Exception as exc:
@@ -2993,12 +3002,16 @@ def get_torvik_ratings(year):
     return {}, reason, ""
 
 
-@st.cache_data(ttl=600, show_spinner=False)
 def get_odds_ratings(year):
     """(ratings for game odds, NET teams matched, NET data-through label).
 
     BartTorvik ratings, blended with the NCAA NET rankings once they are published for this season.
     """
+    return _load_odds_ratings(year, _snapshot_stamp())
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _load_odds_ratings(year, stamp):
     net_ranks, through = load_net_ranks(year)
     blended, matched = blend_net_rankings(get_torvik_ratings(year)[0], net_ranks)
     return blended, matched, through
@@ -4206,7 +4219,7 @@ try:
     _stamp_path = Path(workbook_path)
     _stamp_stat = _stamp_path.stat()
     _data_stamp = (
-        str(_stamp_path), _stamp_stat.st_mtime_ns, _stamp_stat.st_size, cloud_updated_time,
+        str(_stamp_path), _stamp_stat.st_mtime_ns, _stamp_stat.st_size, cloud_updated_time, _snapshot_stamp(),
     )
     _cached_data = st.session_state.get("_data_cache")
     if _cached_data is not None and _cached_data[0] == _data_stamp:
