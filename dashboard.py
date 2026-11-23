@@ -3929,7 +3929,7 @@ st.markdown(
     }
 
     .block-container,
-    div[data-testid="stMainBlockContainer"] {padding-top: 0 !important; padding-bottom: 2rem;}
+    div[data-testid="stMainBlockContainer"] {padding-top: 0 !important; padding-bottom: 2rem; padding-left: 1rem !important; padding-right: 1rem !important;}
     /* Phones leave safe-area margins outside the page; give them the page colour instead of white. */
     html, body {background: #F4F6FA;}
     /* Keep the main tab bar pinned while scrolling; nested tab lists inside panels are excluded. */
