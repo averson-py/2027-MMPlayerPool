@@ -3739,7 +3739,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
                         make_tip_cell(2 if tip_col in ("Avg. Finish", "Expected Games Remaining") else 1),
                         subset=[tip_col], escape=None,
                     )
-        if "Matchup" in df.columns or "Pred. Spread" in df.columns:
+        if "Matchup" in df.columns or "Torvik Spread" in df.columns:
             def team_with_logo(team, label_html=None, text_class=""):
                 url = get_logo_url(team)
                 img = (
@@ -3755,15 +3755,21 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
 
         if "Matchup" in df.columns:
             def matchup_cell(value):
-                away, home, when = value
+                away, away_seed, home, home_seed, when = value
+
+                def team_label(team, seed):
+                    seed_html = f'<b style="color:#4472C4">{html_lib.escape(str(seed))}</b> ' if seed is not None else ""
+                    return seed_html + html_lib.escape(str(team))
+
                 return (
-                    '<div class="team-cell matchup-line">' + team_with_logo(away, text_class="mu-text") + '<span>vs.</span>'
-                    + team_with_logo(home, text_class="mu-text")
+                    '<div class="team-cell matchup-line">'
+                    + team_with_logo(away, team_label(away, away_seed), text_class="mu-text") + '<span>vs.</span>'
+                    + team_with_logo(home, team_label(home, home_seed), text_class="mu-text")
                     + f'<span class="mu-text" style="color:#888;font-style:italic"><span>{html_lib.escape(when)}</span></span></div>'
                 )
 
             styled = styled.format(matchup_cell, subset=["Matchup"], escape=None)
-        if "Pred. Spread" in df.columns:
+        if "Torvik Spread" in df.columns:
             def spread_cell(value):
                 if value is None or isinstance(value, float):
                     return ""
@@ -3771,12 +3777,12 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
                 return (
                     '<div class="team-cell">' + team_with_logo(
                         winner,
-                        f'{html_lib.escape(winner)} <b style="color:#2E8B57">{html_lib.escape(line)}</b> '
-                        f'(<b style="color:#4472C4">{html_lib.escape(percent)}</b> Win Chance)',
+                        f'{html_lib.escape(winner)} <b style="color:#4472C4">{html_lib.escape(line)}</b> '
+                        f'(<b style="color:#2E8B57">{html_lib.escape(percent)}</b> Win Chance)',
                     ) + '</div>'
                 )
 
-            styled = styled.format(spread_cell, subset=["Pred. Spread"], escape=None)
+            styled = styled.format(spread_cell, subset=["Torvik Spread"], escape=None)
         if "Team" in df.columns or "Next Opponent" in df.columns:
             def team_cell(value):
                 if value is None or (isinstance(value, float) and pd.isna(value)):
@@ -3824,7 +3830,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .team-cell.matchup-line {gap: 0; transition: min-width 0.25s ease;}
             .matchup-line > * {margin-left: 8px;}
             .matchup-line > :first-child {margin-left: 0;}
-            .team-cell.matchup-line .mu-text {overflow: hidden; max-width: 9rem; transition: max-width 0.25s ease, margin-left 0.25s ease;}
+            .team-cell.matchup-line .mu-text {overflow: hidden; max-width: 11rem; transition: max-width 0.25s ease, margin-left 0.25s ease;}
             .photo-table-wrap.scrolled .matchup-line .mu-text {max-width: 0; margin-left: 0;}
             .team-logo-sm {width: 36px; height: 36px; object-fit: contain; flex-shrink: 0; display: inline-block;}
             .player-photo {
@@ -4913,8 +4919,11 @@ with tab0:
         }
         display_df(
             pd.DataFrame({
-                "Matchup": [(game["away"], game["home"], game["time"]) for game in todays_games],
-                "Pred. Spread": [
+                "Matchup": [
+                    (game["away"], team_seeds.get(game["away"]), game["home"], team_seeds.get(game["home"]), game["time"])
+                    for game in todays_games
+                ],
+                "Torvik Spread": [
                     predict_game(game["away"], team_seeds.get(game["away"]), game["home"], team_seeds.get(game["home"]))
                     for game in todays_games
                 ],
