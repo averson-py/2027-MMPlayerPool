@@ -3827,8 +3827,8 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .team-cell.matchup-line span {white-space: nowrap; min-width: auto; overflow-wrap: normal;}
             .photo-table-wrap.scrolled .matchup-line {min-width: 0;}
             .photo-table-wrap.scrolled:has(.matchup-line) table {min-width: calc(100% + 14px);}
-            .team-cell.matchup-line {gap: 0; transition: min-width 0.25s ease;}
-            .matchup-line > * {margin-left: 8px;}
+            .team-cell.matchup-line {gap: 0; width: max-content; transition: min-width 0.25s ease;}
+            .matchup-line > * {margin-left: 8px; flex-shrink: 0;}
             .matchup-line > :first-child {margin-left: 0;}
             .team-cell.matchup-line .mu-text {overflow: hidden; max-width: 14rem; padding-right: 4px; transition: max-width 0.25s ease, margin-left 0.25s ease, padding-right 0.25s ease;}
             .photo-table-wrap.scrolled .matchup-line .mu-text {max-width: 0; margin-left: 0; padding-right: 0;}
