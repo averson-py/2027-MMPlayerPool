@@ -3789,7 +3789,10 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
                     + f'<span>{html_lib.escape(name)}</span></span>'
                     for name, logo in networks
                 ) or '—'
-                return f'{shown}&nbsp; <span style="color:#888;font-style:italic">{html_lib.escape(when)}</span>'
+                return (
+                    f'<div class="net-cell">{shown}'
+                    f'<span style="color:#888;font-style:italic">{html_lib.escape(when)}</span></div>'
+                )
 
             styled = styled.format(network_cell, subset=["Network"], escape=None)
         if "Torvik Spread" in df.columns:
@@ -3856,7 +3859,9 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .team-cell.matchup-line .mu-text {overflow: hidden; max-width: 14rem; padding-right: 4px; transition: max-width 0.25s ease, margin-left 0.25s ease, padding-right 0.25s ease;}
             .photo-table-wrap.scrolled .matchup-line .mu-text {max-width: 0; margin-left: 0; padding-right: 0;}
             .team-logo-sm {width: 36px; height: 36px; object-fit: contain; flex-shrink: 0; display: inline-block;}
-            .net-item {display: inline-flex; align-items: center; gap: 6px; margin-right: 6px; vertical-align: middle;}
+            .net-cell {display: flex; align-items: center; gap: 10px; width: max-content; white-space: nowrap;}
+            .net-cell > * {flex-shrink: 0;}
+            .net-item {display: inline-flex; align-items: center; gap: 6px;}
             .net-logo {width: 56px; height: 26px; object-fit: contain; flex-shrink: 0;}
             .player-photo {
                 position: absolute; left: 0; bottom: 0; top: auto; height: 60px; width: auto; max-width: 84px;
