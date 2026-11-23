@@ -4947,10 +4947,21 @@ with tab0:
             team: seed for seed, region_teams in data["bracket_teams"].items()
             for teams in region_teams.values() for team in teams
         }
+        # Drafted players on either team, not counting anyone listed as out.
+        drafted_by_team = {}
+        for draft_row in data["draft_rows"]:
+            player_stats = data["player_stats"].get(draft_row["player_name"].casefold(), {})
+            if player_stats.get("Team") and injury_status(draft_row["player_name"], player_stats) not in ("o", "out"):
+                key = _norm_team_name(player_stats["Team"])
+                drafted_by_team[key] = drafted_by_team.get(key, 0) + 1
         display_df(
             pd.DataFrame({
                 "Matchup": [
                     (game["away"], team_seeds.get(game["away"]), game["home"], team_seeds.get(game["home"]))
+                    for game in todays_games
+                ],
+                "Active Players": [
+                    drafted_by_team.get(_norm_team_name(game["away"]), 0) + drafted_by_team.get(_norm_team_name(game["home"]), 0)
                     for game in todays_games
                 ],
                 "Network": [(game["networks"], game["time"]) for game in todays_games],
