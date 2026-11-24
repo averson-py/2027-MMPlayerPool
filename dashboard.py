@@ -3787,11 +3787,11 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
                     middle = '<span>vs.</span>'
                 return (
                     '<div class="team-cell matchup-line">'
-                    '<div class="mu-side mu-away">' + team_with_logo(away, team_label(away, away_seed), text_class="mu-text") + '</div>'
+                    '<div class="mu-side mu-away">' + team_with_logo(away, team_label(away, away_seed), text_class="mu-text", logo_last=True) + '</div>'
                     '<div class="mu-mid"><span class="mu-end">' + away_score + '</span>'
                     '<span class="mu-center">' + middle + '</span>'
                     '<span class="mu-start">' + home_score + '</span></div>'
-                    '<div class="mu-side mu-home">' + team_with_logo(home, team_label(home, home_seed), text_class="mu-text", logo_last=True) + '</div>'
+                    '<div class="mu-side mu-home">' + team_with_logo(home, team_label(home, home_seed), text_class="mu-text") + '</div>'
                     '</div>'
                 )
 
@@ -3883,8 +3883,8 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .photo-table-wrap.scrolled .matchup-line .mu-text {max-width: 0; margin-left: 0; padding-left: 0; padding-right: 0;}
             .team-cell.matchup-line .mu-vs-live {overflow: hidden; max-width: 0; margin-left: 0; transition: max-width 0.25s ease;}
             .photo-table-wrap.scrolled .matchup-line .mu-vs-live {max-width: 3rem;}
-            .matchup-line .mu-home .team-logo-sm {transition: margin-left 0.25s ease;}
-            .photo-table-wrap.scrolled .matchup-line .mu-home > * + * {margin-left: 0;}
+            .matchup-line .mu-side .team-logo-sm {transition: margin-left 0.25s ease;}
+            .photo-table-wrap.scrolled .matchup-line .mu-side > * + * {margin-left: 0;}
             .team-logo-sm {width: 36px; height: 36px; object-fit: contain; flex-shrink: 0; display: inline-block;}
             .net-cell {display: flex; align-items: center; gap: 10px; width: max-content; white-space: nowrap;}
             .net-cell > * {flex-shrink: 0;}
