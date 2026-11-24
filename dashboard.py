@@ -3844,8 +3844,8 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
                 return (
                     '<div class="team-cell">' + team_with_logo(
                         winner,
-                        f'{html_lib.escape(winner)} <b style="color:#4472C4">{html_lib.escape(line)}</b> '
-                        f'(<b style="color:#2E8B57">{html_lib.escape(percent)}</b> Win Chance)',
+                        f'<span class="sp-part">{html_lib.escape(winner)} <b style="color:#4472C4">{html_lib.escape(line)}</b></span> '
+                        f'<span class="sp-part">(<b style="color:#2E8B57">{html_lib.escape(percent)}</b> Win Chance)</span>',
                     ) + '</div>'
                 )
 
@@ -3897,6 +3897,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             [class*="st-key-ownerlinks_"] {display: none;}
             .team-cell {display: flex; align-items: center; gap: 8px; min-width: 160px; padding-left: 10px;}
             .team-cell span {white-space: normal; min-width: 0; overflow-wrap: anywhere;}
+            .team-cell .sp-part {display: inline-block; white-space: nowrap; overflow-wrap: normal;}
             .team-cell.matchup-line span {white-space: nowrap; min-width: auto; overflow-wrap: normal;}
             .team-cell.matchup-line {display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; column-gap: 8px; width: 100%; min-width: max-content; margin: 0; padding-left: 0;}
             .matchup-line .mu-away, .matchup-line .mu-home {justify-self: center;}
