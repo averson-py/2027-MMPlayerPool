@@ -567,7 +567,7 @@ def get_espn_tournament_games():
 
 @st.cache_data(ttl=60, show_spinner=False)
 def get_todays_games(team_names):
-    """Today's (Eastern time) NCAA games where both teams are in `team_names`, as [{away, home, time, networks: [(name, logo URL)], score: (away, home, is_live) or None}] by start."""
+    """Today's (Eastern time) NCAA games where both teams are in `team_names`, as [{away, home, time (start), clock (live status), networks: [(name, logo URL)], score: (away, home, is_live) or None}] by start."""
     try:
         eastern = ZoneInfo("America/New_York")
     except Exception:
@@ -601,11 +601,8 @@ def get_todays_games(team_names):
             if not sides.get("away") or not sides.get("home"):
                 continue
             status = event["status"]["type"]
-            if status["state"] == "pre":
-                start = datetime.fromisoformat(event["date"].replace("Z", "+00:00")).astimezone(eastern)
-                when = start.strftime("%I:%M %p").lstrip("0") + " ET"
-            else:
-                when = status.get("shortDetail", "")
+            start = datetime.fromisoformat(event["date"].replace("Z", "+00:00")).astimezone(eastern)
+            when = start.strftime("%I:%M %p").lstrip("0") + " ET"
             competition = event["competitions"][0]
             names = list(dict.fromkeys(
                 name for broadcast in competition.get("broadcasts", []) for name in broadcast.get("names", [])
@@ -615,7 +612,7 @@ def get_todays_games(team_names):
                 for geo in competition.get("geoBroadcasts", [])
             }
             games.append({
-                "away": sides["away"], "home": sides["home"], "time": when,
+                "away": sides["away"], "home": sides["home"], "time": when, "clock": status.get("shortDetail", ""),
                 "networks": [(name, logos.get(name) or "") for name in names],
                 "score": (
                     (int(scores["away"]), int(scores["home"]), status["state"] == "in")
@@ -3757,7 +3754,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
                         subset=[tip_col], escape=None,
                     )
         if "Matchup" in df.columns or "Torvik Spread" in df.columns:
-            def team_with_logo(team, label_html=None, text_class=""):
+            def team_with_logo(team, label_html=None, text_class="", logo_last=False):
                 url = get_logo_url(team)
                 img = (
                     f'<img src="{html_lib.escape(str(url))}" class="team-logo-sm" '
@@ -3765,50 +3762,50 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
                     if url else '<span class="team-logo-sm"></span>'
                 )
                 label = label_html or html_lib.escape(str(team))
-                if text_class:
-                    label = f'<span class="{text_class}"><span>{label}</span></span>'
-                    return img + label
-                return img + '<span>' + label + '</span>'
+                label = f'<span class="{text_class}"><span>{label}</span></span>' if text_class else f'<span>{label}</span>'
+                return label + img if logo_last else img + label
 
         if "Matchup" in df.columns:
             def matchup_cell(value):
-                away, away_seed, home, home_seed = value
+                away, away_seed, home, home_seed, score, when = value
 
                 def team_label(team, seed):
                     seed_html = f'<b style="color:#4472C4">{html_lib.escape(str(seed))}</b> ' if seed is not None else ""
                     return seed_html + html_lib.escape(str(team))
 
+                away_score = home_score = ""
+                if score is not None:
+                    away_score = f'<span class="mu-text"><span class="mu-score">{int(score[0])}</span></span>'
+                    home_score = f'<span class="mu-text"><span class="mu-score">{int(score[1])}</span></span>'
+                # `when` is the start time before tip-off or the game clock while live; finished games show "vs.".
+                if when:
+                    middle = (
+                        f'<span class="mu-text" style="color:#888;font-style:italic"><span>{html_lib.escape(when)}</span></span>'
+                        '<span class="mu-vs-live">vs.</span>'
+                    )
+                else:
+                    middle = '<span>vs.</span>'
                 return (
                     '<div class="team-cell matchup-line">'
-                    + team_with_logo(away, team_label(away, away_seed), text_class="mu-text") + '<span>vs.</span>'
-                    + team_with_logo(home, team_label(home, home_seed), text_class="mu-text") + '</div>'
+                    '<div class="mu-side mu-away">' + team_with_logo(away, team_label(away, away_seed), text_class="mu-text") + '</div>'
+                    '<div class="mu-mid"><span class="mu-end">' + away_score + '</span>'
+                    '<span class="mu-center">' + middle + '</span>'
+                    '<span class="mu-start">' + home_score + '</span></div>'
+                    '<div class="mu-side mu-home">' + team_with_logo(home, team_label(home, home_seed), text_class="mu-text", logo_last=True) + '</div>'
+                    '</div>'
                 )
 
             styled = styled.format(matchup_cell, subset=["Matchup"], escape=None)
-        if "Score" in df.columns:
-            def score_cell(value):
-                if value is None or isinstance(value, float):
-                    return '<span style="color:#888">—</span>'
-                away, home, live = value
-                dot = '<span style="color:#D32F2F">&#9679;</span> ' if live else ''
-                shown = [f'<b>{mine}</b>' if mine > other else str(mine) for mine, other in ((away, home), (home, away))]
-                return f'{dot}{shown[0]} &ndash; {shown[1]}'
-
-            styled = styled.format(score_cell, subset=["Score"], escape=None)
         if "Network" in df.columns:
             def network_cell(value):
-                networks, when = value
                 shown = ''.join(
                     '<span class="net-item">'
                     + (f'<img src="{html_lib.escape(logo)}" class="net-logo" loading="lazy" '
                        'onerror="this.style.display=\'none\'">' if logo else '')
                     + f'<span>{html_lib.escape(name)}</span></span>'
-                    for name, logo in networks
+                    for name, logo in value
                 ) or '—'
-                return (
-                    f'<div class="net-cell">{shown}'
-                    f'<span style="color:#888;font-style:italic">{html_lib.escape(when)}</span></div>'
-                )
+                return f'<div class="net-cell">{shown}</div>'
 
             styled = styled.format(network_cell, subset=["Network"], escape=None)
         if "Torvik Spread" in df.columns:
@@ -3867,13 +3864,27 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .team-cell {display: flex; align-items: center; gap: 8px; min-width: 160px; padding-left: 10px;}
             .team-cell span {white-space: normal; min-width: 0; overflow-wrap: anywhere;}
             .team-cell.matchup-line span {white-space: nowrap; min-width: auto; overflow-wrap: normal;}
-            .photo-table-wrap.scrolled .matchup-line {min-width: 0;}
             .photo-table-wrap.scrolled:has(.matchup-line) table {min-width: calc(100% + 14px);}
-            .team-cell.matchup-line {gap: 0; width: max-content; transition: min-width 0.25s ease;}
-            .matchup-line > * {margin-left: 8px; flex-shrink: 0;}
-            .matchup-line > :first-child {margin-left: 0;}
-            .team-cell.matchup-line .mu-text {overflow: hidden; max-width: 14rem; padding-right: 4px; transition: max-width 0.25s ease, margin-left 0.25s ease, padding-right 0.25s ease;}
-            .photo-table-wrap.scrolled .matchup-line .mu-text {max-width: 0; margin-left: 0; padding-right: 0;}
+            .photo-table-wrap.scrolled .matchup-line {min-width: 0;}
+            .team-cell.matchup-line {display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; column-gap: 8px; width: max-content; margin: 0 auto; padding-left: 0; transition: min-width 0.25s ease;}
+            .matchup-line .mu-away {justify-self: end;}
+            .matchup-line .mu-home {justify-self: start;}
+            .matchup-line .mu-score {font-size: 1.35em; font-weight: 800; color: #1F2937;}
+            .matchup-line .mu-side {display: flex; align-items: center;}
+            .matchup-line .mu-mid {display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; column-gap: 8px; transition: column-gap 0.25s ease;}
+            .photo-table-wrap.scrolled .matchup-line .mu-mid {column-gap: 0;}
+            .matchup-line .mu-end, .matchup-line .mu-start, .matchup-line .mu-center {display: flex; align-items: center;}
+            .matchup-line .mu-end {justify-content: flex-end;}
+            .matchup-line .mu-start {justify-content: flex-start;}
+            .matchup-line .mu-side > * + * {margin-left: 8px;}
+            .matchup-line .mu-side > *, .matchup-line .mu-center > * {flex-shrink: 0;}
+            .team-cell.matchup-line .mu-text {overflow: hidden; max-width: 14rem; padding-right: 4px; transition: max-width 0.25s ease, margin-left 0.25s ease, padding 0.25s ease;}
+            .team-cell.matchup-line .mu-mid .mu-text {padding: 0 2px;}
+            .photo-table-wrap.scrolled .matchup-line .mu-text {max-width: 0; margin-left: 0; padding-left: 0; padding-right: 0;}
+            .team-cell.matchup-line .mu-vs-live {overflow: hidden; max-width: 0; margin-left: 0; transition: max-width 0.25s ease;}
+            .photo-table-wrap.scrolled .matchup-line .mu-vs-live {max-width: 3rem;}
+            .matchup-line .mu-home .team-logo-sm {transition: margin-left 0.25s ease;}
+            .photo-table-wrap.scrolled .matchup-line .mu-home > * + * {margin-left: 0;}
             .team-logo-sm {width: 36px; height: 36px; object-fit: contain; flex-shrink: 0; display: inline-block;}
             .net-cell {display: flex; align-items: center; gap: 10px; width: max-content; white-space: nowrap;}
             .net-cell > * {flex-shrink: 0;}
@@ -4973,15 +4984,17 @@ with tab0:
         display_df(
             pd.DataFrame({
                 "Matchup": [
-                    (game["away"], team_seeds.get(game["away"]), game["home"], team_seeds.get(game["home"]))
+                    (
+                        game["away"], team_seeds.get(game["away"]), game["home"], team_seeds.get(game["home"]), game["score"],
+                        game["time"] if game["score"] is None else (game["clock"] if game["score"][2] else ""),
+                    )
                     for game in todays_games
                 ],
-                "Score": [game["score"] for game in todays_games],
                 "Active Players": [
                     drafted_by_team.get(_norm_team_name(game["away"]), 0) + drafted_by_team.get(_norm_team_name(game["home"]), 0)
                     for game in todays_games
                 ],
-                "Network": [(game["networks"], game["time"]) for game in todays_games],
+                "Network": [game["networks"] for game in todays_games],
                 "Torvik Spread": [
                     predict_game(game["away"], team_seeds.get(game["away"]), game["home"], team_seeds.get(game["home"]))
                     for game in todays_games
