@@ -3872,7 +3872,6 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .team-cell {display: flex; align-items: center; gap: 8px; min-width: 160px; padding-left: 10px;}
             .team-cell span {white-space: normal; min-width: 0; overflow-wrap: anywhere;}
             .team-cell.matchup-line span {white-space: nowrap; min-width: auto; overflow-wrap: normal;}
-            .photo-table-wrap.scrolled:has(.matchup-line) table {min-width: calc(100% + 14px);}
             .photo-table-wrap.scrolled .matchup-line {min-width: 0;}
             .team-cell.matchup-line {display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; column-gap: 8px; width: max-content; margin: 0 auto; padding-left: 0; transition: min-width 0.25s ease;}
             .matchup-line .mu-away {justify-self: end;}
@@ -5001,7 +5000,7 @@ with tab0:
                 "Matchup": [
                     (
                         game["away"], team_seeds.get(game["away"]), game["home"], team_seeds.get(game["home"]), game["score"],
-                        game["time"] if game["score"] is None else (game["clock"] or "Final"),
+                        game["time"] if game["score"] is None else (game["clock"] or "FINAL"),
                     )
                     for game in todays_games
                 ],
@@ -6186,12 +6185,12 @@ components.html(
             const el = e.target;
             if (!el || !el.classList || !el.classList.contains('photo-table-wrap')) return;
             const scrolled = el.classList.contains('scrolled');
-            // The Matchup table shrinks until it fits, so it keeps a small scroll range (see CSS) and needs a lower trigger.
+            // The Matchup table shrinks until it fits; it only expands again by pulling past the left edge (see below).
             const matchupTable = !!el.querySelector('.matchup-line');
             const trigger = matchupTable ? 12 : 24;
             // Only shrink when there is plenty of sideways room; shrinking a barely-too-wide table removes its scroll range and flickers.
             if (!scrolled && el.scrollLeft > trigger && (matchupTable || el.scrollWidth - el.clientWidth > 110)) el.classList.add('scrolled');
-            else if (scrolled && el.scrollLeft < 4) el.classList.remove('scrolled');
+            else if (scrolled && !matchupTable && el.scrollLeft < 4) el.classList.remove('scrolled');
             const heads = Array.from(el.querySelectorAll('thead th'));
             const nameTh = heads.find(h => h.textContent.trim() === 'Player Name');
             const teamIdx = heads.findIndex(h => h.textContent.trim() === 'Team');
@@ -6201,8 +6200,43 @@ components.html(
             el.classList.toggle('team-passed', passed);
         };
         d.addEventListener('scroll', onScroll, true);
+        // A collapsed Matchup table expands only after the user keeps dragging or wheeling past the left edge.
+        const PULL = 60;
+        let pull = 0, lastX = null, pullTimer = null;
+        const pullTarget = e => {
+            const w = e.target.closest && e.target.closest('.photo-table-wrap.scrolled');
+            return w && w.querySelector('.matchup-line') ? w : null;
+        };
+        const expandTable = w => { w.classList.remove('scrolled'); pull = 0; };
+        const onTouchStart = e => { lastX = e.touches[0].clientX; pull = 0; };
+        const onTouchMove = e => {
+            const x = e.touches[0].clientX, dx = lastX === null ? 0 : x - lastX;
+            lastX = x;
+            const w = pullTarget(e);
+            if (!w) { pull = 0; return; }
+            if (w.scrollLeft <= 0 && dx > 0) { pull += dx; if (pull > PULL) expandTable(w); }
+            else if (dx < 0) pull = 0;
+        };
+        const onTouchEnd = () => { pull = 0; lastX = null; };
+        const onWheel = e => {
+            const w = pullTarget(e);
+            if (!w) return;
+            if (w.scrollLeft <= 0 && e.deltaX < 0) { pull += -e.deltaX; if (pull > PULL * 1.5) expandTable(w); }
+            else pull = 0;
+            clearTimeout(pullTimer);
+            pullTimer = setTimeout(() => { pull = 0; }, 400);
+        };
+        const passiveCapture = {passive: true, capture: true};
+        d.addEventListener('touchstart', onTouchStart, passiveCapture);
+        d.addEventListener('touchmove', onTouchMove, passiveCapture);
+        d.addEventListener('touchend', onTouchEnd, passiveCapture);
+        d.addEventListener('wheel', onWheel, passiveCapture);
         p.__mmFreezeOff = () => {
             d.removeEventListener('scroll', onScroll, true);
+            d.removeEventListener('touchstart', onTouchStart, passiveCapture);
+            d.removeEventListener('touchmove', onTouchMove, passiveCapture);
+            d.removeEventListener('touchend', onTouchEnd, passiveCapture);
+            d.removeEventListener('wheel', onWheel, passiveCapture);
             d.removeEventListener('click', onOwnerClick, true);
             d.removeEventListener('mouseover', onTipOver);
             d.removeEventListener('mouseout', onTipOut);
