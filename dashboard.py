@@ -565,7 +565,7 @@ def get_espn_tournament_games():
     return games
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=20, show_spinner=False)
 def get_todays_games(team_names):
     """Today's (Eastern time) NCAA games where both teams are in `team_names`, as [{away, home, time (start), clock (live status), networks: [(name, logo URL)], score: (away, home, is_live) or None}] by start."""
     try:
@@ -4979,7 +4979,12 @@ with tab0:
         for teams in region_teams.values() for team in teams
     }))
     todays_games = get_todays_games(team_list_names) if team_list_names else []
-    if todays_games:
+
+    def render_todays_games():
+        games = get_todays_games(team_list_names) if team_list_names else []
+        if not games:
+            st.info("No games today between two teams on the TeamList sheet.")
+            return
         st.caption(
             "Predicted spreads use "
             "BartTorvik ratings at a neutral site, so home-court advantage is not included."
@@ -5002,24 +5007,26 @@ with tab0:
                         game["away"], team_seeds.get(game["away"]), game["home"], team_seeds.get(game["home"]), game["score"],
                         game["time"] if game["score"] is None else (game["clock"] or "FINAL"),
                     )
-                    for game in todays_games
+                    for game in games
                 ],
                 "Drafted Players": [
                     drafted_by_team.get(_norm_team_name(game["away"]), 0) + drafted_by_team.get(_norm_team_name(game["home"]), 0)
-                    for game in todays_games
+                    for game in games
                 ],
-                "Network": [game["networks"] for game in todays_games],
+                "Network": [game["networks"] for game in games],
                 "Torvik Spread": [
                     predict_game(game["away"], team_seeds.get(game["away"]), game["home"], team_seeds.get(game["home"]))
-                    for game in todays_games
+                    for game in games
                 ],
             }),
-            height=min(80 + 38 * len(todays_games), 600),
+            height=min(80 + 38 * len(games), 600),
             zebra=True,
             html=True,
         )
-    else:
-        st.info("No games today between two teams on the TeamList sheet.")
+
+    # A fragment reruns on its own timer without reloading the page, so only this table polls (until every game is final).
+    poll_games = any(game["score"] is None or game["score"][2] for game in todays_games)
+    st.fragment(run_every=30 if poll_games else None)(render_todays_games)()
 
 with tab1:
     st.subheader("🏆 Tournament Standings")
