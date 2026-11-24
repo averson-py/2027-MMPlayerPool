@@ -3774,25 +3774,32 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
                     return seed_html + html_lib.escape(str(team))
 
                 away_score = home_score = ""
+                away_lost = home_lost = False
                 if score is not None:
-                    away_score = f'<span class="mu-text"><span class="mu-score">{int(score[0])}</span></span>'
-                    home_score = f'<span class="mu-text"><span class="mu-score">{int(score[1])}</span></span>'
+                    away_lost = not score[2] and score[0] < score[1]
+                    home_lost = not score[2] and score[1] < score[0]
+                    away_score = f'<span class="mu-text"><span class="mu-score{" mu-score-lost" if away_lost else ""}">{int(score[0])}</span></span>'
+                    home_score = f'<span class="mu-text"><span class="mu-score{" mu-score-lost" if home_lost else ""}">{int(score[1])}</span></span>'
                 # `when` is the start time before tip-off or the game clock while live; finished games show "vs.".
                 if when:
-                    live_dot = '<span class="mu-dot"></span>' if score is not None and score[2] else ""
                     middle = (
-                        f'<span class="mu-text" style="color:#888;font-style:italic"><span class="mu-clock">{live_dot}<span>{html_lib.escape(when)}</span></span></span>'
+                        f'<span class="mu-text" style="color:#888;font-style:italic"><span>{html_lib.escape(when)}</span></span>'
                         '<span class="mu-vs-live">vs.</span>'
                     )
+                    if score is not None and score[2]:
+                        middle = (
+                            '<span class="mu-livebox"><span class="mu-dot"></span>'
+                            '<span class="mu-livebox-row">' + middle + '</span></span>'
+                        )
                 else:
                     middle = '<span>vs.</span>'
                 return (
                     '<div class="team-cell matchup-line">'
-                    '<div class="mu-side mu-away">' + team_with_logo(away, team_label(away, away_seed), text_class="mu-text", logo_last=True) + '</div>'
+                    '<div class="mu-side mu-away' + (' mu-lost' if away_lost else '') + '">' + team_with_logo(away, team_label(away, away_seed), text_class="mu-text", logo_last=True) + '</div>'
                     '<div class="mu-mid"><span class="mu-end">' + away_score + '</span>'
                     '<span class="mu-center">' + middle + '</span>'
                     '<span class="mu-start">' + home_score + '</span></div>'
-                    '<div class="mu-side mu-home">' + team_with_logo(home, team_label(home, home_seed), text_class="mu-text") + '</div>'
+                    '<div class="mu-side mu-home' + (' mu-lost' if home_lost else '') + '">' + team_with_logo(home, team_label(home, home_seed), text_class="mu-text") + '</div>'
                     '</div>'
                 )
 
@@ -3871,11 +3878,15 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .matchup-line .mu-away {justify-self: end;}
             .matchup-line .mu-home {justify-self: start;}
             .matchup-line .mu-score {font-size: 1.35em; font-weight: 800; color: #1F2937;}
+            .matchup-line .mu-score.mu-score-lost {font-weight: 400; color: #999;}
+            .matchup-line .mu-lost .team-logo-sm {filter: grayscale(100%); opacity: 0.5;}
+            .matchup-line .mu-lost .mu-text, .matchup-line .mu-lost .mu-text b {color: #999 !important;}
             .matchup-line .mu-side {display: flex; align-items: center;}
             .matchup-line .mu-mid {display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; column-gap: 8px; transition: column-gap 0.25s ease;}
             .photo-table-wrap.scrolled .matchup-line .mu-mid {column-gap: 0;}
             .matchup-line .mu-end, .matchup-line .mu-start, .matchup-line .mu-center {display: flex; align-items: center;}
-            .matchup-line .mu-clock {display: flex; flex-direction: column; align-items: center; gap: 2px;}
+            .matchup-line .mu-livebox {display: flex; flex-direction: column; align-items: center; gap: 2px;}
+            .matchup-line .mu-livebox-row {display: flex; align-items: center;}
             .matchup-line .mu-dot {width: 7px; height: 7px; border-radius: 50%; background: #D32F2F;}
             .matchup-line .mu-end {justify-content: flex-end;}
             .matchup-line .mu-start {justify-content: flex-start;}
@@ -4478,6 +4489,7 @@ if dark_mode:
         hr {border-color: #374151 !important;}
         .photo-table-wrap, [data-testid="stDataFrame"] {filter: invert(1) hue-rotate(180deg);}
         .photo-table-wrap img, .photo-table-wrap .player-photo, [data-testid="stDataFrame"] img {filter: invert(1) hue-rotate(180deg);}
+        .photo-table-wrap .matchup-line .mu-lost .team-logo-sm {filter: invert(1) hue-rotate(180deg) grayscale(100%);}
         .photo-table-wrap .emoji-fix {display: inline-block; filter: invert(1) hue-rotate(180deg);}
         </style>
         """,
