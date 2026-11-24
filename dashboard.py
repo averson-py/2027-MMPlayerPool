@@ -3982,10 +3982,10 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             freeze_css = (
                 f".photo-table-wrap.freeze-{name_col} th:nth-child({name_col}),"
                 f".photo-table-wrap.freeze-{name_col} td:nth-child({name_col})"
-                "{position: sticky; left: -1px; z-index: 3;}"
+                "{position: sticky; left: var(--mm-stick, -1px); z-index: 3;}"
                 f".photo-table-wrap.freeze-{name_col}.scrolled th:nth-child({name_col}),"
                 f".photo-table-wrap.freeze-{name_col}.scrolled td:nth-child({name_col})"
-                "{box-shadow: 2px 0 4px rgba(0,0,0,0.15);}"
+                "{left: -1px; box-shadow: 2px 0 4px rgba(0,0,0,0.15); transition: left 0.25s ease;}"
             )
         st.markdown(
             f'<style>{freeze_css}</style>'
@@ -6212,13 +6212,22 @@ components.html(
             if (btn) btn.click();
         };
         d.addEventListener('click', onOwnerClick, true);
+        // A Matchup column wider than the screen scrolls along until its right edge shows, then pins (and collapses).
+        const updateStick = el => {
+            const first = el.querySelector('tbody tr td');
+            if (!first || !el.querySelector('.matchup-line')) return 0;
+            const overflow = Math.max(0, Math.ceil(first.offsetWidth - el.clientWidth));
+            el.style.setProperty('--mm-stick', -(overflow + 1) + 'px');
+            return overflow;
+        };
         const onScroll = e => {
             const el = e.target;
             if (!el || !el.classList || !el.classList.contains('photo-table-wrap')) return;
             const scrolled = el.classList.contains('scrolled');
             // The Matchup table shrinks until it fits; it only expands again by pulling past the left edge (see below).
             const matchupTable = !!el.querySelector('.matchup-line');
-            const trigger = matchupTable ? 12 : 24;
+            const stickOverflow = matchupTable && !scrolled ? updateStick(el) : 0;
+            const trigger = matchupTable ? (stickOverflow > 0 ? stickOverflow + 24 : 12) : 24;
             // Only shrink when there is plenty of sideways room; shrinking a barely-too-wide table removes its scroll range and flickers.
             if (!scrolled && el.scrollLeft > trigger && (matchupTable || el.scrollWidth - el.clientWidth > 110)) el.classList.add('scrolled');
             else if (scrolled && !matchupTable && el.scrollLeft < 4) el.classList.remove('scrolled');
@@ -6239,7 +6248,11 @@ components.html(
             return w && w.querySelector('.matchup-line') ? w : null;
         };
         const expandTable = w => { w.classList.remove('scrolled'); pull = 0; };
-        const onTouchStart = e => { lastX = e.touches[0].clientX; pull = 0; };
+        const onTouchStart = e => {
+            lastX = e.touches[0].clientX; pull = 0;
+            const t = e.target.closest && e.target.closest('.photo-table-wrap');
+            if (t && !t.classList.contains('scrolled')) updateStick(t);
+        };
         const onTouchMove = e => {
             const x = e.touches[0].clientX, dx = lastX === null ? 0 : x - lastX;
             lastX = x;
@@ -6250,6 +6263,8 @@ components.html(
         };
         const onTouchEnd = () => { pull = 0; lastX = null; };
         const onWheel = e => {
+            const t = e.target.closest && e.target.closest('.photo-table-wrap');
+            if (t && !t.classList.contains('scrolled')) updateStick(t);
             const w = pullTarget(e);
             if (!w) return;
             if (w.scrollLeft <= 0 && e.deltaX < 0) { pull += -e.deltaX; if (pull > PULL * 1.5) expandTable(w); }
