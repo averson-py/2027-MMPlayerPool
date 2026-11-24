@@ -4934,11 +4934,11 @@ with tab0:
         if recent_rows:
             winner_key = str(latest["Winner"]).strip().casefold()
             recent_df = pd.DataFrame(recent_rows)
-            recent_df["_loser"] = recent_df["Team"].astype(str).str.strip().str.casefold() != winner_key
+            recent_df["_team_out"] = recent_df["Team"].astype(str).str.strip().str.casefold() != winner_key
             recent_df = recent_df.sort_values(
-                ["_loser", "FPts"], ascending=[True, False], kind="stable"
-            ).drop(columns=["_loser"])
-            recent_df = recent_df[["Player Name", "_photo", "Team", "Next Opponent", "Team Owner", "FPts", "PTS", "REB", "AST"]]
+                ["_team_out", "FPts"], ascending=[True, False], kind="stable"
+            )
+            recent_df = recent_df[["Player Name", "_photo", "Team", "Next Opponent", "Team Owner", "FPts", "PTS", "REB", "AST", "_team_out"]]
             for col in ("FPts", "PTS", "REB", "AST"):
                 recent_df[col] = recent_df[col].apply(
                     lambda x: f"{float(x):.1f}" if col == "FPts" and pd.notna(x)
