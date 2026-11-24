@@ -3892,10 +3892,14 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .team-cell {display: flex; align-items: center; gap: 8px; min-width: 160px; padding-left: 10px;}
             .team-cell span {white-space: normal; min-width: 0; overflow-wrap: anywhere;}
             .team-cell.matchup-line span {white-space: nowrap; min-width: auto; overflow-wrap: normal;}
-            .photo-table-wrap.scrolled .matchup-line {min-width: 0;}
-            .team-cell.matchup-line {display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; column-gap: 8px; width: max-content; margin: 0 auto; padding-left: 0; transition: min-width 0.25s ease;}
-            .matchup-line .mu-away {justify-self: end;}
-            .matchup-line .mu-home {justify-self: start;}
+            .team-cell.matchup-line {display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; column-gap: 8px; width: 100%; min-width: max-content; margin: 0; padding-left: 0;}
+            .matchup-line .mu-away, .matchup-line .mu-home {justify-self: center;}
+            @media (min-width: 1100px) {
+                .team-cell.matchup-line {grid-template-columns: 1fr 10.5rem 1fr; column-gap: clamp(8px, 2.5vw, 56px); transition: grid-template-columns 0.25s ease, column-gap 0.25s ease;}
+                .matchup-line .mu-away {justify-self: end;}
+                .matchup-line .mu-home {justify-self: start;}
+                .photo-table-wrap.scrolled .team-cell.matchup-line {grid-template-columns: 1fr 1.5rem 1fr; column-gap: 8px;}
+            }
             .matchup-line .mu-score {font-size: 1.35em; font-weight: 800; color: #1F2937;}
             .matchup-line .mu-score.mu-score-lost {font-weight: 400; color: #999;}
             .matchup-line .mu-lost .team-logo-sm {filter: grayscale(100%); opacity: 0.5;}
