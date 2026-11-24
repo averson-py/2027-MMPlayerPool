@@ -3822,11 +3822,15 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             styled = styled.format(matchup_cell, subset=["Matchup"], escape=None)
         if "Network" in df.columns:
             def network_cell(value):
+                # Logo only when there is one (the name stays as its alt text); otherwise the name.
                 shown = ''.join(
                     '<span class="net-item">'
-                    + (f'<img src="{html_lib.escape(logo)}" class="net-logo" loading="lazy" '
-                       'onerror="this.style.display=\'none\'">' if logo else '')
-                    + f'<span>{html_lib.escape(name)}</span></span>'
+                    + (
+                        f'<img src="{html_lib.escape(logo)}" class="net-logo" alt="{html_lib.escape(name)}" '
+                        f'title="{html_lib.escape(name)}" loading="lazy">'
+                        if logo else f'<span>{html_lib.escape(name)}</span>'
+                    )
+                    + '</span>'
                     for name, logo in value
                 ) or '—'
                 return f'<div class="net-cell">{shown}</div>'
@@ -3915,7 +3919,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .matchup-line .mu-side .team-logo-sm {transition: margin-left 0.25s ease;}
             .photo-table-wrap.scrolled .matchup-line .mu-side > * + * {margin-left: 0;}
             .team-logo-sm {width: 36px; height: 36px; object-fit: contain; flex-shrink: 0; display: inline-block;}
-            .net-cell {display: flex; align-items: center; gap: 10px; width: max-content; white-space: nowrap;}
+            .net-cell {display: flex; align-items: center; justify-content: center; gap: 10px; width: max-content; margin: 0 auto; white-space: nowrap;}
             .net-cell > * {flex-shrink: 0;}
             .net-item {display: inline-flex; align-items: center; gap: 6px;}
             .net-logo {width: 56px; height: 26px; object-fit: contain; flex-shrink: 0;}
