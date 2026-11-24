@@ -3881,11 +3881,10 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .photo-table-wrap {overflow-x: auto;}
             .photo-table-outer {position: relative;}
             .pt-hint {position: absolute; top: 0; height: var(--pt-h, 100%); width: 34px; pointer-events: none; opacity: 0; transition: opacity 0.2s ease; z-index: 6;}
-            .pt-hint-left {left: 0; background: linear-gradient(to right, rgba(0,0,0,0.2), rgba(0,0,0,0));}
-            .pt-hint-right {right: 0; display: flex; align-items: center; justify-content: flex-end; background: linear-gradient(to left, rgba(0,0,0,0.2), rgba(0,0,0,0));}
-            .pt-hint-right::after {content: "\\203A"; font: 700 30px/1 sans-serif; color: #4472C4; margin-right: 6px; text-shadow: 0 0 5px #FFFFFF, 0 0 2px #FFFFFF; animation: pt-nudge 1.4s ease-in-out infinite;}
+            .pt-hint-right {right: 0; display: flex; align-items: center; justify-content: flex-end;}
+            .pt-hint-right::after {content: "\\203A"; font: 700 30px/1 sans-serif; color: #4472C4; margin-right: 6px; animation: pt-nudge 1.4s ease-in-out infinite;}
             @keyframes pt-nudge {0%, 100% {transform: translateX(0);} 50% {transform: translateX(4px);}}
-            .photo-table-outer.more-left .pt-hint-left, .photo-table-outer.more-right .pt-hint-right {opacity: 1;}
+            .photo-table-outer.more-right .pt-hint-right {opacity: 1;}
             .photo-table-wrap table {border-collapse: collapse; width: 100%; font-size: 14px;}
             .photo-table-wrap th, .photo-table-wrap td {
                 border: 1px solid #e0e0e0; padding: 4px 8px; white-space: nowrap;
@@ -3922,7 +3921,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .matchup-line .mu-start {justify-content: flex-start;}
             .matchup-line .mu-side > * + * {margin-left: 8px;}
             .matchup-line .mu-side > *, .matchup-line .mu-center > * {flex-shrink: 0;}
-            .team-cell.matchup-line .mu-text {overflow: hidden; max-width: 14rem; padding-right: 4px; transition: max-width 0.25s ease, margin-left 0.25s ease, padding 0.25s ease;}
+            .team-cell.matchup-line .mu-text {overflow: hidden; max-width: var(--mu-w, 14rem); padding-right: 4px; transition: max-width 0.25s ease, margin-left 0.25s ease, padding 0.25s ease;}
             .team-cell.matchup-line .mu-mid .mu-text {padding: 0 2px;}
             .photo-table-wrap.scrolled .matchup-line .mu-text {max-width: 0; margin-left: 0; padding-left: 0; padding-right: 0;}
             .team-cell.matchup-line .mu-vs-live {overflow: hidden; max-width: 0; margin-left: 0; transition: max-width 0.25s ease;}
@@ -3997,7 +3996,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
         st.markdown(
             f'<style>{freeze_css}</style>'
             f'<div class="photo-table-outer"><div class="photo-table-wrap{freeze_class}"{room_style}>{table_html}</div>'
-            '<span class="pt-hint pt-hint-left"></span><span class="pt-hint pt-hint-right"></span></div>',
+            '<span class="pt-hint pt-hint-right"></span></div>',
             unsafe_allow_html=True,
         )
         if owner_links and "Team Owner" in df.columns:
@@ -6226,6 +6225,8 @@ components.html(
             if (!first || !el.querySelector('.matchup-line')) return 0;
             const overflow = Math.max(0, Math.ceil(first.offsetWidth - el.clientWidth));
             el.style.setProperty('--mm-stick', -(overflow + 1) + 'px');
+            // Collapse from each text's real width so the animation starts at once instead of after a delay.
+            el.querySelectorAll('.mu-text').forEach(t => t.style.setProperty('--mu-w', Math.ceil(t.scrollWidth) + 'px'));
             return overflow;
         };
         const onScroll = e => {
@@ -6286,14 +6287,13 @@ components.html(
         d.addEventListener('touchmove', onTouchMove, passiveCapture);
         d.addEventListener('touchend', onTouchEnd, passiveCapture);
         d.addEventListener('wheel', onWheel, passiveCapture);
-        // Edge shadows (and a chevron on the right) show which direction a table can still scroll.
+        // A blue arrow on the right edge shows when a table can still scroll sideways.
         const updateHints = w => {
             const outer = w.parentElement;
             if (!outer || !outer.classList.contains('photo-table-outer')) return;
             const table = w.querySelector('table');
             if (table) outer.style.setProperty('--pt-h', table.offsetHeight + 'px');
             outer.classList.toggle('more-right', w.scrollLeft + w.clientWidth < w.scrollWidth - 4);
-            outer.classList.toggle('more-left', w.scrollLeft > 4);
         };
         const updateAllHints = () => d.querySelectorAll('.photo-table-wrap').forEach(updateHints);
         const hintTimer = setInterval(updateAllHints, 400);
