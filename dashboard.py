@@ -3779,8 +3779,9 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
                     home_score = f'<span class="mu-text"><span class="mu-score">{int(score[1])}</span></span>'
                 # `when` is the start time before tip-off or the game clock while live; finished games show "vs.".
                 if when:
+                    live_dot = '<span class="mu-dot"></span>' if score is not None and score[2] else ""
                     middle = (
-                        f'<span class="mu-text" style="color:#888;font-style:italic"><span>{html_lib.escape(when)}</span></span>'
+                        f'<span class="mu-text" style="color:#888;font-style:italic"><span class="mu-clock">{live_dot}<span>{html_lib.escape(when)}</span></span></span>'
                         '<span class="mu-vs-live">vs.</span>'
                     )
                 else:
@@ -3874,6 +3875,8 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .matchup-line .mu-mid {display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; column-gap: 8px; transition: column-gap 0.25s ease;}
             .photo-table-wrap.scrolled .matchup-line .mu-mid {column-gap: 0;}
             .matchup-line .mu-end, .matchup-line .mu-start, .matchup-line .mu-center {display: flex; align-items: center;}
+            .matchup-line .mu-clock {display: flex; flex-direction: column; align-items: center; gap: 2px;}
+            .matchup-line .mu-dot {width: 7px; height: 7px; border-radius: 50%; background: #D32F2F;}
             .matchup-line .mu-end {justify-content: flex-end;}
             .matchup-line .mu-start {justify-content: flex-start;}
             .matchup-line .mu-side > * + * {margin-left: 8px;}
@@ -4986,11 +4989,11 @@ with tab0:
                 "Matchup": [
                     (
                         game["away"], team_seeds.get(game["away"]), game["home"], team_seeds.get(game["home"]), game["score"],
-                        game["time"] if game["score"] is None else (game["clock"] if game["score"][2] else ""),
+                        game["time"] if game["score"] is None else (game["clock"] or "Final"),
                     )
                     for game in todays_games
                 ],
-                "Active Players": [
+                "Drafted Players": [
                     drafted_by_team.get(_norm_team_name(game["away"]), 0) + drafted_by_team.get(_norm_team_name(game["home"]), 0)
                     for game in todays_games
                 ],
