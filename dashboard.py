@@ -565,6 +565,22 @@ def get_espn_tournament_games():
     return games
 
 
+@st.cache_data(show_spinner=False)
+def _network_logo_data_uri(path, _mtime):
+    import base64
+
+    return "data:image/png;base64," + base64.b64encode(Path(path).read_bytes()).decode()
+
+
+def network_logo_fallback(name):
+    """Inline image from assets/networks/<name, lowercase letters and digits only>.png when that file exists, for networks ESPN has no logo for."""
+    slug = re.sub(r"[^a-z0-9]", "", str(name).casefold())
+    path = ASSETS_DIR / "networks" / f"{slug}.png"
+    if slug and path.is_file():
+        return _network_logo_data_uri(str(path), path.stat().st_mtime_ns)
+    return ""
+
+
 @st.cache_data(ttl=20, show_spinner=False)
 def get_todays_games(team_names):
     """Today's (Eastern time) NCAA games where both teams are in `team_names`, as [{away, home, time (start), clock (live status), networks: [(name, logo URL)], score: (away, home, is_live) or None}] by start."""
@@ -613,7 +629,7 @@ def get_todays_games(team_names):
             }
             games.append({
                 "away": sides["away"], "home": sides["home"], "time": when, "clock": status.get("shortDetail", ""),
-                "networks": [(name, logos.get(name) or "") for name in names],
+                "networks": [(name, logos.get(name) or network_logo_fallback(name)) for name in names],
                 "score": (
                     (int(scores["away"]), int(scores["home"]), status["state"] == "in")
                     if status["state"] != "pre" else None
