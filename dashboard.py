@@ -3879,6 +3879,13 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             """
             <style>
             .photo-table-wrap {overflow-x: auto;}
+            .photo-table-outer {position: relative;}
+            .pt-hint {position: absolute; top: 0; height: var(--pt-h, 100%); width: 34px; pointer-events: none; opacity: 0; transition: opacity 0.2s ease; z-index: 6;}
+            .pt-hint-left {left: 0; background: linear-gradient(to right, rgba(0,0,0,0.2), rgba(0,0,0,0));}
+            .pt-hint-right {right: 0; display: flex; align-items: center; justify-content: flex-end; background: linear-gradient(to left, rgba(0,0,0,0.2), rgba(0,0,0,0));}
+            .pt-hint-right::after {content: "\\203A"; font: 700 30px/1 sans-serif; color: #4472C4; margin-right: 6px; text-shadow: 0 0 5px #FFFFFF, 0 0 2px #FFFFFF; animation: pt-nudge 1.4s ease-in-out infinite;}
+            @keyframes pt-nudge {0%, 100% {transform: translateX(0);} 50% {transform: translateX(4px);}}
+            .photo-table-outer.more-left .pt-hint-left, .photo-table-outer.more-right .pt-hint-right {opacity: 1;}
             .photo-table-wrap table {border-collapse: collapse; width: 100%; font-size: 14px;}
             .photo-table-wrap th, .photo-table-wrap td {
                 border: 1px solid #e0e0e0; padding: 4px 8px; white-space: nowrap;
@@ -3989,7 +3996,8 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             )
         st.markdown(
             f'<style>{freeze_css}</style>'
-            f'<div class="photo-table-wrap{freeze_class}"{room_style}>{table_html}</div>',
+            f'<div class="photo-table-outer"><div class="photo-table-wrap{freeze_class}"{room_style}>{table_html}</div>'
+            '<span class="pt-hint pt-hint-left"></span><span class="pt-hint pt-hint-right"></span></div>',
             unsafe_allow_html=True,
         )
         if owner_links and "Team Owner" in df.columns:
@@ -6223,6 +6231,7 @@ components.html(
         const onScroll = e => {
             const el = e.target;
             if (!el || !el.classList || !el.classList.contains('photo-table-wrap')) return;
+            updateHints(el);
             const scrolled = el.classList.contains('scrolled');
             // The Matchup table shrinks until it fits; it only expands again by pulling past the left edge (see below).
             const matchupTable = !!el.querySelector('.matchup-line');
@@ -6277,7 +6286,20 @@ components.html(
         d.addEventListener('touchmove', onTouchMove, passiveCapture);
         d.addEventListener('touchend', onTouchEnd, passiveCapture);
         d.addEventListener('wheel', onWheel, passiveCapture);
+        // Edge shadows (and a chevron on the right) show which direction a table can still scroll.
+        const updateHints = w => {
+            const outer = w.parentElement;
+            if (!outer || !outer.classList.contains('photo-table-outer')) return;
+            const table = w.querySelector('table');
+            if (table) outer.style.setProperty('--pt-h', table.offsetHeight + 'px');
+            outer.classList.toggle('more-right', w.scrollLeft + w.clientWidth < w.scrollWidth - 4);
+            outer.classList.toggle('more-left', w.scrollLeft > 4);
+        };
+        const updateAllHints = () => d.querySelectorAll('.photo-table-wrap').forEach(updateHints);
+        const hintTimer = setInterval(updateAllHints, 400);
+        updateAllHints();
         p.__mmFreezeOff = () => {
+            clearInterval(hintTimer);
             d.removeEventListener('scroll', onScroll, true);
             d.removeEventListener('touchstart', onTouchStart, passiveCapture);
             d.removeEventListener('touchmove', onTouchMove, passiveCapture);
