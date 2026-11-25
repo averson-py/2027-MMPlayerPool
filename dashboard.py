@@ -3958,7 +3958,9 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .gd-wrap.gd-scrolled .gd-player-in {width: 120px; padding-left: 40px; gap: 0;}
             .gd-wrap.gd-scrolled .gd-logo {width: 0; opacity: 0;}
             .gd-photo {position: absolute; left: 0; bottom: 0; height: 46px; width: auto; max-width: 58px; object-fit: cover; object-position: center bottom; background: transparent; transition: height 0.25s ease, max-width 0.25s ease;}
-            .gd-wrap.gd-scrolled .gd-photo {height: 36px; max-width: 38px;}
+            .gd-wrap.gd-scrolled .gd-photo {height: 32px; max-width: 38px;}
+            .gd-logo-pin {position: absolute; left: 11px; top: 4px; width: 16px; height: 16px; object-fit: contain; opacity: 0; z-index: 1; transition: opacity 0.25s ease;}
+            .gd-wrap.gd-scrolled .gd-logo-pin {opacity: 1;}
             .gd-out, .gd-out td {color: #C00000 !important; font-weight: 700;}
             .gd-empty {padding: 6px 4px; color: #666; font-style: italic;}
             .pt-hint {position: absolute; top: 0; height: var(--pt-h, 100%); width: 34px; pointer-events: none; opacity: 0; transition: opacity 0.2s ease; z-index: 6;}
@@ -5126,6 +5128,10 @@ with tab0:
         winner = None
         if started and not game["score"][2]:
             winner = _norm_team_name(game["away"] if game["score"][0] > game["score"][1] else game["home"])
+        # The winner (or the current leader of a live game) is listed first; ties and pre-game keep away first.
+        first_team = _norm_team_name(game["away"])
+        if started and game["score"][0] != game["score"][1]:
+            first_team = _norm_team_name(game["away"] if game["score"][0] > game["score"][1] else game["home"])
         rows = []
         for draft_row in data["draft_rows"]:
             stats = data["player_stats"].get(draft_row["player_name"].casefold(), {})
@@ -5150,7 +5156,7 @@ with tab0:
                     for value in (season, stats.get("PPG"), stats.get("RPG"), stats.get("APG"))
                 ),
                 "out": winner is not None and _norm_team_name(team) != winner,
-                "team_order": 0 if _norm_team_name(team) == _norm_team_name(game["away"]) else 1,
+                "team_order": 0 if _norm_team_name(team) == first_team else 1,
             })
         if not rows:
             return '<div class="gd-empty">No drafted players are on these teams.</div>'
@@ -5163,18 +5169,32 @@ with tab0:
                 for v in values
             )
 
+        def name_with_marker(label, team, short):
+            name, marker_html = label, ""
+            for marker in ("⚠️", "⛔"):
+                if label.startswith(marker + " "):
+                    name = label[len(marker) + 1:]
+                    marker_html = (
+                        f'<span class="cell-tip injury-tip" tabindex="0">{marker}'
+                        f'<span class="cell-tip-text">{injury_tip_html(name, team, marker)}</span></span> '
+                    )
+                    break
+            return marker_html + html_lib.escape(short_player_name(name) if short else name)
+
         body = ""
         for r in rows:
+            name_full, name_short = name_with_marker(r["name"], r["team"], False), name_with_marker(r["name"], r["team"], True)
             photo = (
                 f'<img class="gd-photo" src="{html_lib.escape(str(r["photo"]))}" referrerpolicy="no-referrer" loading="lazy">'
                 if r["photo"] else '<span class="gd-photo"></span>'
             )
             logo_url = get_logo_url(r["team"])
             logo = f'<img class="gd-logo" src="{html_lib.escape(str(logo_url))}" loading="lazy">' if logo_url else ""
+            pin = f'<img class="gd-logo-pin" src="{html_lib.escape(str(logo_url))}" loading="lazy">' if logo_url else ""
             body += (
-                f'<tr class="{"gd-out" if r["out"] else ""}"><td class="gd-player gd-sticky"><div class="gd-player-in">{photo}{logo}'
-                f'<span class="gd-name-wrap"><span class="gd-name-full">{html_lib.escape(r["name"])}</span>'
-                f'<span class="gd-name-short">{html_lib.escape(short_player_name(r["name"]))}</span></span></div></td>'
+                f'<tr class="{"gd-out" if r["out"] else ""}"><td class="gd-player gd-sticky"><div class="gd-player-in">{pin}{photo}{logo}'
+                f'<span class="gd-name-wrap"><span class="gd-name-full">{name_full}</span>'
+                f'<span class="gd-name-short">{name_short}</span></span></div></td>'
                 f'<td>{html_lib.escape(str(r["owner"]))}</td>'
                 + (cells(r["game"][3:], LIGHT_GREEN, 1) + cells(r["game"][:3], LIGHT_GREEN) if show_game and r["game"]
                    else ('<td style="background:' + LIGHT_GREEN + '"></td>' * 4 if show_game else ""))
