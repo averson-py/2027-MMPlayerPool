@@ -3937,13 +3937,24 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .photo-table-wrap.row-click > table > tbody > tr:not(.game-detail) {cursor: pointer;}
             .photo-table-wrap.row-click > table > tbody > tr:not(.game-detail):hover td {filter: brightness(0.95);}
             .photo-table-wrap tr.game-detail > td {position: static !important; box-shadow: none !important; padding: 0; background: #F7F9FC; white-space: normal; cursor: default;}
-            .gd-wrap {position: sticky; left: 0; width: var(--wrap-w, 100%); box-sizing: border-box; overflow-x: auto; padding: 8px 10px 12px;}
-            .gd-table {border-collapse: collapse; width: max-content; min-width: 100%; font-size: 13px;}
+            .gd-wrap {position: sticky; left: 0; width: var(--wrap-w, 100%); box-sizing: border-box; overflow-x: auto; padding: 8px 0 12px;}
+            .gd-table {border-collapse: collapse; width: max-content; min-width: calc(100% - 20px); margin: 0 10px; font-size: 13px;}
             .photo-table-wrap .gd-table th, .photo-table-wrap .gd-table td {padding: 3px 8px; text-align: center; position: static !important; box-shadow: none !important;}
-            .photo-table-wrap .gd-table td.gd-player {text-align: left;}
-            .gd-player-in {display: flex; align-items: center; gap: 8px; position: relative; height: 48px; padding-left: 62px; overflow: hidden;}
-            .photo-table-wrap .gd-table td.gd-player {padding-top: 0; padding-bottom: 0; vertical-align: bottom;}
-            .gd-photo {position: absolute; left: 0; bottom: 0; height: 46px; width: auto; max-width: 58px; object-fit: cover; object-position: center bottom; background: transparent;}
+            .photo-table-wrap .gd-table .gd-sticky {position: sticky !important; left: 0 !important; z-index: 2 !important;}
+            .photo-table-wrap .gd-table td.gd-sticky {background: #F7F9FC;}
+            .photo-table-wrap .gd-wrap.gd-scrolled .gd-table .gd-sticky {box-shadow: 2px 0 4px rgba(0,0,0,0.15) !important;}
+            .photo-table-wrap .gd-table td.gd-player {text-align: left; padding-top: 0; padding-bottom: 0; vertical-align: bottom;}
+            .gd-player-in {display: flex; align-items: center; gap: 8px; position: relative; height: 48px; padding-left: 62px; overflow: hidden; box-sizing: border-box; width: var(--gd-w, max-content); transition: width 0.25s ease, padding-left 0.25s ease, gap 0.25s ease;}
+            .gd-name-wrap {display: grid; align-items: center; flex-shrink: 0; white-space: nowrap;}
+            .gd-name-full, .gd-name-short {grid-area: 1 / 1; transition: opacity 0.25s ease;}
+            .gd-name-short {opacity: 0;}
+            .gd-logo {width: 22px; height: 22px; flex-shrink: 0; object-fit: contain; transition: width 0.25s ease, opacity 0.25s ease;}
+            .gd-wrap.gd-scrolled .gd-name-full {opacity: 0;}
+            .gd-wrap.gd-scrolled .gd-name-short {opacity: 1;}
+            .gd-wrap.gd-scrolled .gd-player-in {width: 120px; padding-left: 40px; gap: 0;}
+            .gd-wrap.gd-scrolled .gd-logo {width: 0; opacity: 0;}
+            .gd-photo {position: absolute; left: 0; bottom: 0; height: 46px; width: auto; max-width: 58px; object-fit: cover; object-position: center bottom; background: transparent; transition: height 0.25s ease, max-width 0.25s ease;}
+            .gd-wrap.gd-scrolled .gd-photo {height: 36px; max-width: 38px;}
             .gd-out, .gd-out td {color: #C00000 !important; font-weight: 700;}
             .gd-empty {padding: 6px 4px; color: #666; font-style: italic;}
             .pt-hint {position: absolute; top: 0; height: var(--pt-h, 100%); width: 34px; pointer-events: none; opacity: 0; transition: opacity 0.2s ease; z-index: 6;}
@@ -5150,10 +5161,12 @@ with tab0:
                 if r["photo"] else '<span class="gd-photo"></span>'
             )
             logo_url = get_logo_url(r["team"])
-            logo = f'<img class="team-logo-sm" style="width:22px;height:22px" src="{html_lib.escape(str(logo_url))}" loading="lazy">' if logo_url else ""
+            logo = f'<img class="gd-logo" src="{html_lib.escape(str(logo_url))}" loading="lazy">' if logo_url else ""
             body += (
-                f'<tr class="{"gd-out" if r["out"] else ""}"><td class="gd-player"><div class="gd-player-in">{photo}{logo}'
-                f'<span>{html_lib.escape(r["name"])}</span></div></td><td>{html_lib.escape(str(r["owner"]))}</td>'
+                f'<tr class="{"gd-out" if r["out"] else ""}"><td class="gd-player gd-sticky"><div class="gd-player-in">{photo}{logo}'
+                f'<span class="gd-name-wrap"><span class="gd-name-full">{html_lib.escape(r["name"])}</span>'
+                f'<span class="gd-name-short">{html_lib.escape(short_player_name(r["name"]))}</span></span></div></td>'
+                f'<td>{html_lib.escape(str(r["owner"]))}</td>'
                 + (cells(r["game"][3:], LIGHT_GREEN, 1) + cells(r["game"][:3], LIGHT_GREEN) if show_game and r["game"]
                    else ('<td style="background:' + LIGHT_GREEN + '"></td>' * 4 if show_game else ""))
                 + cells(r["season"], LIGHT_BLUE, 1)
@@ -5164,7 +5177,7 @@ with tab0:
         season_cols = "".join(f"<th>{c}</th>" for c in ("FPts", "PPG", "RPG", "APG"))
         return (
             '<table class="gd-table"><thead>'
-            f'<tr><th rowspan="2">Player</th><th rowspan="2">Owner</th>{game_head}<th colspan="4">Season</th></tr>'
+            f'<tr><th rowspan="2" class="gd-sticky">Player</th><th rowspan="2">Owner</th>{game_head}<th colspan="4">Season</th></tr>'
             f'<tr>{game_cols}{season_cols}</tr></thead><tbody>{body}</tbody></table>'
         )
 
@@ -6415,6 +6428,13 @@ components.html(
         };
         const onScroll = e => {
             const el = e.target;
+            if (el && el.classList && el.classList.contains('gd-wrap')) {
+                // Same latch as the other tables: collapse past 24px, expand only back at the left edge.
+                const on = el.classList.contains('gd-scrolled');
+                if (!on && el.scrollLeft > 24 && el.scrollWidth - el.clientWidth > 110) el.classList.add('gd-scrolled');
+                else if (on && el.scrollLeft < 4) el.classList.remove('gd-scrolled');
+                return;
+            }
             if (!el || !el.classList || !el.classList.contains('photo-table-wrap')) return;
             updateHints(el);
             const scrolled = el.classList.contains('scrolled');
@@ -6480,7 +6500,18 @@ components.html(
             w.style.setProperty('--wrap-w', w.clientWidth + 'px');
             outer.classList.toggle('more-right', w.scrollLeft + w.clientWidth < w.scrollWidth - 4);
         };
-        const updateAllHints = () => d.querySelectorAll('.photo-table-wrap').forEach(updateHints);
+        const updateAllHints = () => {
+            d.querySelectorAll('.photo-table-wrap').forEach(updateHints);
+            // Fix the expanded player-cell width in pixels so the collapse can animate.
+            d.querySelectorAll('.gd-wrap:not(.gd-scrolled)').forEach(g => {
+                let max = 0;
+                // 62px photo gutter plus the 22px logo and 8px gap when there is a logo.
+                g.querySelectorAll('.gd-name-wrap').forEach(n => {
+                    max = Math.max(max, 62 + (n.previousElementSibling && n.previousElementSibling.classList.contains('gd-logo') ? 30 : 0) + n.offsetWidth);
+                });
+                if (max) g.style.setProperty('--gd-w', Math.ceil(max) + 'px');
+            });
+        };
         const hintTimer = setInterval(updateAllHints, 400);
         updateAllHints();
         p.__mmFreezeOff = () => {
