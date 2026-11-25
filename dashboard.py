@@ -301,6 +301,10 @@ ESPN_SCOREBOARD_URL = (
     "https://site.api.espn.com/apis/site/v2/sports/basketball/"
     "mens-college-basketball/scoreboard"
 )
+ESPN_SUMMARY_URL = (
+    "https://site.api.espn.com/apis/site/v2/sports/basketball/"
+    "mens-college-basketball/summary"
+)
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
@@ -628,7 +632,7 @@ def get_todays_games(team_names):
                 for geo in competition.get("geoBroadcasts", [])
             }
             games.append({
-                "away": sides["away"], "home": sides["home"], "time": when, "clock": status.get("shortDetail", ""),
+                "away": sides["away"], "home": sides["home"], "time": when, "id": event.get("id"), "clock": status.get("shortDetail", ""),
                 "networks": [(name, logos.get(name) or network_logo_fallback(name)) for name in names],
                 "venue": (
                     (competition.get("venue") or {}).get("fullName", ""),
@@ -647,6 +651,36 @@ def get_todays_games(team_names):
         except Exception:
             continue
     return games
+
+
+@st.cache_data(ttl=20, show_spinner=False)
+def get_game_boxscore(event_id):
+    """{normalized player name: {pts, reb, ast}} from ESPN's box score for one game (empty before tip-off)."""
+    try:
+        resp = requests.get(ESPN_SUMMARY_URL, params={"event": event_id}, timeout=8)
+        resp.raise_for_status()
+        teams = resp.json().get("boxscore", {}).get("players", [])
+    except Exception:
+        return {}
+    lines = {}
+    for team in teams:
+        for group in team.get("statistics", []):
+            labels = group.get("labels", [])
+            for athlete in group.get("athletes", []):
+                values = dict(zip(labels, athlete.get("stats") or []))
+                if not values:
+                    continue
+
+                def number(label):
+                    try:
+                        return int(values.get(label))
+                    except (TypeError, ValueError):
+                        return None
+
+                lines[_norm_person_name(athlete.get("athlete", {}).get("displayName", ""))] = {
+                    "pts": number("PTS"), "reb": number("REB"), "ast": number("AST"),
+                }
+    return lines
 
 
 def find_game_scores(team_a, team_b):
@@ -3645,7 +3679,7 @@ def _next_owner_table_key():
     return f"t{_owner_table_count}"
 
 
-def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None, column_colors=None, selectable=False, zebra=False, center=False, owner_links=None, medal_rank=True, html=False, cell_styles=None):
+def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None, column_colors=None, selectable=False, zebra=False, center=False, owner_links=None, medal_rank=True, html=False, cell_styles=None, click_rows=None, detail_rows=None):
     if df.empty:
         st.info("No data available yet.")
         return
@@ -3900,6 +3934,18 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             <style>
             .photo-table-wrap {overflow-x: auto;}
             .photo-table-outer {position: relative;}
+            .photo-table-wrap.row-click > table > tbody > tr:not(.game-detail) {cursor: pointer;}
+            .photo-table-wrap.row-click > table > tbody > tr:not(.game-detail):hover td {filter: brightness(0.95);}
+            .photo-table-wrap tr.game-detail > td {position: static !important; box-shadow: none !important; padding: 0; background: #F7F9FC; white-space: normal; cursor: default;}
+            .gd-wrap {position: sticky; left: 0; width: var(--wrap-w, 100%); box-sizing: border-box; overflow-x: auto; padding: 8px 10px 12px;}
+            .gd-table {border-collapse: collapse; width: max-content; min-width: 100%; font-size: 13px;}
+            .photo-table-wrap .gd-table th, .photo-table-wrap .gd-table td {padding: 3px 8px; text-align: center; position: static !important; box-shadow: none !important;}
+            .photo-table-wrap .gd-table td.gd-player {text-align: left;}
+            .gd-player-in {display: flex; align-items: center; gap: 8px; position: relative; height: 48px; padding-left: 62px; overflow: hidden;}
+            .photo-table-wrap .gd-table td.gd-player {padding-top: 0; padding-bottom: 0; vertical-align: bottom;}
+            .gd-photo {position: absolute; left: 0; bottom: 0; height: 46px; width: auto; max-width: 58px; object-fit: cover; object-position: center bottom; background: transparent;}
+            .gd-out, .gd-out td {color: #C00000 !important; font-weight: 700;}
+            .gd-empty {padding: 6px 4px; color: #666; font-style: italic;}
             .pt-hint {position: absolute; top: 0; height: var(--pt-h, 100%); width: 34px; pointer-events: none; opacity: 0; transition: opacity 0.2s ease; z-index: 6;}
             .pt-hint-right {right: 0; display: flex; align-items: center; justify-content: flex-end;}
             .pt-hint-right::after {content: "\\203A"; font: 700 30px/1 sans-serif; color: #4472C4; margin-right: 6px; animation: pt-nudge 1.4s ease-in-out infinite;}
@@ -3993,6 +4039,17 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             unsafe_allow_html=True,
         )
         table_html = styled.to_html().replace("\n", "")
+        if detail_rows:
+            # detail_rows maps a body-row number to HTML shown in a full-width row right under it.
+            row_ends = [m.end() for m in re.finditer("</tr>", table_html)]
+            span = len([c for c in df.columns if not str(c).startswith("_")])
+            for row_number in sorted(detail_rows, reverse=True):
+                at = row_ends[row_number + 1]
+                table_html = (
+                    table_html[:at]
+                    + f'<tr class="game-detail"><td colspan="{span}"><div class="gd-wrap">{detail_rows[row_number]}</div></td></tr>'
+                    + table_html[at:]
+                )
         if st.session_state.get("dark_mode"):
             table_html = re.sub(
                 "([\U0001F300-\U0001FAFF\u26A0\u26D4\u2B50\u2705\u274C]\uFE0F?)",
@@ -4018,9 +4075,12 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
                 f".photo-table-wrap.freeze-{name_col}.scrolled td:nth-child({name_col})"
                 "{left: -1px; box-shadow: 2px 0 4px rgba(0,0,0,0.15); transition: left 0.25s ease;}"
             )
+        row_classes = " row-click" if click_rows else ""
+        row_attrs = f' data-row-prefix="{click_rows}"' if click_rows else ""
         st.markdown(
             f'<style>{freeze_css}</style>'
-            f'<div class="photo-table-outer"><div class="photo-table-wrap{freeze_class}"{room_style}>{table_html}</div>'
+            f'<div class="photo-table-outer"><div class="photo-table-wrap{freeze_class}{row_classes}"{row_attrs}{room_style}>'
+            f'{table_html}</div>'
             '<span class="pt-hint pt-hint-right"></span></div>',
             unsafe_allow_html=True,
         )
@@ -5036,6 +5096,78 @@ with tab0:
     }))
     todays_games = get_todays_games(team_list_names) if team_list_names else []
 
+    def toggle_game(game_id):
+        st.session_state["selected_game"] = None if st.session_state.get("selected_game") == game_id else game_id
+
+    def game_players_html(game):
+        started = game["score"] is not None
+        box = get_game_boxscore(game["id"]) if started else {}
+        game_teams = {_norm_team_name(game["away"]), _norm_team_name(game["home"])}
+        winner = None
+        if started and not game["score"][2]:
+            winner = _norm_team_name(game["away"] if game["score"][0] > game["score"][1] else game["home"])
+        rows = []
+        for draft_row in data["draft_rows"]:
+            stats = data["player_stats"].get(draft_row["player_name"].casefold(), {})
+            team = stats.get("Team")
+            if not team or _norm_team_name(team) not in game_teams:
+                continue
+            line = box.get(_norm_person_name(draft_row["player_name"])) or {}
+            pts, reb, ast = line.get("pts"), line.get("reb"), line.get("ast")
+            game_fpts = (
+                weighted_fantasy_points(pts, reb, ast, data["fantasy_weights"])
+                if None not in (pts, reb, ast) else None
+            )
+            season = stats.get("Tot. FPts")
+            rows.append({
+                "name": player_label(draft_row["player_name"], stats),
+                "photo": get_player_photo_url(draft_row["player_name"], team),
+                "team": team,
+                "owner": draft_row["draftee"],
+                "game": None if game_fpts is None else (pts, reb, ast, float(game_fpts)),
+                "season": tuple(
+                    None if value is None or pd.isna(value) else float(value)
+                    for value in (season, stats.get("PPG"), stats.get("RPG"), stats.get("APG"))
+                ),
+                "out": winner is not None and _norm_team_name(team) != winner,
+                "team_order": 0 if _norm_team_name(team) == _norm_team_name(game["away"]) else 1,
+            })
+        if not rows:
+            return '<div class="gd-empty">No drafted players are on these teams.</div>'
+        show_game = started and any(r["game"] for r in rows)
+        rows.sort(key=lambda r: (r["team_order"], -(r["game"][3] if r["game"] else -1.0), -(r["season"][0] or 0.0)))
+
+        def cells(values, color, decimals=0):
+            return "".join(
+                f'<td style="background:{color}">' + ("" if v is None else f"{v:.{decimals}f}") + "</td>"
+                for v in values
+            )
+
+        body = ""
+        for r in rows:
+            photo = (
+                f'<img class="gd-photo" src="{html_lib.escape(str(r["photo"]))}" referrerpolicy="no-referrer" loading="lazy">'
+                if r["photo"] else '<span class="gd-photo"></span>'
+            )
+            logo_url = get_logo_url(r["team"])
+            logo = f'<img class="team-logo-sm" style="width:22px;height:22px" src="{html_lib.escape(str(logo_url))}" loading="lazy">' if logo_url else ""
+            body += (
+                f'<tr class="{"gd-out" if r["out"] else ""}"><td class="gd-player"><div class="gd-player-in">{photo}{logo}'
+                f'<span>{html_lib.escape(r["name"])}</span></div></td><td>{html_lib.escape(str(r["owner"]))}</td>'
+                + (cells(r["game"][3:], LIGHT_GREEN, 1) + cells(r["game"][:3], LIGHT_GREEN) if show_game and r["game"]
+                   else ('<td style="background:' + LIGHT_GREEN + '"></td>' * 4 if show_game else ""))
+                + cells(r["season"], LIGHT_BLUE, 1)
+                + "</tr>"
+            )
+        game_head = '<th colspan="4">Game</th>' if show_game else ""
+        game_cols = "".join(f"<th>{c}</th>" for c in ("FPts", "PTS", "REB", "AST")) if show_game else ""
+        season_cols = "".join(f"<th>{c}</th>" for c in ("FPts", "PPG", "RPG", "APG"))
+        return (
+            '<table class="gd-table"><thead>'
+            f'<tr><th rowspan="2">Player</th><th rowspan="2">Owner</th>{game_head}<th colspan="4">Season</th></tr>'
+            f'<tr>{game_cols}{season_cols}</tr></thead><tbody>{body}</tbody></table>'
+        )
+
     def render_todays_games():
         games = get_todays_games(team_list_names) if team_list_names else []
         if not games:
@@ -5056,6 +5188,10 @@ with tab0:
             if player_stats.get("Team") and injury_status(draft_row["player_name"], player_stats) not in ("o", "out"):
                 key = _norm_team_name(player_stats["Team"])
                 drafted_by_team[key] = drafted_by_team.get(key, 0) + 1
+        detail_rows = {
+            index: game_players_html(game) for index, game in enumerate(games)
+            if game["id"] == st.session_state.get("selected_game")
+        }
         display_df(
             pd.DataFrame({
                 "Matchup": [
@@ -5079,7 +5215,14 @@ with tab0:
             height=min(80 + 38 * len(games), 600),
             zebra=True,
             html=True,
+            click_rows="gamerow",
+            detail_rows=detail_rows,
         )
+        # Hidden buttons that a click on a game row presses (inside the fragment, so only it reruns).
+        with st.container(key="ownerlinks_gamerows"):
+            for index, game in enumerate(games):
+                st.button(str(index), key=f"gamerow_{index}", on_click=toggle_game, args=(game["id"],))
+        st.caption("Click a game to show or hide the drafted players in it.")
 
     # A fragment reruns on its own timer without reloading the page, so only this table polls (until every game is final).
     poll_games = any(game["score"] is None or game["score"][2] for game in todays_games)
@@ -6245,6 +6388,17 @@ components.html(
             if (btn) btn.click();
         };
         d.addEventListener('click', onOwnerClick, true);
+        // Rows of a click-enabled table press the hidden Streamlit button with the same row number.
+        const onRowClick = e => {
+            if (!e.target.closest || e.target.closest('.game-detail')) return;
+            const tr = e.target.closest('.photo-table-wrap.row-click > table > tbody > tr');
+            if (!tr) return;
+            const prefix = tr.closest('.photo-table-wrap').dataset.rowPrefix;
+            const rowNumber = Array.from(tr.parentElement.children).filter(r => !r.classList.contains('game-detail')).indexOf(tr);
+            const btn = d.querySelector('.st-key-' + prefix + '_' + rowNumber + ' button');
+            if (btn) btn.click();
+        };
+        d.addEventListener('click', onRowClick, true);
         // A Matchup column wider than the screen scrolls along until its right edge shows, then pins (and collapses).
         const updateStick = el => {
             if (el.classList.contains('freeze-team')) {
@@ -6323,6 +6477,7 @@ components.html(
             if (!outer || !outer.classList.contains('photo-table-outer')) return;
             const table = w.querySelector('table');
             if (table) outer.style.setProperty('--pt-h', table.offsetHeight + 'px');
+            w.style.setProperty('--wrap-w', w.clientWidth + 'px');
             outer.classList.toggle('more-right', w.scrollLeft + w.clientWidth < w.scrollWidth - 4);
         };
         const updateAllHints = () => d.querySelectorAll('.photo-table-wrap').forEach(updateHints);
@@ -6336,6 +6491,7 @@ components.html(
             d.removeEventListener('touchend', onTouchEnd, passiveCapture);
             d.removeEventListener('wheel', onWheel, passiveCapture);
             d.removeEventListener('click', onOwnerClick, true);
+            d.removeEventListener('click', onRowClick, true);
             d.removeEventListener('mouseover', onTipOver);
             d.removeEventListener('mouseout', onTipOut);
             d.removeEventListener('focusin', onTipOver);
