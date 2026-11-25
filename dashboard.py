@@ -583,7 +583,7 @@ def network_logo_fallback(name):
 
 @st.cache_data(ttl=20, show_spinner=False)
 def get_todays_games(team_names):
-    """Today's (Eastern time) NCAA games where both teams are in `team_names`, as [{away, home, time (start), clock (live status), networks: [(name, logo URL)], score: (away, home, is_live) or None}] by start."""
+    """Today's (Eastern time) NCAA games where both teams are in `team_names`, as [{away, home, time (start), clock (live status), networks: [(name, logo URL)], venue: (arena, "City, ST"), score: (away, home, is_live) or None}] by start."""
     try:
         eastern = ZoneInfo("America/New_York")
     except Exception:
@@ -630,6 +630,15 @@ def get_todays_games(team_names):
             games.append({
                 "away": sides["away"], "home": sides["home"], "time": when, "clock": status.get("shortDetail", ""),
                 "networks": [(name, logos.get(name) or network_logo_fallback(name)) for name in names],
+                "venue": (
+                    (competition.get("venue") or {}).get("fullName", ""),
+                    ", ".join(
+                        part for part in (
+                            ((competition.get("venue") or {}).get("address") or {}).get("city"),
+                            ((competition.get("venue") or {}).get("address") or {}).get("state"),
+                        ) if part
+                    ),
+                ),
                 "score": (
                     (int(scores["away"]), int(scores["home"]), status["state"] == "in")
                     if status["state"] != "pre" else None
@@ -3836,6 +3845,17 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
                 return f'<div class="net-cell">{shown}</div>'
 
             styled = styled.format(network_cell, subset=["Network"], escape=None)
+        if "Location" in df.columns:
+            def location_cell(value):
+                venue, place = value
+                if not venue and not place:
+                    return '—'
+                return (
+                    f'<div style="white-space:nowrap">{html_lib.escape(venue)}</div>'
+                    f'<div style="white-space:nowrap;color:#888;font-size:12px">{html_lib.escape(place)}</div>'
+                )
+
+            styled = styled.format(location_cell, subset=["Location"], escape=None)
         if "Torvik Spread" in df.columns:
             def spread_cell(value):
                 if value is None or isinstance(value, float):
@@ -5046,6 +5066,7 @@ with tab0:
                     for game in games
                 ],
                 "Network": [game["networks"] for game in games],
+                "Location": [game["venue"] for game in games],
                 "Torvik Spread": [
                     predict_game(game["away"], team_seeds.get(game["away"]), game["home"], team_seeds.get(game["home"]))
                     for game in games
