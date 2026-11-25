@@ -5218,6 +5218,7 @@ with tab0:
         st.caption(
             "Predicted spreads use "
             "BartTorvik ratings at a neutral site, so home-court advantage is not included."
+            "Click a game to see each drafted player's statistics."
         )
         team_seeds = {
             team: seed for seed, region_teams in data["bracket_teams"].items()
