@@ -3679,7 +3679,7 @@ def _next_owner_table_key():
     return f"t{_owner_table_count}"
 
 
-def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None, column_colors=None, selectable=False, zebra=False, center=False, owner_links=None, medal_rank=True, html=False, cell_styles=None, click_rows=None, detail_rows=None):
+def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_index=True, rank_rwg=False, pink_last=False, performance_gradient=None, column_colors=None, selectable=False, zebra=False, center=False, owner_links=None, medal_rank=True, html=False, cell_styles=None, click_rows=None, detail_rows=None, detail_animate=False):
     if df.empty:
         st.info("No data available yet.")
         return
@@ -3938,6 +3938,10 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .photo-table-wrap.row-click > table > tbody > tr:not(.game-detail):hover td {filter: brightness(0.95);}
             .photo-table-wrap tr.game-detail > td {position: static !important; box-shadow: none !important; padding: 0; background: #F7F9FC; white-space: normal; cursor: default;}
             .gd-wrap {position: sticky; left: 0; width: var(--wrap-w, 100%); box-sizing: border-box; overflow-x: auto; padding: 8px 0 12px;}
+            @keyframes gd-open {from {max-height: 0; padding-top: 0; padding-bottom: 0; opacity: 0;} to {max-height: var(--gd-h, 600px); padding-top: 8px; padding-bottom: 12px; opacity: 1;}}
+            @keyframes gd-close {from {max-height: var(--gd-h, 600px); padding-top: 8px; padding-bottom: 12px; opacity: 1;} to {max-height: 0; padding-top: 0; padding-bottom: 0; opacity: 0;}}
+            .gd-wrap.gd-opening {animation: gd-open 0.3s ease; overflow-y: hidden;}
+            .gd-wrap.gd-closing {animation: gd-close 0.2s ease forwards; overflow-y: hidden;}
             .gd-table {border-collapse: collapse; width: max-content; min-width: calc(100% - 20px); margin: 0 10px; font-size: 13px;}
             .photo-table-wrap .gd-table th, .photo-table-wrap .gd-table td {padding: 3px 8px; text-align: center; position: static !important; box-shadow: none !important;}
             .photo-table-wrap .gd-table .gd-sticky {position: sticky !important; left: 0 !important; z-index: 2 !important;}
@@ -4056,9 +4060,12 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             span = len([c for c in df.columns if not str(c).startswith("_")])
             for row_number in sorted(detail_rows, reverse=True):
                 at = row_ends[row_number + 1]
+                # Estimated full height, used as the end point of the open/close animation.
+                full_height = 52 * detail_rows[row_number].count("gd-player gd-sticky") + 100
                 table_html = (
                     table_html[:at]
-                    + f'<tr class="game-detail"><td colspan="{span}"><div class="gd-wrap">{detail_rows[row_number]}</div></td></tr>'
+                    + f'<tr class="game-detail"><td colspan="{span}"><div class="gd-wrap{" gd-opening" if detail_animate else ""}" '
+                    f'style="--gd-h:{full_height}px">{detail_rows[row_number]}</div></td></tr>'
                     + table_html[at:]
                 )
         if st.session_state.get("dark_mode"):
@@ -5108,7 +5115,9 @@ with tab0:
     todays_games = get_todays_games(team_list_names) if team_list_names else []
 
     def toggle_game(game_id):
-        st.session_state["selected_game"] = None if st.session_state.get("selected_game") == game_id else game_id
+        opening = st.session_state.get("selected_game") != game_id
+        st.session_state["selected_game"] = game_id if opening else None
+        st.session_state["gd_animate"] = opening
 
     def game_players_html(game):
         started = game["score"] is not None
@@ -5230,6 +5239,7 @@ with tab0:
             html=True,
             click_rows="gamerow",
             detail_rows=detail_rows,
+            detail_animate=st.session_state.pop("gd_animate", False),
         )
         # Hidden buttons that a click on a game row presses (inside the fragment, so only it reruns).
         with st.container(key="ownerlinks_gamerows"):
@@ -6409,7 +6419,14 @@ components.html(
             const prefix = tr.closest('.photo-table-wrap').dataset.rowPrefix;
             const rowNumber = Array.from(tr.parentElement.children).filter(r => !r.classList.contains('game-detail')).indexOf(tr);
             const btn = d.querySelector('.st-key-' + prefix + '_' + rowNumber + ' button');
-            if (btn) btn.click();
+            if (!btn) return;
+            // Collapse the open sub-row first, then let the server swap in the new state.
+            const open = tr.closest('table').querySelector('tr.game-detail .gd-wrap');
+            if (!open) { btn.click(); return; }
+            if (open.classList.contains('gd-closing')) return;
+            open.classList.remove('gd-opening');
+            open.classList.add('gd-closing');
+            setTimeout(() => btn.click(), 200);
         };
         d.addEventListener('click', onRowClick, true);
         // A Matchup column wider than the screen scrolls along until its right edge shows, then pins (and collapses).
