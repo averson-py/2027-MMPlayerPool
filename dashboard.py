@@ -3962,6 +3962,8 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .gd-logo-pin {position: absolute; left: 11px; top: 4px; width: 16px; height: 16px; object-fit: contain; opacity: 0; z-index: 1; transition: opacity 0.25s ease;}
             .gd-wrap.gd-scrolled .gd-logo-pin {opacity: 1;}
             .gd-out, .gd-out td {color: #C00000 !important; font-weight: 700;}
+            .photo-table-wrap .gd-table tr.gd-mine > td {border-top: 2px solid #F28C28; border-bottom: 2px solid #F28C28;}
+            .photo-table-wrap .gd-table tr.gd-mine > td.gd-owner {background: #FFE0B2; font-weight: 800;}
             .gd-empty {padding: 6px 4px; color: #666; font-style: italic;}
             .pt-hint {position: absolute; top: 0; height: var(--pt-h, 100%); width: 34px; pointer-events: none; opacity: 0; transition: opacity 0.2s ease; z-index: 6;}
             .pt-hint-right {right: 0; display: flex; align-items: center; justify-content: flex-end;}
@@ -5182,6 +5184,7 @@ with tab0:
             return marker_html + html_lib.escape(short_player_name(name) if short else name)
 
         body = ""
+        my_team = st.session_state.get("my_team")
         for r in rows:
             name_full, name_short = name_with_marker(r["name"], r["team"], False), name_with_marker(r["name"], r["team"], True)
             photo = (
@@ -5191,11 +5194,13 @@ with tab0:
             logo_url = get_logo_url(r["team"])
             logo = f'<img class="gd-logo" src="{html_lib.escape(str(logo_url))}" loading="lazy">' if logo_url else ""
             pin = f'<img class="gd-logo-pin" src="{html_lib.escape(str(logo_url))}" loading="lazy">' if logo_url else ""
+            mine = bool(my_team) and str(r["owner"]).casefold() == str(my_team).casefold()
+            mine_style = ' style="background:#FFF4E5"' if mine else ""
             body += (
-                f'<tr class="{"gd-out" if r["out"] else ""}"><td class="gd-player gd-sticky"><div class="gd-player-in">{pin}{photo}{logo}'
+                f'<tr class="{"gd-out" if r["out"] else ""}{" gd-mine" if mine else ""}"><td class="gd-player gd-sticky"{mine_style}><div class="gd-player-in">{pin}{photo}{logo}'
                 f'<span class="gd-name-wrap"><span class="gd-name-full">{name_full}</span>'
                 f'<span class="gd-name-short">{name_short}</span></span></div></td>'
-                f'<td>{html_lib.escape(str(r["owner"]))}</td>'
+                f'<td class="gd-owner">{html_lib.escape(str(r["owner"]))}</td>'
                 + (cells(r["game"][3:], LIGHT_GREEN, 1) + cells(r["game"][:3], LIGHT_GREEN) if show_game and r["game"]
                    else ('<td style="background:' + LIGHT_GREEN + '"></td>' * 4 if show_game else ""))
                 + cells(r["season"], LIGHT_BLUE, 1)
