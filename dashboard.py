@@ -3882,7 +3882,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
                 )
                 return (
                     '<div class="team-cell">' + img
-                    + '<span>' + html_lib.escape(str(value)) + '</span></div>'
+                    + '<span class="tc-name">' + html_lib.escape(str(value)) + '</span></div>'
                 )
 
             styled = styled.format(
@@ -3917,6 +3917,10 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             [class*="st-key-ownerlinks_"] {display: none;}
             .team-cell {display: flex; align-items: center; gap: 8px; min-width: 160px; padding-left: 10px;}
             .team-cell span {white-space: normal; min-width: 0; overflow-wrap: anywhere;}
+            .photo-table-wrap.freeze-team .team-cell {transition: min-width 0.25s ease, gap 0.25s ease, padding 0.25s ease;}
+            .photo-table-wrap.freeze-team .tc-name {display: inline-block; overflow: hidden; white-space: nowrap; overflow-wrap: normal; max-width: var(--tc-w, 14rem); transition: max-width 0.25s ease;}
+            .photo-table-wrap.freeze-team.scrolled .team-cell {min-width: 0; gap: 0; padding-left: 0; justify-content: center;}
+            .photo-table-wrap.freeze-team.scrolled .tc-name {max-width: 0;}
             .team-cell .sp-part {display: inline-block; white-space: nowrap; overflow-wrap: normal;}
             .team-cell.matchup-line span {white-space: nowrap; min-width: auto; overflow-wrap: normal;}
             .team-cell.matchup-line {display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; column-gap: 8px; width: 100%; min-width: max-content; margin: 0; padding-left: 0;}
@@ -4001,11 +4005,11 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
         freeze_css, freeze_class = "", ""
         visible_columns = [c for c in df.columns if not str(c).startswith("_")]
         freeze_name = next(
-            (c for c in ("Player Name", "Team Owner", "Stat", "Matchup") if c in visible_columns), None
+            (c for c in ("Player Name", "Team Owner", "Stat", "Matchup", "Team") if c in visible_columns), None
         )
         if freeze_name:
             name_col = visible_columns.index(freeze_name) + 1
-            freeze_class += f" freeze-{name_col}"
+            freeze_class += f" freeze-{name_col}" + (" freeze-team" if freeze_name == "Team" else "")
             freeze_css = (
                 f".photo-table-wrap.freeze-{name_col} th:nth-child({name_col}),"
                 f".photo-table-wrap.freeze-{name_col} td:nth-child({name_col})"
@@ -6243,6 +6247,10 @@ components.html(
         d.addEventListener('click', onOwnerClick, true);
         // A Matchup column wider than the screen scrolls along until its right edge shows, then pins (and collapses).
         const updateStick = el => {
+            if (el.classList.contains('freeze-team')) {
+                el.querySelectorAll('.tc-name').forEach(t => t.style.setProperty('--tc-w', Math.ceil(t.scrollWidth) + 'px'));
+                return 0;
+            }
             const first = el.querySelector('tbody tr td');
             if (!first || !el.querySelector('.matchup-line')) return 0;
             const overflow = Math.max(0, Math.ceil(first.offsetWidth - el.clientWidth));
@@ -6256,8 +6264,8 @@ components.html(
             if (!el || !el.classList || !el.classList.contains('photo-table-wrap')) return;
             updateHints(el);
             const scrolled = el.classList.contains('scrolled');
-            // The Matchup table shrinks until it fits; it only expands again by pulling past the left edge (see below).
-            const matchupTable = !!el.querySelector('.matchup-line');
+            // Matchup and Team-column tables shrink until they fit; they only expand again by pulling past the left edge (see below).
+            const matchupTable = !!el.querySelector('.matchup-line') || el.classList.contains('freeze-team');
             const stickOverflow = matchupTable && !scrolled ? updateStick(el) : 0;
             const trigger = matchupTable ? (stickOverflow > 0 ? stickOverflow + 24 : 12) : 24;
             // Only shrink when there is plenty of sideways room; shrinking a barely-too-wide table removes its scroll range and flickers.
@@ -6277,7 +6285,7 @@ components.html(
         let pull = 0, lastX = null, pullTimer = null;
         const pullTarget = e => {
             const w = e.target.closest && e.target.closest('.photo-table-wrap.scrolled');
-            return w && w.querySelector('.matchup-line') ? w : null;
+            return w && (w.querySelector('.matchup-line') || w.classList.contains('freeze-team')) ? w : null;
         };
         const expandTable = w => { w.classList.remove('scrolled'); pull = 0; };
         const onTouchStart = e => {
