@@ -4018,6 +4018,14 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .photo-table-wrap.scrolled .matchup-line .mu-vs-live {max-width: 3rem;}
             .matchup-line .mu-side .team-logo-sm {transition: margin-left 0.25s ease;}
             .photo-table-wrap.scrolled .matchup-line .mu-side > * + * {margin-left: 0;}
+            @media (max-width: 1099.98px) {
+                .matchup-line .mu-side {flex-direction: column; justify-content: center;}
+                .matchup-line .mu-away {flex-direction: column-reverse;}
+                .matchup-line .mu-side > * + * {margin-left: 0; margin-top: 2px;}
+                .team-cell.matchup-line .mu-side .mu-text {max-height: 2em; padding: 0; text-align: center; transition: max-width 0.25s ease, max-height 0.25s ease;}
+                .photo-table-wrap.scrolled .matchup-line .mu-side > * + * {margin-top: 0;}
+                .photo-table-wrap.scrolled .team-cell.matchup-line .mu-side .mu-text {max-height: 0;}
+            }
             .team-logo-sm {width: 36px; height: 36px; object-fit: contain; flex-shrink: 0; display: inline-block;}
             .net-cell {display: flex; align-items: center; justify-content: center; gap: 10px; width: max-content; margin: 0 auto; white-space: nowrap;}
             .net-cell > * {flex-shrink: 0;}
@@ -5202,7 +5210,7 @@ with tab0:
                 f'<span class="gd-name-short">{name_short}</span></span></div></td>'
                 f'<td class="gd-owner">{html_lib.escape(str(r["owner"]))}</td>'
                 + (cells(r["game"][3:], LIGHT_GREEN, 1) + cells(r["game"][:3], LIGHT_GREEN) if show_game and r["game"]
-                   else ('<td style="background:' + LIGHT_GREEN + '"></td>' * 4 if show_game else ""))
+                   else (('<td style="background:' + LIGHT_GREEN + '"></td>') * 4 if show_game else ""))
                 + cells(r["season"], LIGHT_BLUE, 1)
                 + "</tr>"
             )
@@ -5222,7 +5230,7 @@ with tab0:
             return
         st.caption(
             "Predicted spreads use "
-            "BartTorvik ratings at a neutral site, so home-court advantage is not included."
+            "BartTorvik ratings at a neutral site, so home-court advantage is not included. "
             "Click a game to see each drafted player's statistics."
         )
         team_seeds = {
