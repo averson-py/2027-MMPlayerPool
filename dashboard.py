@@ -3936,7 +3936,7 @@ def display_df(df, height=420, scale_columns=None, reverse_columns=None, hide_in
             .photo-table-outer {position: relative;}
             .photo-table-wrap.row-click > table > tbody > tr:not(.game-detail) {cursor: pointer;}
             .photo-table-wrap.row-click > table > tbody > tr:not(.game-detail):hover td {filter: brightness(0.95);}
-            .photo-table-wrap tr.game-detail > td {position: static !important; box-shadow: none !important; padding: 0; background: #F7F9FC; white-space: normal; cursor: default;}
+            .photo-table-wrap tr.game-detail > td {position: static !important; box-shadow: none !important; padding: 0; background: #F7F9FC; color: #000000; white-space: normal; cursor: default;}
             .gd-wrap {position: sticky; left: 0; width: var(--wrap-w, 100%); box-sizing: border-box; overflow-x: auto; padding: 8px 0 12px;}
             @keyframes gd-open {from {max-height: 0; padding-top: 0; padding-bottom: 0; opacity: 0;} to {max-height: var(--gd-h, 600px); padding-top: 8px; padding-bottom: 12px; opacity: 1;}}
             @keyframes gd-close {from {max-height: var(--gd-h, 600px); padding-top: 8px; padding-bottom: 12px; opacity: 1;} to {max-height: 0; padding-top: 0; padding-bottom: 0; opacity: 0;}}
